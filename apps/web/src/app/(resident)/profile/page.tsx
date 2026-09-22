@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PushButton } from "@/components/pwa/PushButton";
 import { profileView } from "@/server/access";
 
 export default async function ProfilePage() {
@@ -32,6 +33,7 @@ export default async function ProfilePage() {
           </button>
         </form>
       ) : null}
+      <PushButton />
       <form action="/api/auth/logout" method="post">
         <button
           type="submit"

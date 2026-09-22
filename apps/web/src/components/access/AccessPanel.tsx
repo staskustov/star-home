@@ -3,14 +3,17 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { commandMessage, runCommand, unconfirmed } from "@/lib/command";
 import type { AccessEvent } from "@/types/domain";
 
 export function AccessPanel({
   place,
   passes,
   events,
+  canCreate = true,
 }: {
   place: string;
+  canCreate?: boolean;
   passes: { id: string; guestName: string; detail: string }[];
   events: AccessEvent[];
 }) {
@@ -22,14 +25,15 @@ export function AccessPanel({
   async function add(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setNotice(null);
-    const response = await fetch("/api/access/passes", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ guestName, detail }),
-    });
-    const payload = (await response.json().catch(() => null)) as { message?: string } | null;
-    if (!response.ok) {
-      setNotice(payload?.message ?? "Не удалось сохранить пропуск.");
+    const result = await runCommand(() =>
+      fetch("/api/access/passes", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ guestName, detail }),
+      }),
+    );
+    if (!result.ok) {
+      setNotice(commandMessage(result.payload, unconfirmed));
       return;
     }
     setGuestName("");
@@ -42,14 +46,18 @@ export function AccessPanel({
     <section>
       <h1 className="text-[32px] tracking-[-0.03em] text-ink">Доступ</h1>
       <p className="mt-2 text-[15px] text-muted">{place}</p>
-      <form onSubmit={add} className="mt-8 space-y-3 rounded-[20px] border border-line bg-surface p-5">
-        <Field label="Гость" value={guestName} onChange={setGuestName} />
-        <Field label="Срок" value={detail} onChange={setDetail} />
-        <button type="submit" className="h-12 rounded-[14px] bg-accent px-5 text-sm text-accent-contrast">
-          Оформить пропуск
-        </button>
-        {notice ? <p className="text-sm text-muted">{notice}</p> : null}
-      </form>
+      {canCreate ? (
+        <form onSubmit={add} className="mt-8 space-y-3 rounded-[20px] border border-line bg-surface p-5">
+          <Field label="Гость" value={guestName} onChange={setGuestName} />
+          <Field label="Срок" value={detail} onChange={setDetail} />
+          <button type="submit" className="h-12 rounded-[14px] bg-accent px-5 text-sm text-accent-contrast">
+            Оформить пропуск
+          </button>
+          {notice ? <p className="text-sm text-muted">{notice}</p> : null}
+        </form>
+      ) : (
+        <p className="mt-8 text-[15px] text-muted">Пропуск оформляет житель.</p>
+      )}
       <ul className="mt-6 divide-y divide-line rounded-[20px] border border-line bg-surface">
         {passes.length === 0 ? (
           <li className="px-5 py-4 text-[15px] text-muted">Гостей нет.</li>

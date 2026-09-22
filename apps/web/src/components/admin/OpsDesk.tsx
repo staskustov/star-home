@@ -4,6 +4,7 @@ import { useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useAdminPreview } from "@/components/admin/AdminPreview";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { commandMessage, runCommand } from "@/lib/command";
 import { formatMoney } from "@/lib/format";
 import type { AccessEvent } from "@/types/domain";
 
@@ -41,14 +42,15 @@ export function AccessDesk({
   async function openGate() {
     if (!selected) return;
     setNotice(null);
-    const response = await fetch("/api/access/gate/object", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ objectId: selected.id }),
-    });
-    const payload = (await response.json().catch(() => null)) as { message?: string } | null;
-    setNotice(payload?.message ?? "Не удалось подтвердить выполнение.");
-    if (response.ok) router.refresh();
+    const result = await runCommand(() =>
+      fetch("/api/access/gate/object", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ objectId: selected.id }),
+      }),
+    );
+    setNotice(commandMessage(result.payload));
+    if (result.ok) router.refresh();
   }
 
   return (
@@ -84,28 +86,47 @@ export function AccessDesk({
   );
 }
 
-const requestStatus = { NEW: "Новая", IN_PROGRESS: "В работе", DONE: "Готово" };
+const requestStatus: Record<string, string> = {
+  CREATED: "Создана",
+  ACCEPTED: "Принята",
+  ASSIGNED: "Назначена",
+  IN_PROGRESS: "В работе",
+  WAITING: "Ожидает",
+  DONE: "Выполнена",
+  CLOSED: "Закрыта",
+  NEW: "Создана",
+};
+const nextStatus: Record<string, string> = {
+  CREATED: "ACCEPTED",
+  ACCEPTED: "ASSIGNED",
+  ASSIGNED: "IN_PROGRESS",
+  IN_PROGRESS: "WAITING",
+  WAITING: "DONE",
+  DONE: "CLOSED",
+  NEW: "ACCEPTED",
+};
 
 export function RequestDesk({
   requests,
 }: {
-  requests: { id: string; objectId: string; unitName: string; category: string; text: string; status: "NEW" | "IN_PROGRESS" | "DONE" }[];
+  requests: { id: string; objectId: string; unitName: string; category: string; text: string; status: string }[];
 }) {
   const { selected } = useAdminPreview();
   const router = useRouter();
   const [notice, setNotice] = useState<string | null>(null);
   const rows = useObjectRows(requests);
 
-  async function move(id: string, status: "IN_PROGRESS" | "DONE") {
+  async function move(id: string, status: string) {
     if (!selected) return;
-    const response = await fetch(`/api/requests/${id}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ objectId: selected.id, status }),
-    });
-    const payload = (await response.json().catch(() => null)) as { message?: string } | null;
-    if (!response.ok) {
-      setNotice(payload?.message ?? "Не удалось обновить заявку.");
+    const result = await runCommand(() =>
+      fetch(`/api/requests/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ objectId: selected.id, status }),
+      }),
+    );
+    if (!result.ok) {
+      setNotice(commandMessage(result.payload));
       return;
     }
     setNotice("Статус сохранён.");
@@ -123,15 +144,10 @@ export function RequestDesk({
               {request.unitName} · {request.text}
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-3">
-              <span className="text-sm text-graphite">{requestStatus[request.status]}</span>
-              {request.status === "NEW" ? (
-                <button type="button" onClick={() => move(request.id, "IN_PROGRESS")} className="text-sm text-ink">
-                  В работу
-                </button>
-              ) : null}
-              {request.status === "IN_PROGRESS" ? (
-                <button type="button" onClick={() => move(request.id, "DONE")} className="text-sm text-ink">
-                  Готово
+              <span className="text-sm text-graphite">{requestStatus[request.status] ?? request.status}</span>
+              {nextStatus[request.status] ? (
+                <button type="button" onClick={() => move(request.id, nextStatus[request.status])} className="text-sm text-ink">
+                  Дальше
                 </button>
               ) : null}
             </div>
@@ -170,10 +186,13 @@ export function PaymentDesk({
 
 export function DeviceDesk({
   devices,
+  meters = [],
 }: {
   devices: { objectId: string; name: string; kind: string; state: string }[];
+  meters?: { objectId: string; name: string; value: string; unit: string }[];
 }) {
   const rows = useObjectRows(devices);
+  const readings = useObjectRows(meters);
   return (
     <Shell title="Устройства">
       <List empty="Устройств нет.">
@@ -182,6 +201,16 @@ export function DeviceDesk({
             <p className="text-[16px] text-ink">{device.name}</p>
             <p className="text-sm text-muted">
               {device.kind} · {device.state}
+            </p>
+          </li>
+        ))}
+      </List>
+      <List empty="Счётчиков нет.">
+        {readings.map((meter) => (
+          <li key={`${meter.objectId}-${meter.name}`} className="px-5 py-4">
+            <p className="text-[16px] text-ink">{meter.name}</p>
+            <p className="text-sm text-muted">
+              {meter.value} {meter.unit}
             </p>
           </li>
         ))}

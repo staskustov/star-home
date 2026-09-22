@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { destinationFor } from "@/server/access";
-import { findMembership } from "@/server/directory";
-import { readSession, sessionCookie, sessionCookieOptions, signSession } from "@/server/session";
+import { rpc } from "@/server/rpc";
+import { sessionCookie, sessionCookieOptions, signSession } from "@/server/session";
+import { readSession } from "@/server/session";
 
 async function membershipIdFrom(request: Request): Promise<string> {
   const contentType = request.headers.get("content-type") ?? "";
@@ -15,19 +15,16 @@ async function membershipIdFrom(request: Request): Promise<string> {
 
 export async function POST(request: Request) {
   const session = await readSession();
-  if (!session) {
-    return NextResponse.json({ message: "Нужно войти" }, { status: 401 });
-  }
+  if (!session) return NextResponse.json({ message: "Нужно войти" }, { status: 401 });
   const membershipId = await membershipIdFrom(request);
-  const membership = findMembership(session.userId, membershipId);
-  if (!membership) {
-    return NextResponse.json({ message: "Нет доступа" }, { status: 403 });
+  const result = await rpc<{ membershipId?: string; redirectTo?: string; message?: string }>("switch", { membershipId });
+  if (result.status !== 200 || !result.body.redirectTo || !result.body.membershipId) {
+    return NextResponse.json({ message: result.body.message ?? "Нет доступа" }, { status: result.status });
   }
-  const redirectTo = destinationFor(session.userId, membership.id);
   const acceptsJson = (request.headers.get("accept") ?? "").includes("application/json");
   const response = acceptsJson
-    ? NextResponse.json({ redirectTo })
-    : NextResponse.redirect(new URL(redirectTo, request.url));
-  response.cookies.set(sessionCookie, signSession(session.userId, membership.id), sessionCookieOptions());
+    ? NextResponse.json({ redirectTo: result.body.redirectTo })
+    : NextResponse.redirect(new URL(result.body.redirectTo, request.url), 303);
+  response.cookies.set(sessionCookie, signSession(session.userId, result.body.membershipId), sessionCookieOptions());
   return response;
 }

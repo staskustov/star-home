@@ -1,9 +1,6 @@
-import { NextResponse } from "next/server";
-import { confirmOwnAssistant } from "@/server/ai";
+import { jsonRpc } from "@/server/rpc";
 
 export async function POST(request: Request) {
-  const body = (await request.json().catch(() => null)) as { token?: unknown; objectId?: unknown } | null;
-  const result = await confirmOwnAssistant(body?.token);
-  if (!result.ok) return NextResponse.json({ message: result.message }, { status: result.status });
-  return NextResponse.json(result.value);
+  const body = (await request.json().catch(() => null)) as { token?: unknown } | null;
+  return jsonRpc("confirm", { token: body?.token });
 }

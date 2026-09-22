@@ -1,10 +1,7 @@
-import { notFound } from "next/navigation";
 import { ResidentsPanel } from "@/components/admin/ResidentsPanel";
-import { residentBoard, residentsActor } from "@/server/residents";
+import { requireResidents } from "@/server/access";
 
 export default async function ResidentsPage() {
-  const actor = await residentsActor();
-  if (!actor.ok) notFound();
-  const board = residentBoard(actor.value);
+  const board = await requireResidents<Parameters<typeof ResidentsPanel>[0]>();
   return <ResidentsPanel people={board.people} objects={board.objects} />;
 }

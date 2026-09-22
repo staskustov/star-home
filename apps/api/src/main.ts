@@ -1,0 +1,360 @@
+import "reflect-metadata";
+import { createHmac, randomBytes, timingSafeEqual } from "crypto";
+import { execFileSync, spawn } from "child_process";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import net from "net";
+import path from "path";
+import { Body, Controller, Module, Post, Req, Res } from "@nestjs/common";
+import { NestFactory } from "@nestjs/core";
+import type { RawBodyRequest } from "@nestjs/common";
+import type { Request, Response } from "express";
+import { PrismaClient } from "@prisma/client";
+import EmbeddedPostgres from "embedded-postgres";
+import Redis from "ioredis";
+import webpush from "web-push";
+import { WebSocketServer, type WebSocket } from "ws";
+import { bindFiles, bindLive, bindPush, bindStore, storesFlushed } from "../../web/src/server/store-bind";
+import { bindLoginLimit } from "../../web/src/server/login-limit";
+
+const port = 3457;
+const pgPort = 54329;
+const dataDir = path.join(process.cwd(), ".data");
+const secret = () => process.env.STAR_HOME_INTERNAL_SECRET ?? "star-home-dev-internal";
+
+type LiveClient = WebSocket & { objectId?: string };
+
+let handle: ((method: string, input: unknown, session: { userId: string; membershipId: string | null } | null) => Promise<{ status: number; body: unknown }>) | null = null;
+
+function signaturesMatch(actual: string, expected: string): boolean {
+  const left = Buffer.from(actual);
+  const right = Buffer.from(expected);
+  if (left.length !== right.length) return false;
+  return timingSafeEqual(left, right);
+}
+
+function modelReply(prompt: string): { tool: string | null; reply: string } {
+  const text = prompt.toLowerCase();
+  if (text.includes("ворот")) return { tool: "open_gate", reply: "Открыть ворота? Подтвердите действие." };
+  if (text.includes("пропуск") || text.includes("гость")) return { tool: "create_pass", reply: "Оформить пропуск для гостя? Подтвердите действие." };
+  if (text.includes("заяв")) return { tool: "create_request", reply: "Создать заявку? Подтвердите действие." };
+  if (text.includes("оплат")) return { tool: "pay", reply: "Оплатить открытый счёт? Подтвердите действие." };
+  return { tool: null, reply: "" };
+}
+
+@Controller()
+class GatewayController {
+  @Post("rpc")
+  async rpc(@Req() req: RawBodyRequest<Request>, @Res() res: Response): Promise<void> {
+    const raw = req.rawBody;
+    const header = req.header("x-star-home-signature") ?? "";
+    if (!raw || !handle) {
+      res.status(503).json({ message: "Не удалось подтвердить выполнение." });
+      return;
+    }
+    const expected = createHmac("sha256", secret()).update(raw).digest("hex");
+    if (!signaturesMatch(header, expected)) {
+      res.status(401).json({ message: "Нужно войти" });
+      return;
+    }
+    const payload = JSON.parse(raw.toString("utf8")) as {
+      method?: string;
+      input?: unknown;
+      session?: { userId: string; membershipId: string | null } | null;
+    };
+    const result = await handle(payload.method ?? "", payload.input, payload.session ?? null);
+    res.status(result.status).json(result.body);
+  }
+
+  @Post("bank/charge")
+  bank(@Body() body: { reference?: string }, @Res() res: Response): void {
+    res.json({ confirmed: true, reference: `bank_${body?.reference ?? "local"}` });
+  }
+
+  @Post("model")
+  model(@Body() body: { prompt?: string }, @Res() res: Response): void {
+    res.json(modelReply(typeof body?.prompt === "string" ? body.prompt : ""));
+  }
+
+  @Post("device")
+  device(@Res() res: Response): void {
+    res.json({ confirmed: true });
+  }
+}
+
+@Module({ controllers: [GatewayController] })
+class AppModule {}
+
+function waitForPort(target: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let tries = 0;
+    const attempt = () => {
+      const socket = net.connect(target, "127.0.0.1");
+      socket.once("connect", () => {
+        socket.end();
+        resolve();
+      });
+      socket.once("error", () => {
+        socket.destroy();
+        tries += 1;
+        if (tries > 50) reject(new Error("PostgreSQL не открыл порт"));
+        else setTimeout(attempt, 200);
+      });
+    };
+    attempt();
+  });
+}
+
+function readLiveToken(token: string): { objectId: string } | null {
+  const [body, signature] = token.split(".");
+  if (!body || !signature) return null;
+  const expected = createHmac("sha256", secret()).update(body).digest("base64url");
+  if (!signaturesMatch(signature, expected)) return null;
+  const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as { objectId?: string; exp?: number };
+  if (!payload.objectId || !payload.exp || payload.exp < Date.now()) return null;
+  return { objectId: payload.objectId };
+}
+
+async function startRedis(): Promise<string> {
+  if (process.env.REDIS_URL) return process.env.REDIS_URL;
+  const probe = new Redis("redis://127.0.0.1:6379", { connectTimeout: 300, maxRetriesPerRequest: 1, lazyConnect: true, retryStrategy: () => null });
+  try {
+    await probe.connect();
+    await probe.ping();
+    probe.disconnect();
+    return "redis://127.0.0.1:6379";
+  } catch {
+    probe.disconnect();
+  }
+  const redisDir = path.join(dataDir, "redis");
+  mkdirSync(redisDir, { recursive: true });
+  const binary = existsSync(path.join(dataDir, "bin/redis-server")) ? path.join(dataDir, "bin/redis-server") : "redis-server";
+  const child = spawn(
+    binary,
+    ["--bind", "127.0.0.1", "--port", "6379", "--save", "", "--appendonly", "no", "--dir", redisDir, "--daemonize", "no"],
+    { stdio: "ignore" },
+  );
+  child.on("error", (error) => {
+    console.error(error);
+  });
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => resolve("redis://127.0.0.1:6379"), 400);
+    child.once("exit", (code) => {
+      clearTimeout(timer);
+      reject(new Error(`Redis завершился с кодом ${code ?? "unknown"}`));
+    });
+  });
+}
+
+async function postgres(): Promise<string> {
+  mkdirSync(dataDir, { recursive: true });
+  const databaseDir = path.join(dataDir, "pg");
+  const engine = new EmbeddedPostgres({
+    databaseDir,
+    user: "star",
+    password: "star",
+    port: pgPort,
+    persistent: true,
+  });
+  if (!existsSync(path.join(databaseDir, "PG_VERSION"))) await engine.initialise();
+  await engine.start();
+  await waitForPort(pgPort);
+  try {
+    await engine.createDatabase("starhome");
+  } catch {
+    // The database already exists after the first boot.
+  }
+  return `postgresql://star:star@127.0.0.1:${pgPort}/starhome`;
+}
+
+async function pushSchema(databaseUrl: string): Promise<void> {
+  let last: unknown;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    try {
+      execFileSync(path.join(process.cwd(), "node_modules/.bin/prisma"), ["db", "push", "--skip-generate", "--accept-data-loss"], {
+        cwd: process.cwd(),
+        env: { ...process.env, DATABASE_URL: databaseUrl },
+        stdio: "inherit",
+      });
+      return;
+    } catch (error) {
+      last = error;
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+  }
+  throw last;
+}
+
+function vapid(): { publicKey: string; privateKey: string } {
+  const file = path.join(dataDir, "vapid.json");
+  if (existsSync(file)) return JSON.parse(readFileSync(file, "utf8")) as { publicKey: string; privateKey: string };
+  const keys = webpush.generateVAPIDKeys();
+  writeFileSync(file, JSON.stringify(keys));
+  return keys;
+}
+
+async function main(): Promise<void> {
+  const databaseUrl = process.env.DATABASE_URL ?? (await postgres());
+  process.env.DATABASE_URL = databaseUrl;
+  if (!process.env.STAR_HOME_SKIP_DB_PUSH) await pushSchema(databaseUrl);
+  const prisma = new PrismaClient();
+  await prisma.$connect();
+
+  const redisUrl = await startRedis();
+  const redis = new Redis(redisUrl);
+  const subscriber = new Redis(redisUrl);
+  await subscriber.subscribe("star-live");
+
+  const memory = new Map<string, unknown>();
+  const rows = await prisma.snapshot.findMany();
+  for (const row of rows) memory.set(row.id, row.body);
+  bindStore({
+    load(name) {
+      return memory.has(name) ? memory.get(name) : undefined;
+    },
+    save(name, value) {
+      const snapshot = JSON.parse(JSON.stringify(value)) as {
+        meters?: { id: string; companyId: string; objectId: string; unitId: string; name: string; unit: string }[];
+        meterReadings?: { id: string; meterId: string; value: number; at: string }[];
+      };
+      memory.set(name, snapshot);
+      return prisma.snapshot
+        .upsert({ where: { id: name }, create: { id: name, body: snapshot }, update: { body: snapshot } })
+        .then(async () => {
+          if (name !== "ops") return;
+          for (const meter of snapshot.meters ?? []) {
+            await prisma.meter.upsert({
+              where: { id: meter.id },
+              create: meter,
+              update: { name: meter.name, unit: meter.unit, unitId: meter.unitId, objectId: meter.objectId, companyId: meter.companyId },
+            });
+          }
+          for (const reading of snapshot.meterReadings ?? []) {
+            await prisma.meterReading.upsert({
+              where: { id: reading.id },
+              create: reading,
+              update: { value: reading.value, at: reading.at, meterId: reading.meterId },
+            });
+          }
+        });
+    },
+  });
+
+  bindLoginLimit(async (action, login) => {
+    const key = `login:${login.toLowerCase()}`;
+    if (action === "check") return Number((await redis.get(key)) ?? 0) >= 8;
+    if (action === "clear") {
+      await redis.del(key);
+      return false;
+    }
+    const count = await redis.incr(key);
+    if (count === 1) await redis.pexpire(key, 10 * 60 * 1000);
+    return count >= 8;
+  });
+
+  const clients = new Set<LiveClient>();
+  bindLive((event) => {
+    void redis.publish("star-live", JSON.stringify(event));
+  });
+  subscriber.on("message", (_channel, message) => {
+    const event = JSON.parse(message) as { objectId?: string };
+    const payload = message;
+    for (const client of clients) {
+      if (client.readyState === client.OPEN && client.objectId === event.objectId) client.send(payload);
+    }
+  });
+
+  const keys = vapid();
+  process.env.STAR_HOME_VAPID_PUBLIC = keys.publicKey;
+  webpush.setVapidDetails("mailto:star-home@localhost", keys.publicKey, keys.privateKey);
+  const pushRuntime = globalThis as typeof globalThis & {
+    __starSavePush?: (row: { userId: string; endpoint: string; p256dh: string; auth: string }) => Promise<void>;
+  };
+  pushRuntime.__starSavePush = async (row) => {
+    await prisma.pushSubscription.upsert({
+      where: { endpoint: row.endpoint },
+      create: { id: `push_${randomBytes(8).toString("hex")}`, ...row },
+      update: { userId: row.userId, p256dh: row.p256dh, auth: row.auth },
+    });
+  };
+  bindPush(async (userId, body) => {
+    const subscriptions = await prisma.pushSubscription.findMany({ where: { userId } });
+    await Promise.all(
+      subscriptions.map((subscription) =>
+        webpush
+          .sendNotification(
+            { endpoint: subscription.endpoint, keys: { p256dh: subscription.p256dh, auth: subscription.auth } },
+            JSON.stringify({ title: "STAR HOME", body }),
+          )
+          .catch(() => undefined),
+      ),
+    );
+  });
+
+  bindFiles(async (input) => {
+    const safe = input.name.replace(/[^\w.\-]+/g, "_").slice(0, 80) || "file";
+    const id = randomBytes(8).toString("hex");
+    let storedPath = "";
+    if (process.env.STAR_HOME_S3_ENDPOINT) {
+      const key = `${input.companyId}/${id}_${safe}`;
+      const url = `${process.env.STAR_HOME_S3_ENDPOINT.replace(/\/$/, "")}/${key}`;
+      const response = await fetch(url, {
+        method: "PUT",
+        headers: {
+          "content-type": "application/octet-stream",
+          ...(process.env.STAR_HOME_S3_TOKEN ? { authorization: `Bearer ${process.env.STAR_HOME_S3_TOKEN}` } : {}),
+        },
+        body: new Uint8Array(input.bytes),
+      });
+      if (!response.ok) return safe;
+      storedPath = key;
+    } else {
+      const dir = path.join(dataDir, "files", input.companyId);
+      mkdirSync(dir, { recursive: true });
+      storedPath = path.join(dir, `${id}_${safe}`);
+      writeFileSync(storedPath, input.bytes);
+    }
+    await prisma.storedFile.create({
+      data: { id, companyId: input.companyId, objectId: "", requestId: null, name: safe, path: storedPath },
+    });
+    return safe;
+  });
+
+  process.env.STAR_HOME_BANK_URL ||= `http://127.0.0.1:${port}/bank/charge`;
+  process.env.STAR_HOME_LLM_URL ||= `http://127.0.0.1:${port}/model`;
+
+  const domain = await import("../../web/src/server/rpc-handlers");
+  const people = await import("../../web/src/server/people-store");
+  const ops = await import("../../web/src/server/ops-store");
+  const catalog = await import("../../web/src/server/catalog-store");
+  const life = await import("../../web/src/server/life-mode-store");
+  people.listUsers();
+  ops.readOps();
+  catalog.findCompany("cmp_star");
+  life.modesForObject("obj_siyanie");
+  life.modesForObject("obj_park");
+  life.modesForObject("obj_sky");
+  await storesFlushed();
+  handle = domain.handleRpc;
+
+  const app = await NestFactory.create(AppModule, { rawBody: true, logger: ["error", "warn", "log"] });
+  await app.listen(port, "127.0.0.1");
+  const sockets = new WebSocketServer({ server: app.getHttpServer(), path: "/live" });
+  sockets.on("connection", (socket, request) => {
+    const token = new URL(request.url ?? "", "http://127.0.0.1").searchParams.get("token") ?? "";
+    const live = readLiveToken(token);
+    if (!live) {
+      socket.close();
+      return;
+    }
+    const client = socket as LiveClient;
+    client.objectId = live.objectId;
+    clients.add(client);
+    client.on("close", () => clients.delete(client));
+  });
+  console.log(`STAR HOME API http://127.0.0.1:${port}`);
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

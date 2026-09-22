@@ -1,4 +1,4 @@
-import { residentPlace, type Place } from "@/server/actor";
+import { placeFromSession, residentPlace, type Place, type SessionRef } from "@/server/actor";
 import { modeForUnit } from "@/server/life-mode-store";
 import { createPass, createRequest, openGate, payOldest } from "@/server/operations";
 import { homeSignals, newId, readOps, writeOps, type PendingTool } from "@/server/ops-store";
@@ -13,29 +13,43 @@ type Proposal = {
   pending: PendingTool | null;
 };
 
-function propose(prompt: string): Proposal {
+function rules(prompt: string): { tool: PendingTool["name"] | null; reply: string } {
   const text = prompt.toLowerCase();
-  if (text.includes("ворот")) {
-    const token = newId("confirm");
-    return { reply: "Открыть ворота? Подтвердите действие.", pending: { name: "open_gate", token } };
-  }
-  if (text.includes("пропуск") || text.includes("гость")) {
-    const token = newId("confirm");
-    return { reply: "Оформить пропуск для гостя? Подтвердите действие.", pending: { name: "create_pass", token } };
-  }
-  if (text.includes("заяв")) {
-    const token = newId("confirm");
-    return { reply: "Создать заявку? Подтвердите действие.", pending: { name: "create_request", token } };
-  }
-  if (text.includes("оплат")) {
-    const token = newId("confirm");
-    return { reply: "Оплатить открытый счёт? Подтвердите действие.", pending: { name: "pay", token } };
-  }
-  return { reply: "", pending: null };
+  if (text.includes("ворот")) return { tool: "open_gate", reply: "Открыть ворота? Подтвердите действие." };
+  if (text.includes("пропуск") || text.includes("гость")) return { tool: "create_pass", reply: "Оформить пропуск для гостя? Подтвердите действие." };
+  if (text.includes("заяв")) return { tool: "create_request", reply: "Создать заявку? Подтвердите действие." };
+  if (text.includes("оплат")) return { tool: "pay", reply: "Оплатить открытый счёт? Подтвердите действие." };
+  return { tool: null, reply: "" };
 }
 
-export function askAssistant(place: Place, prompt: string): AiReply {
-  const proposal = propose(prompt);
+const allowedTools = new Set<PendingTool["name"]>(["open_gate", "create_pass", "create_request", "pay"]);
+
+async function propose(prompt: string, role: Place["role"]): Promise<Proposal> {
+  const endpoint = process.env.STAR_HOME_LLM_URL;
+  let suggestion = rules(prompt);
+  if (endpoint) {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prompt }),
+    }).catch(() => null);
+    const payload = response?.ok ? ((await response.json().catch(() => null)) as { tool?: string; reply?: string } | null) : null;
+    if (!payload || (payload.tool && !allowedTools.has(payload.tool as PendingTool["name"]))) {
+      return { reply: "Не удалось подтвердить выполнение.", pending: null };
+    }
+    suggestion = {
+      tool: (payload.tool as PendingTool["name"] | undefined) ?? null,
+      reply: payload.reply || suggestion.reply,
+    };
+  }
+  if (suggestion.tool === "pay" && role !== "RESIDENT") return { reply: "Оплата доступна только жителю.", pending: null };
+  if (suggestion.tool === "create_pass" && role !== "RESIDENT") return { reply: "Пропуск оформляет житель.", pending: null };
+  if (!suggestion.tool) return { reply: "", pending: null };
+  return { reply: suggestion.reply, pending: { name: suggestion.tool, token: newId("confirm") } };
+}
+
+export async function askAssistant(place: Place, prompt: string): Promise<AiReply> {
+  const proposal = await propose(prompt, place.role);
   if (!proposal.pending) {
     const signals = homeSignals(place.unitId, place.objectId);
     const mode = modeForUnit(place.unitId);
@@ -77,7 +91,7 @@ export async function confirmAssistant(place: Place, token: string): Promise<AiR
   writeOps(file);
   let reply = "Не удалось подтвердить выполнение.";
   if (tool === "open_gate") reply = (await openGate(place)).message;
-  if (tool === "create_pass") {
+  if (tool === "create_pass" && place.role === "RESIDENT") {
     createPass(place, "Гость", "По запросу в чате");
     reply = "Пропуск оформлен.";
   }
@@ -85,12 +99,28 @@ export async function confirmAssistant(place: Place, token: string): Promise<AiR
     createRequest(place, "Другое", turn.prompt);
     reply = "Заявка создана.";
   }
-  if (tool === "pay") reply = (await payOldest(place)).message;
+  if (tool === "pay" && place.role === "RESIDENT") reply = (await payOldest(place)).message;
   const next = readOps();
   const saved = next.turns.find((item) => item.id === turn.id);
   if (saved) saved.reply = reply;
   writeOps(next);
   return { reply, confirmToken: null };
+}
+
+export async function askFor(session: SessionRef | null, prompt: unknown) {
+  const place = placeFromSession(session);
+  if (!place.ok) return place;
+  const text = typeof prompt === "string" ? prompt.trim().replace(/\s+/g, " ") : "";
+  if (!text) return { ok: false as const, status: 400, message: "Напишите запрос" };
+  if (text.length > 400) return { ok: false as const, status: 400, message: "Слишком длинный запрос" };
+  return { ok: true as const, value: await askAssistant(place.value, text) };
+}
+
+export async function confirmFor(session: SessionRef | null, token: unknown) {
+  const place = placeFromSession(session);
+  if (!place.ok) return place;
+  if (typeof token !== "string" || !token) return { ok: false as const, status: 400, message: "Подтверждение не найдено." };
+  return { ok: true as const, value: await confirmAssistant(place.value, token) };
 }
 
 export async function askOwnAssistant(prompt: unknown) {
@@ -99,7 +129,7 @@ export async function askOwnAssistant(prompt: unknown) {
   const text = typeof prompt === "string" ? prompt.trim().replace(/\s+/g, " ") : "";
   if (!text) return { ok: false as const, status: 400, message: "Напишите запрос" };
   if (text.length > 400) return { ok: false as const, status: 400, message: "Слишком длинный запрос" };
-  return { ok: true as const, value: askAssistant(place.value, text) };
+  return { ok: true as const, value: await askAssistant(place.value, text) };
 }
 
 export async function confirmOwnAssistant(token: unknown) {

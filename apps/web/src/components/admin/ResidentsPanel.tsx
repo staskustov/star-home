@@ -11,6 +11,8 @@ export function ResidentsPanel({ people, objects }: { people: ResidentRow[]; obj
   const [name, setName] = useState("");
   const [login, setLogin] = useState("");
   const [password, setPassword] = useState("");
+  const [role, setRole] = useState("RESIDENT");
+  const [expiresAt, setExpiresAt] = useState("");
   const [unitId, setUnitId] = useState("");
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -32,7 +34,7 @@ export function ResidentsPanel({ people, objects }: { people: ResidentRow[]; obj
     const response = await fetch("/api/residents", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ objectId: selected.id, unitId: selectedUnit, name, login, password }),
+      body: JSON.stringify({ objectId: selected.id, unitId: selectedUnit, name, login, password, role, expiresAt: role === "GUEST" ? expiresAt : undefined }),
     });
     const payload = (await response.json().catch(() => null)) as { message?: string; existed?: boolean } | null;
     if (!response.ok) {
@@ -72,6 +74,19 @@ export function ResidentsPanel({ people, objects }: { people: ResidentRow[]; obj
           <Field label="Имя" value={name} onChange={setName} />
           <Field label="Логин" value={login} onChange={setLogin} autoCapitalize="none" />
           <Field label="Пароль" value={password} onChange={setPassword} type="password" />
+          <label className="block">
+            <span className="text-sm text-muted">Роль</span>
+            <select
+              value={role}
+              onChange={(event) => setRole(event.target.value)}
+              className="mt-2 h-[52px] w-full rounded-[14px] border border-line bg-bg px-3 text-base text-ink outline-none focus:border-accent"
+            >
+              <option value="RESIDENT">Житель</option>
+              <option value="FAMILY_MEMBER">Семья</option>
+              <option value="GUEST">Гость</option>
+            </select>
+          </label>
+          {role === "GUEST" ? <Field label="Срок пропуска" value={expiresAt} onChange={setExpiresAt} type="date" /> : null}
           <label className="block">
             <span className="text-sm text-muted">Единица</span>
             <select
@@ -126,7 +141,7 @@ export function ResidentsPanel({ people, objects }: { people: ResidentRow[]; obj
               <div className="min-w-0">
                 <p className="truncate text-[17px] text-ink">{person.name}</p>
                 <p className="mt-1 truncate text-sm text-muted">
-                  {person.login} · {person.place}
+                  {person.login} · {person.roleLabel} · {person.place}
                 </p>
               </div>
               <button

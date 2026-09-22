@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AIBar } from "@/components/home/AIBar";
 import { HomeStatus } from "@/components/home/HomeStatus";
@@ -10,10 +10,11 @@ import { QuickActions } from "@/components/home/QuickActions";
 import { SecurityStatus } from "@/components/home/SecurityStatus";
 import { VisitorCard } from "@/components/home/VisitorCard";
 import { Header } from "@/components/shell/Header";
+import { InstallPrompt } from "@/components/pwa/InstallPrompt";
+import { LiveRefresh } from "@/components/pwa/LiveRefresh";
+import { commandMessage, runCommand, unconfirmed } from "@/lib/command";
 import { greetingForHour } from "@/lib/greeting";
 import type { LifeMode, ResidentHome } from "@/types/domain";
-
-const unconfirmed = "Не удалось подтвердить выполнение.";
 
 export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
   const router = useRouter();
@@ -22,18 +23,29 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
   const current = data.lifeModes.find((item) => item.mode === mode) ?? data.lifeModes[0];
   const greeting = greetingForHour(new Date().getHours(), data.residentName);
 
+  useEffect(() => {
+    const snapshot = {
+      place: `${data.object.name} · ${data.unit.name}`,
+      mode: data.lifeModes.find((item) => item.mode === data.activeLifeMode)?.label ?? data.activeLifeMode,
+      temperature: data.climate ? `${String(data.climate.temperatureC).replace(".", ",")}°` : "",
+    };
+    void caches.open("star-home-state").then((cache) => cache.put("/confirmed-home", new Response(JSON.stringify(snapshot), { headers: { "content-type": "application/json" } })));
+  }, [data]);
+
   async function changeMode(next: LifeMode) {
     const previous = mode;
     setMode(next);
     setNotice(null);
-    const response = await fetch("/api/life-mode", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ mode: next }),
-    });
-    if (!response.ok) {
+    const result = await runCommand(() =>
+      fetch("/api/life-mode", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mode: next }),
+      }),
+    );
+    if (!result.ok) {
       setMode(previous);
-      setNotice("Не удалось сохранить режим.");
+      setNotice(unconfirmed);
       return;
     }
     router.refresh();
@@ -50,16 +62,17 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
       return;
     }
     setNotice(null);
-    const response = await fetch(path, { method: "POST" });
-    const payload = (await response.json().catch(() => null)) as { message?: string } | null;
-    setNotice(payload?.message ?? unconfirmed);
-    if (response.ok) router.refresh();
+    const result = await runCommand(() => fetch(path, { method: "POST" }));
+    setNotice(commandMessage(result.payload));
+    if (result.ok) router.refresh();
   }
 
   if (!current) return null;
 
   return (
     <div className="space-y-8">
+      <LiveRefresh />
+      <InstallPrompt />
       <Header mark="STAR HOME" title={greeting} meta={`${data.object.name} · ${data.unit.name}`} />
       <LifeModeSwitcher modes={data.lifeModes} value={current.mode} onChange={changeMode} />
       <HomeStatus
@@ -70,6 +83,18 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
         temperatureC={data.climate?.temperatureC ?? null}
         humidityPercent={data.climate?.humidityPercent ?? null}
       />
+      {data.meters.length > 0 ? (
+        <ul className="grid gap-3">
+          {data.meters.map((meter) => (
+            <li key={meter.name} className="rounded-[20px] border border-line bg-surface px-5 py-4">
+              <p className="text-sm text-muted">{meter.name}</p>
+              <p className="mt-1 text-[22px] tracking-[-0.03em] text-ink">
+                {meter.value} {meter.unit}
+              </p>
+            </li>
+          ))}
+        </ul>
+      ) : null}
       <SecurityStatus label="Защита" state={current.securityLabel} tone={current.securityTone} />
       <section>
         <h2 className="mb-3 text-sm text-muted">Быстрые действия</h2>

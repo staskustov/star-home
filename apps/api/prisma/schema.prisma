@@ -1,0 +1,46 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Snapshot {
+  id   String @id
+  body Json
+}
+
+model Meter {
+  id        String @id
+  companyId String
+  objectId  String
+  unitId    String
+  name      String
+  unit      String
+}
+
+model MeterReading {
+  id      String @id
+  meterId String
+  value   Float
+  at      String
+}
+
+model StoredFile {
+  id        String  @id
+  companyId String
+  objectId  String
+  requestId String?
+  name      String
+  path      String
+}
+
+model PushSubscription {
+  id       String @id
+  userId   String
+  endpoint String @unique
+  p256dh   String
+  auth     String
+}

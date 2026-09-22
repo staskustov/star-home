@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { commandMessage, runCommand, unconfirmed } from "@/lib/command";
 
 export function AIBar({ prompt }: { prompt: string }) {
   const router = useRouter();
@@ -13,28 +14,30 @@ export function AIBar({ prompt }: { prompt: string }) {
     event.preventDefault();
     if (!value.trim()) return;
     setToken(null);
-    const response = await fetch("/api/ai", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ prompt: value }),
-    });
-    const payload = (await response.json().catch(() => null)) as { reply?: string; confirmToken?: string | null; message?: string } | null;
-    setNotice(payload?.reply ?? payload?.message ?? "Не удалось подтвердить выполнение.");
-    setToken(payload?.confirmToken ?? null);
-    if (response.ok && !payload?.confirmToken) router.refresh();
+    const result = await runCommand(() =>
+      fetch("/api/ai", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ prompt: value }),
+      }),
+    );
+    setNotice(commandMessage(result.payload, unconfirmed));
+    setToken(typeof result.payload?.confirmToken === "string" ? result.payload.confirmToken : null);
+    if (result.ok && typeof result.payload?.confirmToken !== "string") router.refresh();
   }
 
   async function confirm() {
     if (!token) return;
-    const response = await fetch("/api/ai/confirm", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ token }),
-    });
-    const payload = (await response.json().catch(() => null)) as { reply?: string; message?: string } | null;
-    setNotice(payload?.reply ?? payload?.message ?? "Не удалось подтвердить выполнение.");
+    const result = await runCommand(() =>
+      fetch("/api/ai/confirm", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ token }),
+      }),
+    );
+    setNotice(commandMessage(result.payload, unconfirmed));
     setToken(null);
-    if (response.ok) router.refresh();
+    if (result.ok) router.refresh();
   }
 
   return (

@@ -21,7 +21,6 @@ import {
   objectHasAssignments,
   unitHasAssignment,
 } from "@/server/directory";
-import { readSession } from "@/server/session";
 import type { CatalogTree, CatalogUnitNode } from "@/types/catalog";
 import { objectTypes, type ObjectType, type Role } from "@/types/domain";
 
@@ -53,8 +52,7 @@ function cleanAddress(value: unknown): string | Failure {
   return text;
 }
 
-export async function catalogActor(): Promise<Success<Actor> | Failure> {
-  const session = await readSession();
+export function actorFromSession(session: { userId: string; membershipId: string | null } | null): Success<Actor & { userId: string }> | Failure {
   if (!session) return { ok: false, status: 401, message: "Нужно войти" };
   const admins = adminMemberships(session.userId);
   const selected = session.membershipId ? findMembership(session.userId, session.membershipId) : undefined;
@@ -64,8 +62,13 @@ export async function catalogActor(): Promise<Success<Actor> | Failure> {
   }
   return {
     ok: true,
-    value: { companyId: membership.companyId, role: membership.role, objectId: membership.objectId },
+    value: { companyId: membership.companyId, role: membership.role, objectId: membership.objectId, userId: session.userId },
   };
+}
+
+export async function catalogActor(): Promise<Success<Actor> | Failure> {
+  const { readSession } = await import("@/server/session");
+  return actorFromSession(await readSession());
 }
 
 function ownObject(actor: Actor, objectId: string): Success<NonNullable<ReturnType<typeof findObject>>> | Failure {

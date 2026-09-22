@@ -1,9 +1,8 @@
 import { AccessDesk } from "@/components/admin/OpsDesk";
-import { requireAdminContext } from "@/server/access";
-import { companyOps } from "@/server/ops-view";
+import { requireAdminContext, requireOps } from "@/server/access";
 
 export default async function AdminAccessPage() {
-  const admin = await requireAdminContext();
-  const ops = companyOps(admin.objects[0]?.companyId ?? "");
+  await requireAdminContext();
+  const ops = await requireOps<Parameters<typeof AccessDesk>[0]>();
   return <AccessDesk passes={ops.passes} events={ops.events} />;
 }

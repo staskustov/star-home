@@ -2,36 +2,51 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { commandMessage, runCommand, unconfirmed } from "@/lib/command";
 
-const statusLabel = { NEW: "Новая", IN_PROGRESS: "В работе", DONE: "Готово" };
+const statusLabel: Record<string, string> = {
+  CREATED: "Создана",
+  ACCEPTED: "Принята",
+  ASSIGNED: "Назначена",
+  IN_PROGRESS: "В работе",
+  WAITING: "Ожидает",
+  DONE: "Выполнена",
+  CLOSED: "Закрыта",
+  NEW: "Создана",
+};
 
 export function RequestPanel({
   categories,
   requests,
 }: {
   categories: string[];
-  requests: { id: string; category: string; text: string; status: "NEW" | "IN_PROGRESS" | "DONE" }[];
+  requests: { id: string; category: string; text: string; status: string }[];
 }) {
   const router = useRouter();
   const [category, setCategory] = useState(categories[0] ?? "");
   const [text, setText] = useState("");
+  const [fileName, setFileName] = useState("");
+  const [fileBase64, setFileBase64] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const selected = categories.includes(category) ? category : (categories[0] ?? "");
 
   async function add(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setNotice(null);
-    const response = await fetch("/api/requests", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ category: selected, text }),
-    });
-    const payload = (await response.json().catch(() => null)) as { message?: string } | null;
-    if (!response.ok) {
-      setNotice(payload?.message ?? "Не удалось создать заявку.");
+    const result = await runCommand(() =>
+      fetch("/api/requests", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ category: selected, text, fileName: fileName || undefined, fileBase64: fileBase64 || undefined }),
+      }),
+    );
+    if (!result.ok) {
+      setNotice(commandMessage(result.payload, unconfirmed));
       return;
     }
     setText("");
+    setFileName("");
+    setFileBase64("");
     setNotice("Заявка создана.");
     router.refresh();
   }
@@ -63,6 +78,29 @@ export function RequestPanel({
             className="mt-2 min-h-24 w-full rounded-[14px] border border-line bg-bg px-4 py-3 text-base text-ink outline-none focus:border-accent"
           />
         </label>
+        <label className="block">
+          <span className="text-sm text-muted">Файл</span>
+          <input
+            type="file"
+            className="mt-2 block w-full text-sm text-muted"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (!file) {
+                setFileName("");
+                setFileBase64("");
+                return;
+              }
+              const reader = new FileReader();
+              reader.onload = () => {
+                const encoded = String(reader.result ?? "");
+                const comma = encoded.indexOf(",");
+                setFileName(file.name);
+                setFileBase64(comma >= 0 ? encoded.slice(comma + 1) : encoded);
+              };
+              reader.readAsDataURL(file);
+            }}
+          />
+        </label>
         <button type="submit" className="h-12 rounded-[14px] bg-accent px-5 text-sm text-accent-contrast">
           Создать заявку
         </button>
@@ -76,7 +114,7 @@ export function RequestPanel({
             <li key={request.id} className="px-5 py-4">
               <p className="text-[16px] text-ink">{request.category}</p>
               <p className="mt-1 text-sm text-muted">{request.text}</p>
-              <p className="mt-2 text-sm text-graphite">{statusLabel[request.status]}</p>
+              <p className="mt-2 text-sm text-graphite">{statusLabel[request.status] ?? request.status}</p>
             </li>
           ))
         )}

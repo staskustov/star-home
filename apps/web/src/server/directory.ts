@@ -73,8 +73,19 @@ export function isAdminRole(role: Role): boolean {
   return adminRoles.has(role);
 }
 
+function stillActive(membership: Membership): boolean {
+  if (!membership.expiresAt) return true;
+  return Date.parse(membership.expiresAt) > Date.now();
+}
+
 export function homeMemberships(userId: string): Membership[] {
-  return membershipsOf(userId).filter((membership) => membership.role === "RESIDENT" && membership.unitId);
+  return membershipsOf(userId).filter(
+    (membership) => (membership.role === "RESIDENT" || membership.role === "FAMILY_MEMBER") && membership.unitId && stillActive(membership),
+  );
+}
+
+export function guestMemberships(userId: string): Membership[] {
+  return membershipsOf(userId).filter((membership) => membership.role === "GUEST" && membership.unitId && stillActive(membership));
 }
 
 export function adminMemberships(userId: string): Membership[] {
@@ -93,7 +104,10 @@ export function unitHasAssignment(unitId: string): boolean {
 }
 
 export function residentCount(objectId: string): number {
-  return memberships().filter((membership) => membership.role === "RESIDENT" && membership.objectId === objectId).length;
+  return memberships().filter(
+    (membership) =>
+      (membership.role === "RESIDENT" || membership.role === "FAMILY_MEMBER") && membership.objectId === objectId && stillActive(membership),
+  ).length;
 }
 
 export function homeFor(user: DirectoryUser, membership: Membership): ResidentHome | null {
@@ -160,7 +174,7 @@ export function adminObjectsFor(membership: Membership): AdminObjectSnapshot[] {
       units: counts.units,
       residents: residentCount(object.id),
       visitors: passesForObject(object.id).length,
-      requests: requestsForObject(object.id).filter((request) => request.status !== "DONE").length,
+      requests: requestsForObject(object.id).filter((request) => request.status !== "DONE" && request.status !== "CLOSED").length,
       alarms: alarmsForObject(object.id).filter((alarm) => alarm.status === "OPEN").length,
       accessEvents: eventsForObject(object.id).slice(0, 6).map((event) => ({
         id: event.id,

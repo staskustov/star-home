@@ -1,9 +1,7 @@
-import { notFound } from "next/navigation";
 import { LifeModeSettings } from "@/components/admin/LifeModeSettings";
-import { settingsBoard } from "@/server/life-modes";
+import { requireSettings } from "@/server/access";
 
 export default async function SettingsPage() {
-  const objects = await settingsBoard();
-  if (!objects) notFound();
+  const objects = await requireSettings<Parameters<typeof LifeModeSettings>[0]["objects"]>();
   return <LifeModeSettings objects={objects} />;
 }

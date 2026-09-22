@@ -1,6 +1,7 @@
 import { findBuilding, findUnit, objectsOf, readTree } from "@/server/catalog-store";
 import { catalogActor } from "@/server/catalog";
 import { findUserById, findUserByLogin, membershipsOf } from "@/server/directory";
+import { createPass } from "@/server/operations";
 import { createPerson, createResidentMembership, deleteMembership, listMemberships, listUsers } from "@/server/people-store";
 import { hashPassword } from "@/server/password";
 import type { Role } from "@/types/domain";
@@ -9,12 +10,15 @@ type Actor = {
   companyId: string;
   role: Role;
   objectId: string | null;
+  userId?: string;
 };
 
 type Failure = { ok: false; status: number; message: string };
 type Success<T> = { ok: true; value: T };
 
 const companyRoles = new Set<Role>(["SUPER_ADMIN", "COMPANY_ADMIN"]);
+const householdRoles = new Set<Role>(["RESIDENT", "FAMILY_MEMBER", "GUEST"]);
+const roleLabel: Record<string, string> = { RESIDENT: "Житель", FAMILY_MEMBER: "Семья", GUEST: "Гость" };
 
 export type ResidentRow = {
   membershipId: string;
@@ -25,6 +29,7 @@ export type ResidentRow = {
   unitName: string;
   place: string;
   unitNumber: string;
+  roleLabel: string;
 };
 
 export type ResidentUnitChoice = {
@@ -77,7 +82,7 @@ export function residentBoard(actor: Actor): { people: ResidentRow[]; objects: R
   const objects = objectsOf(actor.companyId, limit);
   const users = new Map(listUsers().map((user) => [user.id, user]));
   const people = listMemberships()
-    .filter((membership) => membership.role === "RESIDENT" && membership.objectId && membership.unitId)
+    .filter((membership) => householdRoles.has(membership.role) && membership.objectId && membership.unitId)
     .flatMap((membership) => {
       if (!membership.objectId || !membership.unitId) return [];
       if (!objects.some((object) => object.id === membership.objectId)) return [];
@@ -95,6 +100,7 @@ export function residentBoard(actor: Actor): { people: ResidentRow[]; objects: R
           unitName: unit.name,
           place: building ? `${building.name} · ${unit.name}` : unit.name,
           unitNumber: unit.number,
+          roleLabel: roleLabel[membership.role] ?? "Житель",
         },
       ];
     });
@@ -119,7 +125,7 @@ function groupsFor(objectId: string): ResidentGroup[] {
 
 export function addResident(
   actor: Actor,
-  input: { objectId: unknown; unitId: unknown; name: unknown; login: unknown; password: unknown },
+  input: { objectId: unknown; unitId: unknown; name: unknown; login: unknown; password: unknown; role?: unknown; expiresAt?: unknown },
 ): Success<{ membershipId: string; existed: boolean }> | Failure {
   if (typeof input.objectId !== "string" || typeof input.unitId !== "string") {
     return { ok: false, status: 400, message: "Выберите объект и единицу" };
@@ -132,6 +138,14 @@ export function addResident(
   if (!objectOk || !canTouch(actor, unit.objectId)) {
     return { ok: false, status: 403, message: "Нет доступа" };
   }
+  const role = typeof input.role === "string" && householdRoles.has(input.role as Role) ? (input.role as Role) : "RESIDENT";
+  let expiresAt: string | null = null;
+  if (role === "GUEST") {
+    if (typeof input.expiresAt !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(input.expiresAt)) {
+      return { ok: false, status: 400, message: "Укажите срок пропуска" };
+    }
+    expiresAt = `${input.expiresAt}T23:59:59`;
+  }
   const login = cleanLogin(input.login);
   if (typeof login !== "string") return login;
   const existing = findUserByLogin(login);
@@ -141,7 +155,7 @@ export function addResident(
     existing &&
     listMemberships().some(
       (membership) =>
-        membership.userId === existing.id && membership.role === "RESIDENT" && membership.unitId === unit.id,
+        membership.userId === existing.id && householdRoles.has(membership.role) && membership.unitId === unit.id,
     )
   ) {
     return { ok: false, status: 409, message: "Этот человек уже закреплён за этой единицей." };
@@ -156,18 +170,29 @@ export function addResident(
   } else if (!membershipsOf(userId).some((membership) => membership.companyId === actor.companyId)) {
     return { ok: false, status: 403, message: "Нет доступа" };
   }
+  const pass =
+    role === "GUEST"
+      ? createPass(
+          { userId: actor.userId ?? "usr_admin", companyId: actor.companyId, objectId: unit.objectId, unitId: unit.id, role: actor.role },
+          name,
+          `До ${input.expiresAt}`,
+        )
+      : null;
   const membership = createResidentMembership({
     userId,
     companyId: actor.companyId,
     objectId: unit.objectId,
     unitId: unit.id,
+    role,
+    expiresAt,
+    passId: pass?.id ?? null,
   });
   return { ok: true, value: { membershipId: membership.id, existed: Boolean(existing) } };
 }
 
 export function removeResident(actor: Actor, membershipId: string): Success<{ id: string }> | Failure {
   const membership = listMemberships().find((item) => item.id === membershipId);
-  if (!membership || membership.role !== "RESIDENT" || !membership.objectId) {
+  if (!membership || !householdRoles.has(membership.role) || !membership.objectId) {
     return { ok: false, status: 404, message: "Житель не найден" };
   }
   const sameCompany = membership.companyId === actor.companyId;

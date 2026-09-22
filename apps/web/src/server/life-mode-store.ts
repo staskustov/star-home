@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
+import { boundValue, remember } from "@/server/store-bind";
 import { residentHome } from "@/mocks/resident-home";
 import { lifeModeChecks, lifeModes, type LifeMode, type LifeModeCheck, type LifeModeSetting } from "@/types/domain";
 
@@ -14,6 +15,11 @@ const checkIds = new Set<string>(lifeModeChecks.map((check) => check.id));
 
 function load(): LifeFile {
   if (globalStore.__starHomeLife) return globalStore.__starHomeLife;
+  const bound = boundValue("life");
+  if (bound) {
+    globalStore.__starHomeLife = bound as LifeFile;
+    return globalStore.__starHomeLife;
+  }
   if (existsSync(filePath)) {
     globalStore.__starHomeLife = JSON.parse(readFileSync(filePath, "utf8")) as LifeFile;
     return globalStore.__starHomeLife;
@@ -25,6 +31,7 @@ function load(): LifeFile {
 
 function persist(file: LifeFile): void {
   globalStore.__starHomeLife = file;
+  if (remember("life", file)) return;
   mkdirSync(path.dirname(filePath), { recursive: true });
   writeFileSync(filePath, JSON.stringify(file));
 }

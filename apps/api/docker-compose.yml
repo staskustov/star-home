@@ -1,0 +1,15 @@
+# Optional engines for a machine that already has Docker.
+# This workspace starts PostgreSQL and Redis inside the API process instead.
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: star
+      POSTGRES_PASSWORD: star
+      POSTGRES_DB: starhome
+    ports:
+      - "54329:5432"
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"

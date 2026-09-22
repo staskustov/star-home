@@ -1,6 +1,7 @@
 import { randomBytes } from "crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
+import { boundValue, remember } from "@/server/store-bind";
 import type { Membership } from "@/types/domain";
 
 export type StoredUser = {
@@ -79,6 +80,11 @@ function seed(): PeopleFile {
 
 function load(): PeopleFile {
   if (globalStore.__starHomePeople) return globalStore.__starHomePeople;
+  const bound = boundValue("people");
+  if (bound) {
+    globalStore.__starHomePeople = bound as PeopleFile;
+    return globalStore.__starHomePeople;
+  }
   if (existsSync(filePath)) {
     globalStore.__starHomePeople = JSON.parse(readFileSync(filePath, "utf8")) as PeopleFile;
     return globalStore.__starHomePeople;
@@ -90,6 +96,7 @@ function load(): PeopleFile {
 
 function persist(people: PeopleFile): void {
   globalStore.__starHomePeople = people;
+  if (remember("people", people)) return;
   mkdirSync(path.dirname(filePath), { recursive: true });
   writeFileSync(filePath, JSON.stringify(people));
 }
@@ -120,15 +127,20 @@ export function createResidentMembership(input: {
   companyId: string;
   objectId: string;
   unitId: string;
+  role?: Membership["role"];
+  expiresAt?: string | null;
+  passId?: string | null;
 }): Membership {
   const people = load();
   const membership: Membership = {
     id: `mem_${randomBytes(8).toString("hex")}`,
     userId: input.userId,
     companyId: input.companyId,
-    role: "RESIDENT",
+    role: input.role ?? "RESIDENT",
     objectId: input.objectId,
     unitId: input.unitId,
+    expiresAt: input.expiresAt ?? null,
+    passId: input.passId ?? null,
   };
   people.memberships.push(membership);
   persist(people);

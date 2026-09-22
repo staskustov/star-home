@@ -1,9 +1,7 @@
 import { AccessPanel } from "@/components/access/AccessPanel";
-import { requireHome } from "@/server/access";
-import { residentAccess } from "@/server/ops-view";
+import { requireAccess } from "@/server/access";
 
 export default async function AccessPage() {
-  const home = await requireHome();
-  const access = residentAccess(home.unit.id, home.object.id);
-  return <AccessPanel place={`${home.object.name} · ${home.unit.name}`} passes={access.passes} events={access.events} />;
+  const access = await requireAccess();
+  return <AccessPanel place={access.place} canCreate={access.canCreate} passes={access.passes} events={access.events} />;
 }

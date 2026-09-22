@@ -1,6 +1,7 @@
 import { randomBytes } from "crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
+import { boundValue, remember } from "@/server/store-bind";
 import type { AccessEvent } from "@/types/domain";
 
 export type Pass = {
@@ -12,7 +13,9 @@ export type Pass = {
   detail: string;
 };
 
-export type RequestStatus = "NEW" | "IN_PROGRESS" | "DONE";
+export const requestStatuses = ["CREATED", "ACCEPTED", "ASSIGNED", "IN_PROGRESS", "WAITING", "DONE", "CLOSED"] as const;
+
+export type RequestStatus = (typeof requestStatuses)[number];
 
 export type ServiceRequest = {
   id: string;
@@ -23,6 +26,23 @@ export type ServiceRequest = {
   category: string;
   text: string;
   status: RequestStatus;
+  fileName?: string;
+};
+
+export type Meter = {
+  id: string;
+  companyId: string;
+  objectId: string;
+  unitId: string;
+  name: string;
+  unit: string;
+};
+
+export type MeterReading = {
+  id: string;
+  meterId: string;
+  value: number;
+  at: string;
 };
 
 export type Invoice = {
@@ -45,7 +65,8 @@ export type Device = {
   unitId: string | null;
   kind: DeviceKind;
   name: string;
-  adapter: "local";
+  adapter: "local" | "http";
+  endpoint?: string;
 };
 
 export type DeviceReading = {
@@ -117,6 +138,8 @@ type OpsFile = {
   notices: Notice[];
   audit: AuditEntry[];
   turns: AiTurn[];
+  meters: Meter[];
+  meterReadings: MeterReading[];
 };
 
 const filePath = path.join(process.cwd(), "data", "ops.json");
@@ -239,13 +262,35 @@ function seed(): OpsFile {
     notices: [],
     audit: [],
     turns: [],
+    meters: [
+      { id: "meter_24_water", companyId: "cmp_star", objectId: "obj_siyanie", unitId: "unit_24", name: "Вода", unit: "м³" },
+      { id: "meter_84_water", companyId: "cmp_star", objectId: "obj_park", unitId: "unit_84", name: "Вода", unit: "м³" },
+    ],
+    meterReadings: [
+      { id: "read_24_water", meterId: "meter_24_water", value: 128.4, at: "01.09" },
+      { id: "read_84_water", meterId: "meter_84_water", value: 86.2, at: "01.09" },
+    ],
   };
+}
+
+function normalize(file: OpsFile): OpsFile {
+  file.meters ??= [];
+  file.meterReadings ??= [];
+  for (const request of file.requests ?? []) {
+    if ((request.status as string) === "NEW") request.status = "CREATED";
+  }
+  return file;
 }
 
 function load(): OpsFile {
   if (globalStore.__starHomeOps) return globalStore.__starHomeOps;
+  const bound = boundValue("ops");
+  if (bound) {
+    globalStore.__starHomeOps = normalize(bound as OpsFile);
+    return globalStore.__starHomeOps;
+  }
   if (existsSync(filePath)) {
-    globalStore.__starHomeOps = JSON.parse(readFileSync(filePath, "utf8")) as OpsFile;
+    globalStore.__starHomeOps = normalize(JSON.parse(readFileSync(filePath, "utf8")) as OpsFile);
     return globalStore.__starHomeOps;
   }
   const file = seed();
@@ -255,6 +300,7 @@ function load(): OpsFile {
 
 function persist(file: OpsFile): void {
   globalStore.__starHomeOps = file;
+  if (remember("ops", file)) return;
   mkdirSync(path.dirname(filePath), { recursive: true });
   writeFileSync(filePath, JSON.stringify(file));
 }
@@ -324,6 +370,7 @@ export function homeSignals(unitId: string, objectId: string): {
   visitor: { title: string; detail: string } | null;
   balance: { amount: number; currency: string } | null;
   today: { title: string; detail: string } | null;
+  meters: { name: string; value: string; unit: string }[];
 } {
   const file = load();
   const climateDevice = file.devices.find((device) => device.kind === "CLIMATE" && device.unitId === unitId);
@@ -331,6 +378,12 @@ export function homeSignals(unitId: string, objectId: string): {
   const pass = file.passes.find((item) => item.unitId === unitId);
   const open = file.invoices.filter((invoice) => invoice.unitId === unitId && invoice.status === "OPEN");
   const event = file.events.find((item) => item.objectId === objectId);
+  const meters = (file.meters ?? [])
+    .filter((meter) => meter.unitId === unitId)
+    .map((meter) => {
+      const latest = (file.meterReadings ?? []).filter((item) => item.meterId === meter.id).at(-1);
+      return { name: meter.name, value: latest ? latest.value.toString().replace(".", ",") : "—", unit: meter.unit };
+    });
   return {
     climate: reading ? { temperatureC: reading.temperatureC, humidityPercent: reading.humidityPercent } : null,
     visitor: pass ? { title: pass.guestName, detail: pass.detail } : null,
@@ -338,5 +391,6 @@ export function homeSignals(unitId: string, objectId: string): {
       ? { amount: open.reduce((sum, invoice) => sum + invoice.amount, 0), currency: open[0]?.currency ?? "RUB" }
       : null,
     today: event ? { title: "Событие", detail: event.title } : null,
+    meters,
   };
 }

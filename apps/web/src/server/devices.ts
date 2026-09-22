@@ -23,8 +23,23 @@ class LocalAdapter implements DeviceAdapter {
   }
 }
 
+class HttpAdapter implements DeviceAdapter {
+  async execute(device: Device, command: DeviceCommand): Promise<DeviceResult> {
+    if (!device.endpoint) return { confirmed: false };
+    const response = await fetch(device.endpoint, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ command, kind: device.kind }),
+    }).catch(() => null);
+    if (!response?.ok) return { confirmed: false };
+    const payload = (await response.json().catch(() => null)) as { confirmed?: boolean } | null;
+    return { confirmed: Boolean(payload?.confirmed) };
+  }
+}
+
 const adapters: Record<Device["adapter"], DeviceAdapter> = {
   local: new LocalAdapter(),
+  http: new HttpAdapter(),
 };
 
 export async function runDevice(device: Device, command: DeviceCommand): Promise<DeviceResult> {

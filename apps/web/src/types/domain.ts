@@ -36,6 +36,8 @@ export type Membership = {
   role: Role;
   objectId: string | null;
   unitId: string | null;
+  expiresAt?: string | null;
+  passId?: string | null;
 };
 
 export type Company = {
@@ -118,6 +120,7 @@ export type ResidentHome = {
   } | null;
   serviceCategories: string[];
   aiPrompt: string;
+  meters: { name: string; value: string; unit: string }[];
 };
 
 export type AccessEvent = {

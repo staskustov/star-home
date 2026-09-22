@@ -1,4 +1,5 @@
-import { adminObject, residentPlace, type Place } from "@/server/actor";
+import { adminObjectFrom, placeFromSession, residentPlace, type Place, type SessionRef } from "@/server/actor";
+import { publishLive, pushNotice } from "@/server/store-bind";
 import { gateFor, runDevice } from "@/server/devices";
 import { paymentProvider } from "@/server/payments";
 import {
@@ -13,6 +14,11 @@ import {
 } from "@/server/ops-store";
 
 export type { Place };
+
+async function currentSession(): Promise<SessionRef | null> {
+  const { readSession } = await import("@/server/session");
+  return readSession();
+}
 
 function audit(entry: Omit<AuditEntry, "id" | "at">): void {
   const file = readOps();
@@ -47,6 +53,7 @@ export async function openGate(place: Place): Promise<{ confirmed: boolean; mess
     result: result.confirmed ? "SUCCESS" : "ERROR",
     error: result.confirmed ? "" : "Нет подтверждения адаптера",
   });
+  publishLive({ objectId: place.objectId, kind: "access", title: result.confirmed ? "Ворота открыты" : "Команда не подтверждена" });
   return {
     confirmed: result.confirmed,
     message: result.confirmed ? "Ворота открыты." : "Не удалось подтвердить выполнение.",
@@ -77,7 +84,7 @@ export function createPass(place: Place, guestName: string, detail: string): Pas
   return pass;
 }
 
-export function createRequest(place: Place, category: string, text: string): ServiceRequest {
+export function createRequest(place: Place, category: string, text: string, fileName?: string): ServiceRequest {
   const file = readOps();
   const request: ServiceRequest = {
     id: newId("req"),
@@ -87,7 +94,8 @@ export function createRequest(place: Place, category: string, text: string): Ser
     authorUserId: place.userId,
     category,
     text,
-    status: "NEW",
+    status: "CREATED",
+    fileName,
   };
   file.requests.unshift(request);
   writeOps(file);
@@ -187,6 +195,8 @@ export function raiseAlarm(place: Place): { message: string } {
     result: "SUCCESS",
     error: "",
   });
+  publishLive({ objectId: place.objectId, kind: "alarm", title: "Вызов охраны" });
+  pushNotice(place.userId, "Вызов принят и записан.");
   return { message: "Вызов передан охране." };
 }
 
@@ -198,15 +208,21 @@ function clean(value: unknown, empty: string, limit: number): string | { ok: fal
   return text;
 }
 
+export async function openGateFor(session: SessionRef | null) {
+  const place = placeFromSession(session);
+  if (!place.ok) return place;
+  return { ok: true as const, value: await openGate(place.value) };
+}
+
 export async function openOwnGate(): Promise<{ ok: true; value: { confirmed: boolean; message: string } } | { ok: false; status: number; message: string }> {
   const place = await residentPlace();
   if (!place.ok) return place;
   return { ok: true, value: await openGate(place.value) };
 }
 
-export async function openObjectGate(objectId: unknown) {
+export async function openObjectGateFor(session: SessionRef | null, objectId: unknown) {
   if (typeof objectId !== "string") return { ok: false as const, status: 400, message: "Выберите объект" };
-  const admin = await adminObject(objectId);
+  const admin = adminObjectFrom(session, objectId);
   if (!admin.ok) return admin;
   return {
     ok: true as const,
@@ -215,18 +231,43 @@ export async function openObjectGate(objectId: unknown) {
       companyId: admin.value.companyId,
       objectId: admin.value.objectId,
       unitId: "",
+      role: "COMPANY_ADMIN",
     }),
   };
 }
 
-export async function addOwnPass(guestName: unknown, detail: unknown) {
-  const place = await residentPlace();
+export async function openObjectGate(objectId: unknown) {
+  return openObjectGateFor(await currentSession(), objectId);
+}
+
+export async function addPassFor(session: SessionRef | null, guestName: unknown, detail: unknown) {
+  const place = placeFromSession(session, new Set(["RESIDENT"]));
   if (!place.ok) return place;
   const name = clean(guestName, "Введите имя гостя", 80);
   if (typeof name !== "string") return name;
   const note = clean(detail, "Введите срок или комментарий", 160);
   if (typeof note !== "string") return note;
   return { ok: true as const, value: createPass(place.value, name, note) };
+}
+
+export async function addOwnPass(guestName: unknown, detail: unknown) {
+  const place = placeFromSession(await currentSession(), new Set(["RESIDENT"]));
+  if (!place.ok) return place;
+  const name = clean(guestName, "Введите имя гостя", 80);
+  if (typeof name !== "string") return name;
+  const note = clean(detail, "Введите срок или комментарий", 160);
+  if (typeof note !== "string") return note;
+  return { ok: true as const, value: createPass(place.value, name, note) };
+}
+
+export async function addRequestFor(session: SessionRef | null, category: unknown, text: unknown, fileName?: string) {
+  const place = placeFromSession(session);
+  if (!place.ok) return place;
+  const kind = clean(category, "Выберите тему", 40);
+  if (typeof kind !== "string") return kind;
+  const body = clean(text, "Опишите заявку", 400);
+  if (typeof body !== "string") return body;
+  return { ok: true as const, value: createRequest(place.value, kind, body, fileName) };
 }
 
 export async function addOwnRequest(category: unknown, text: unknown) {
@@ -239,11 +280,11 @@ export async function addOwnRequest(category: unknown, text: unknown) {
   return { ok: true as const, value: createRequest(place.value, kind, body) };
 }
 
-const statuses = new Set<RequestStatus>(["NEW", "IN_PROGRESS", "DONE"]);
+const statuses = new Set<RequestStatus>(["CREATED", "ACCEPTED", "ASSIGNED", "IN_PROGRESS", "WAITING", "DONE", "CLOSED"]);
 
-export async function setRequestStatus(requestId: string, status: unknown, objectId: unknown) {
+export async function setRequestStatusFor(session: SessionRef | null, requestId: string, status: unknown, objectId: unknown) {
   if (typeof objectId !== "string") return { ok: false as const, status: 400, message: "Выберите объект" };
-  const admin = await adminObject(objectId);
+  const admin = adminObjectFrom(session, objectId);
   if (!admin.ok) return admin;
   if (typeof status !== "string" || !statuses.has(status as RequestStatus)) {
     return { ok: false as const, status: 400, message: "Неизвестный статус" };
@@ -253,10 +294,26 @@ export async function setRequestStatus(requestId: string, status: unknown, objec
   return { ok: true as const, value: request };
 }
 
-export async function payOwnInvoice() {
-  const place = await residentPlace();
+export async function setRequestStatus(requestId: string, status: unknown, objectId: unknown) {
+  return setRequestStatusFor(await currentSession(), requestId, status, objectId);
+}
+
+export async function payFor(session: SessionRef | null) {
+  const place = placeFromSession(session, new Set(["RESIDENT"]));
   if (!place.ok) return place;
   return { ok: true as const, value: await payOldest(place.value) };
+}
+
+export async function payOwnInvoice() {
+  const place = placeFromSession(await currentSession(), new Set(["RESIDENT"]));
+  if (!place.ok) return place;
+  return { ok: true as const, value: await payOldest(place.value) };
+}
+
+export async function alarmFor(session: SessionRef | null) {
+  const place = placeFromSession(session);
+  if (!place.ok) return place;
+  return { ok: true as const, value: raiseAlarm(place.value) };
 }
 
 export async function callOwnSecurity() {

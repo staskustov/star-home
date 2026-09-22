@@ -94,4 +94,5 @@ export const residentHome: ResidentHome = {
     "Другое",
   ],
   aiPrompt: "Что сделать?",
+  meters: [],
 };

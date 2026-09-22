@@ -1,89 +1,98 @@
 import { redirect } from "next/navigation";
-import {
-  adminMemberships,
-  adminObjectsFor,
-  companyName,
-  findMembership,
-  findUserById,
-  homeFor,
-  homeMemberships,
-  isAdminRole,
-  placesFor,
-} from "@/server/directory";
-import { homeSignals } from "@/server/ops-store";
-import { residentNotices } from "@/server/ops-view";
-import { destinationFor } from "@/server/routing";
-import { readSession } from "@/server/session";
-import type { AdminObjectSnapshot, ResidentHome } from "@/types/domain";
+import { rpc } from "@/server/rpc";
+import type { AccessEvent, AdminObjectSnapshot, ResidentHome } from "@/types/domain";
 
-export { destinationFor, initialMembershipId } from "@/server/routing";
-
-export async function requireHome(): Promise<ResidentHome> {
-  const session = await readSession();
-  if (!session) redirect("/");
-  const user = findUserById(session.userId);
-  const membership = session.membershipId ? findMembership(session.userId, session.membershipId) : undefined;
-  if (!user || !membership) redirect(destinationFor(session.userId, null));
-  const home = homeFor(user, membership);
-  if (!home) redirect(destinationFor(session.userId, null));
-  const signals = homeSignals(home.unit.id, home.object.id);
-  return {
-    ...home,
-    climate: signals.climate ?? home.climate,
-    visitor: signals.visitor,
-    balance: signals.balance,
-    todayEvent: signals.today ?? home.todayEvent,
-  };
-}
-
-export async function requirePlaces(): Promise<{ name: string; places: { membershipId: string; title: string; meta: string }[] }> {
-  const session = await readSession();
-  if (!session) redirect("/");
-  const user = findUserById(session.userId);
-  if (!user) redirect("/");
-  const places = placesFor(session.userId);
-  if (places.length < 2) redirect(destinationFor(session.userId, session.membershipId));
-  return { name: user.name, places };
-}
-
-export async function requireAdminContext(): Promise<{
-  companyName: string;
-  actorLabel: string;
-  objects: AdminObjectSnapshot[];
-}> {
-  const session = await readSession();
-  if (!session) redirect("/");
-  const user = findUserById(session.userId);
-  const admins = adminMemberships(session.userId);
-  const selected = session.membershipId ? findMembership(session.userId, session.membershipId) : undefined;
-  const membership = selected && isAdminRole(selected.role) ? selected : admins[0];
-  if (!user || !membership) redirect(destinationFor(session.userId, session.membershipId));
-  return {
-    companyName: companyName(membership.companyId),
-    actorLabel: user.name,
-    objects: adminObjectsFor(membership),
-  };
-}
-
-export async function profileView(): Promise<{
+type HomeBody = { home?: ResidentHome; redirect?: string };
+type PlacesBody = { name?: string; places?: { membershipId: string; title: string; meta: string }[]; redirect?: string };
+type AdminBody = { companyName?: string; actorLabel?: string; objects?: AdminObjectSnapshot[]; redirect?: string };
+type ProfileBody = {
   name: string;
   place: string | null;
   choosePlaces: boolean;
   adminMembershipId: string | null;
   notices: { id: string; title: string; body: string; at: string }[];
-}> {
-  const session = await readSession();
-  if (!session) redirect("/");
-  const user = findUserById(session.userId);
-  if (!user) redirect("/");
-  const membership = session.membershipId ? findMembership(session.userId, session.membershipId) : undefined;
-  const home = membership ? homeFor(user, membership) : null;
-  const admin = adminMemberships(session.userId)[0];
+};
+type AccessBody = {
+  place: string;
+  canCreate: boolean;
+  passes: { id: string; guestName: string; detail: string }[];
+  events: AccessEvent[];
+  redirect?: string;
+};
+type RequestsBody = { categories: string[]; requests: { id: string; category: string; text: string; status: string }[]; redirect?: string };
+
+async function go(result: { status: number; body: { redirect?: string } }, fallback = "/no-access"): Promise<void> {
+  if (result.status === 401) redirect("/");
+  if (result.body.redirect) redirect(result.body.redirect);
+  redirect(fallback);
+}
+
+export async function requireHome(): Promise<ResidentHome> {
+  const result = await rpc<HomeBody>("home");
+  if (result.status === 401 || result.body.redirect || !result.body.home) await go(result);
+  return result.body.home as ResidentHome;
+}
+
+export async function requirePlaces(): Promise<{ name: string; places: { membershipId: string; title: string; meta: string }[] }> {
+  const result = await rpc<PlacesBody>("places");
+  if (result.status === 401 || result.body.redirect || !result.body.places || !result.body.name) await go(result);
+  return { name: result.body.name as string, places: result.body.places as { membershipId: string; title: string; meta: string }[] };
+}
+
+export async function requireAdminContext(): Promise<{ companyName: string; actorLabel: string; objects: AdminObjectSnapshot[] }> {
+  const result = await rpc<AdminBody>("admin");
+  if (result.status === 401 || result.body.redirect || !result.body.objects) await go(result, "/home");
   return {
-    name: user.name,
-    place: home ? `${home.object.name} · ${home.unit.name}` : null,
-    choosePlaces: homeMemberships(session.userId).length > 1,
-    adminMembershipId: admin?.id ?? null,
-    notices: residentNotices(session.userId),
+    companyName: result.body.companyName ?? "",
+    actorLabel: result.body.actorLabel ?? "",
+    objects: result.body.objects as AdminObjectSnapshot[],
   };
+}
+
+export async function profileView(): Promise<ProfileBody> {
+  const result = await rpc<ProfileBody>("profile");
+  if (result.status === 401) redirect("/");
+  return result.body;
+}
+
+export async function requireAccess(): Promise<AccessBody> {
+  const result = await rpc<AccessBody>("access");
+  if (result.status !== 200 || result.body.redirect || !result.body.place) await go(result);
+  return result.body as AccessBody;
+}
+
+export async function requireRequests(): Promise<RequestsBody> {
+  const result = await rpc<RequestsBody>("requests");
+  if (result.status !== 200 || result.body.redirect || !result.body.categories) await go(result);
+  return result.body as RequestsBody;
+}
+
+export async function requireOps<T>(): Promise<T> {
+  const result = await rpc<T>("ops");
+  if (result.status !== 200) redirect("/no-access");
+  return result.body;
+}
+
+export async function requireTree<T>(objectId: string): Promise<T> {
+  const result = await rpc<T & { message?: string }>("tree", { objectId });
+  if (result.status !== 200) redirect("/admin/objects");
+  return result.body;
+}
+
+export async function requireResidents<T>(): Promise<T> {
+  const result = await rpc<T>("residents");
+  if (result.status !== 200) redirect("/admin");
+  return result.body;
+}
+
+export async function requireSettings<T>(): Promise<T> {
+  const result = await rpc<T>("settings");
+  if (result.status !== 200) redirect("/admin");
+  return result.body;
+}
+
+export async function requireGuest(): Promise<{ name: string; pass: { guestName: string; detail: string } | null }> {
+  const result = await rpc<{ name?: string; pass: { guestName: string; detail: string } | null; redirect?: string }>("guest");
+  if (result.status === 401 || result.body.redirect || !result.body.name) await go(result);
+  return { name: result.body.name as string, pass: result.body.pass };
 }

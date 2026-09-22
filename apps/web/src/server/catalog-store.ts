@@ -1,6 +1,7 @@
 import { randomBytes } from "crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
+import { boundValue, remember } from "@/server/store-bind";
 import { objectPresentation, unitTypeFor } from "@/lib/object-presentation";
 import type { ObjectType, Unit } from "@/types/domain";
 
@@ -139,6 +140,11 @@ function seed(): Catalog {
 
 function load(): Catalog {
   if (globalStore.__starHomeCatalog) return globalStore.__starHomeCatalog;
+  const bound = boundValue("catalog");
+  if (bound) {
+    globalStore.__starHomeCatalog = bound as Catalog;
+    return globalStore.__starHomeCatalog;
+  }
   if (existsSync(filePath)) {
     globalStore.__starHomeCatalog = JSON.parse(readFileSync(filePath, "utf8")) as Catalog;
     return globalStore.__starHomeCatalog;
@@ -150,6 +156,7 @@ function load(): Catalog {
 
 function persist(catalog: Catalog): void {
   globalStore.__starHomeCatalog = catalog;
+  if (remember("catalog", catalog)) return;
   mkdirSync(path.dirname(filePath), { recursive: true });
   writeFileSync(filePath, JSON.stringify(catalog));
 }

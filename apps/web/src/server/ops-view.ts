@@ -96,6 +96,17 @@ export function companyOps(companyId: string) {
         error: entry.error,
         at: entry.at,
       })),
+    meters: file.meters
+      .filter((meter) => meter.companyId === companyId)
+      .map((meter) => {
+        const latest = file.meterReadings.filter((reading) => reading.meterId === meter.id).at(-1);
+        return {
+          objectId: meter.objectId,
+          name: meter.name,
+          value: latest ? String(latest.value).replace(".", ",") : "—",
+          unit: meter.unit,
+        };
+      }),
     turns: file.turns
       .filter((turn) => turn.companyId === companyId)
       .map((turn) => ({
