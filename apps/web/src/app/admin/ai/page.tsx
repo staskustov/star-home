@@ -1,5 +1,9 @@
-import { AdminSection } from "@/components/admin/AdminSection";
+import { AiDesk } from "@/components/admin/OpsDesk";
+import { requireAdminContext } from "@/server/access";
+import { companyOps } from "@/server/ops-view";
 
-export default function AdminAiPage() {
-  return <AdminSection title="AI" text="Запросы жителей проходят через проверку прав и подтверждение." />;
+export default async function AdminAiPage() {
+  const admin = await requireAdminContext();
+  const ops = companyOps(admin.objects[0]?.companyId ?? "");
+  return <AiDesk turns={ops.turns} />;
 }

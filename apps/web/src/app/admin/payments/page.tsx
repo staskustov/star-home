@@ -1,5 +1,9 @@
-import { AdminSection } from "@/components/admin/AdminSection";
+import { PaymentDesk } from "@/components/admin/OpsDesk";
+import { requireAdminContext } from "@/server/access";
+import { companyOps } from "@/server/ops-view";
 
-export default function PaymentsPage() {
-  return <AdminSection title="Платежи" text="Счета и оплата по выбранному объекту." />;
+export default async function PaymentsPage() {
+  const admin = await requireAdminContext();
+  const ops = companyOps(admin.objects[0]?.companyId ?? "");
+  return <PaymentDesk invoices={ops.invoices} />;
 }

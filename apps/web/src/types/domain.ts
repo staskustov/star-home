@@ -124,7 +124,7 @@ export type AccessEvent = {
   id: string;
   time: string;
   title: string;
-  result: "SUCCESS" | "DENIED";
+  result: "SUCCESS" | "DENIED" | "UNCONFIRMED";
 };
 
 export type SystemState = {

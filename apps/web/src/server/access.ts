@@ -10,6 +10,8 @@ import {
   isAdminRole,
   placesFor,
 } from "@/server/directory";
+import { homeSignals } from "@/server/ops-store";
+import { residentNotices } from "@/server/ops-view";
 import { destinationFor } from "@/server/routing";
 import { readSession } from "@/server/session";
 import type { AdminObjectSnapshot, ResidentHome } from "@/types/domain";
@@ -24,7 +26,14 @@ export async function requireHome(): Promise<ResidentHome> {
   if (!user || !membership) redirect(destinationFor(session.userId, null));
   const home = homeFor(user, membership);
   if (!home) redirect(destinationFor(session.userId, null));
-  return home;
+  const signals = homeSignals(home.unit.id, home.object.id);
+  return {
+    ...home,
+    climate: signals.climate ?? home.climate,
+    visitor: signals.visitor,
+    balance: signals.balance,
+    todayEvent: signals.today ?? home.todayEvent,
+  };
 }
 
 export async function requirePlaces(): Promise<{ name: string; places: { membershipId: string; title: string; meta: string }[] }> {
@@ -61,6 +70,7 @@ export async function profileView(): Promise<{
   place: string | null;
   choosePlaces: boolean;
   adminMembershipId: string | null;
+  notices: { id: string; title: string; body: string; at: string }[];
 }> {
   const session = await readSession();
   if (!session) redirect("/");
@@ -74,5 +84,6 @@ export async function profileView(): Promise<{
     place: home ? `${home.object.name} · ${home.unit.name}` : null,
     choosePlaces: homeMemberships(session.userId).length > 1,
     adminMembershipId: admin?.id ?? null,
+    notices: residentNotices(session.userId),
   };
 }

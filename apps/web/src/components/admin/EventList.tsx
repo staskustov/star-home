@@ -15,8 +15,8 @@ export function EventList({ events }: { events: AccessEvent[] }) {
                 <p className="text-[15px] text-ink">{event.title}</p>
                 <p className="text-sm text-muted">{event.time}</p>
               </div>
-              <StatusBadge tone={event.result === "SUCCESS" ? "success" : "danger"}>
-                {event.result === "SUCCESS" ? "Разрешено" : "Отказ"}
+              <StatusBadge tone={event.result === "SUCCESS" ? "success" : event.result === "UNCONFIRMED" ? "warning" : "danger"}>
+                {event.result === "SUCCESS" ? "Разрешено" : event.result === "UNCONFIRMED" ? "Не подтверждено" : "Отказ"}
               </StatusBadge>
             </li>
           ))}

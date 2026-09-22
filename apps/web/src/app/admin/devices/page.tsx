@@ -1,5 +1,9 @@
-import { AdminSection } from "@/components/admin/AdminSection";
+import { DeviceDesk } from "@/components/admin/OpsDesk";
+import { requireAdminContext } from "@/server/access";
+import { companyOps } from "@/server/ops-view";
 
-export default function DevicesPage() {
-  return <AdminSection title="Устройства" text="Освещение, климат, доступ и датчики выбранного объекта." />;
+export default async function DevicesPage() {
+  const admin = await requireAdminContext();
+  const ops = companyOps(admin.objects[0]?.companyId ?? "");
+  return <DeviceDesk devices={ops.devices} />;
 }

@@ -39,12 +39,21 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
     router.refresh();
   }
 
-  function onAction(id: string) {
+  async function onAction(id: string) {
     if (id === "guests") {
       router.push("/access");
       return;
     }
-    setNotice(unconfirmed);
+    const path = id === "open-gate" ? "/api/access/gate" : id === "security" ? "/api/security/call" : id === "pay" ? "/api/payments/pay" : "";
+    if (!path) {
+      setNotice(unconfirmed);
+      return;
+    }
+    setNotice(null);
+    const response = await fetch(path, { method: "POST" });
+    const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+    setNotice(payload?.message ?? unconfirmed);
+    if (response.ok) router.refresh();
   }
 
   if (!current) return null;

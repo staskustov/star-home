@@ -7,6 +7,18 @@ export default async function ProfilePage() {
     <section>
       <h1 className="text-[32px] tracking-[-0.03em] text-ink">{profile.name}</h1>
       {profile.place ? <p className="mt-3 text-[17px] text-graphite">{profile.place}</p> : null}
+      {profile.notices.length > 0 ? (
+        <ul className="mt-8 divide-y divide-line rounded-[20px] border border-line bg-surface">
+          {profile.notices.map((notice) => (
+            <li key={notice.id} className="px-5 py-4">
+              <p className="text-[16px] text-ink">{notice.title}</p>
+              <p className="text-sm text-muted">
+                {notice.body} · {notice.at}
+              </p>
+            </li>
+          ))}
+        </ul>
+      ) : null}
       {profile.choosePlaces ? (
         <Link href="/my-objects" className="mt-8 block text-[15px] text-ink">
           Мои объекты

@@ -2,6 +2,7 @@ import { adminDashboard } from "@/mocks/admin-dashboard";
 import { residentHome } from "@/mocks/resident-home";
 import { findBuilding, findCompany, findObject, findUnit, objectsOf, structureCounts } from "@/server/catalog-store";
 import { modeForUnit, modesForObject } from "@/server/life-mode-store";
+import { alarmsForObject, eventsForObject, passesForObject, requestsForObject } from "@/server/ops-store";
 import { listMemberships, listUsers } from "@/server/people-store";
 import type { AdminObjectSnapshot, Membership, ResidentHome, Role } from "@/types/domain";
 
@@ -158,10 +159,15 @@ export function adminObjectsFor(membership: Membership): AdminObjectSnapshot[] {
       buildings: counts.buildings,
       units: counts.units,
       residents: residentCount(object.id),
-      visitors: stats?.visitors ?? 0,
-      requests: stats?.requests ?? 0,
-      alarms: stats?.alarms ?? 0,
-      accessEvents: stats?.accessEvents ?? [],
+      visitors: passesForObject(object.id).length,
+      requests: requestsForObject(object.id).filter((request) => request.status !== "DONE").length,
+      alarms: alarmsForObject(object.id).filter((alarm) => alarm.status === "OPEN").length,
+      accessEvents: eventsForObject(object.id).slice(0, 6).map((event) => ({
+        id: event.id,
+        time: event.time,
+        title: event.title,
+        result: event.result,
+      })),
       systems: stats?.systems ?? [],
     };
   });
