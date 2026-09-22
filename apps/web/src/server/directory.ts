@@ -1,0 +1,172 @@
+import { adminDashboard } from "@/mocks/admin-dashboard";
+import { residentHome } from "@/mocks/resident-home";
+import { findBuilding, findCompany, findObject, findUnit, objectsOf, structureCounts } from "@/server/catalog-store";
+import { modeForUnit, modesForObject } from "@/server/life-mode-store";
+import { listMemberships, listUsers } from "@/server/people-store";
+import type { AdminObjectSnapshot, Membership, ResidentHome, Role } from "@/types/domain";
+
+export type DirectoryUser = {
+  id: string;
+  login: string;
+  name: string;
+  passwordHash: string;
+};
+
+function users(): DirectoryUser[] {
+  return listUsers();
+}
+
+function memberships(): Membership[] {
+  return listMemberships();
+}
+
+const parkHome: ResidentHome = {
+  ...residentHome,
+  residentName: "",
+  object: {
+    id: "obj_park",
+    companyId: "cmp_star",
+    name: "ЖК Парк Лайт",
+    type: "RESIDENTIAL_COMPLEX",
+    address: "Москва",
+  },
+  unit: {
+    id: "unit_84",
+    objectId: "obj_park",
+    buildingId: "bld_2",
+    name: "Квартира №84",
+    number: "84",
+    type: "APARTMENT",
+  },
+  climate: { temperatureC: 21.1, humidityPercent: 41 },
+  visitor: { title: "Гость", detail: "Завтра, корпус 2" },
+  balance: { amount: 8600, currency: "RUB" },
+  todayEvent: { title: "Событие", detail: "Пропуск на корпус 2" },
+};
+
+const homesByUnit: Record<string, ResidentHome> = {
+  unit_24: residentHome,
+  unit_84: parkHome,
+};
+
+const adminRoles = new Set<Role>(["SUPER_ADMIN", "COMPANY_ADMIN", "OBJECT_ADMIN", "MANAGER"]);
+
+export function findUserByLogin(login: string): DirectoryUser | undefined {
+  const key = login.trim().toLowerCase();
+  return users().find((user) => user.login === key);
+}
+
+export function findUserById(userId: string): DirectoryUser | undefined {
+  return users().find((user) => user.id === userId);
+}
+
+export function membershipsOf(userId: string): Membership[] {
+  return memberships().filter((membership) => membership.userId === userId);
+}
+
+export function findMembership(userId: string, membershipId: string): Membership | undefined {
+  return membershipsOf(userId).find((membership) => membership.id === membershipId);
+}
+
+export function isAdminRole(role: Role): boolean {
+  return adminRoles.has(role);
+}
+
+export function homeMemberships(userId: string): Membership[] {
+  return membershipsOf(userId).filter((membership) => membership.role === "RESIDENT" && membership.unitId);
+}
+
+export function adminMemberships(userId: string): Membership[] {
+  return membershipsOf(userId).filter((membership) => isAdminRole(membership.role));
+}
+
+export function objectHasAssignments(objectId: string, unitIds: readonly string[]): boolean {
+  const units = new Set(unitIds);
+  return memberships().some(
+    (membership) => membership.objectId === objectId || (membership.unitId !== null && units.has(membership.unitId)),
+  );
+}
+
+export function unitHasAssignment(unitId: string): boolean {
+  return memberships().some((membership) => membership.unitId === unitId);
+}
+
+export function residentCount(objectId: string): number {
+  return memberships().filter((membership) => membership.role === "RESIDENT" && membership.objectId === objectId).length;
+}
+
+export function homeFor(user: DirectoryUser, membership: Membership): ResidentHome | null {
+  if (!membership.unitId) return null;
+  const unit = findUnit(membership.unitId);
+  const object = unit ? findObject(unit.objectId) : undefined;
+  const known = homesByUnit[membership.unitId];
+  if (!unit || !object || object.companyId !== membership.companyId) return null;
+  const company = findCompany(object.companyId);
+  const home = known ?? {
+    ...residentHome,
+    climate: null,
+    visitor: null,
+    balance: null,
+    todayEvent: null,
+  };
+  return {
+    ...home,
+    residentName: user.name,
+    company: { id: object.companyId, name: company?.name ?? home.company.name },
+    object: {
+      id: object.id,
+      companyId: object.companyId,
+      name: object.name,
+      type: object.type,
+      address: object.address,
+    },
+    unit: {
+      id: unit.id,
+      objectId: unit.objectId,
+      buildingId: unit.buildingId,
+      name: unit.name,
+      number: unit.number,
+      type: unit.type,
+    },
+    lifeModes: modesForObject(object.id),
+    activeLifeMode: modeForUnit(unit.id),
+  };
+}
+
+export function placesFor(userId: string): { membershipId: string; title: string; meta: string }[] {
+  const user = findUserById(userId);
+  if (!user) return [];
+  return homeMemberships(userId).flatMap((membership) => {
+    const home = homeFor(user, membership);
+    if (!home) return [];
+    const building = home.unit.buildingId ? findBuilding(home.unit.buildingId) : undefined;
+    const meta = building ? `${home.object.name} · ${building.name}` : home.object.name;
+    return [{ membershipId: membership.id, title: home.unit.name, meta }];
+  });
+}
+
+export function adminObjectsFor(membership: Membership): AdminObjectSnapshot[] {
+  const limitedToObject = membership.role === "OBJECT_ADMIN" || membership.role === "MANAGER" ? membership.objectId : null;
+  return objectsOf(membership.companyId, limitedToObject).map((object) => {
+    const counts = structureCounts(object.id, object.type);
+    const stats = adminDashboard.objects.find((item) => item.id === object.id);
+    return {
+      id: object.id,
+      companyId: object.companyId,
+      name: object.name,
+      type: object.type,
+      buildings: counts.buildings,
+      units: counts.units,
+      residents: residentCount(object.id),
+      visitors: stats?.visitors ?? 0,
+      requests: stats?.requests ?? 0,
+      alarms: stats?.alarms ?? 0,
+      accessEvents: stats?.accessEvents ?? [],
+      systems: stats?.systems ?? [],
+    };
+  });
+}
+
+export function companyName(companyId: string): string {
+  return findCompany(companyId)?.name ?? "";
+}

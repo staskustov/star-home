@@ -1,4 +1,4 @@
-import type { ObjectType } from "@/types/domain";
+import type { ObjectType, Unit } from "@/types/domain";
 import { plural } from "@/lib/format";
 
 type Forms = readonly [string, string, string];
@@ -8,6 +8,8 @@ export type ObjectPresentation = {
   usesBuildings: boolean;
   unitForms: Forms;
   buildingForms: Forms | null;
+  unitAction: string;
+  buildingAction: string | null;
   structureHint: string;
 };
 
@@ -17,6 +19,8 @@ export const objectPresentation: Record<ObjectType, ObjectPresentation> = {
     usesBuildings: false,
     unitForms: ["дом", "дома", "домов"],
     buildingForms: null,
+    unitAction: "дом",
+    buildingAction: null,
     structureHint: "Дома",
   },
   RESIDENTIAL_COMPLEX: {
@@ -24,6 +28,8 @@ export const objectPresentation: Record<ObjectType, ObjectPresentation> = {
     usesBuildings: true,
     unitForms: ["квартира", "квартиры", "квартир"],
     buildingForms: ["корпус", "корпуса", "корпусов"],
+    unitAction: "квартиру",
+    buildingAction: "корпус",
     structureHint: "Корпуса и квартиры",
   },
   APARTMENT_COMPLEX: {
@@ -31,6 +37,8 @@ export const objectPresentation: Record<ObjectType, ObjectPresentation> = {
     usesBuildings: true,
     unitForms: ["апартамент", "апартамента", "апартаментов"],
     buildingForms: ["корпус", "корпуса", "корпусов"],
+    unitAction: "апартамент",
+    buildingAction: "корпус",
     structureHint: "Корпуса и апартаменты",
   },
   APARTMENT_BUILDING: {
@@ -38,6 +46,8 @@ export const objectPresentation: Record<ObjectType, ObjectPresentation> = {
     usesBuildings: false,
     unitForms: ["квартира", "квартиры", "квартир"],
     buildingForms: null,
+    unitAction: "квартиру",
+    buildingAction: null,
     structureHint: "Квартиры",
   },
   MULTI_FAMILY_BUILDING: {
@@ -45,6 +55,8 @@ export const objectPresentation: Record<ObjectType, ObjectPresentation> = {
     usesBuildings: false,
     unitForms: ["помещение", "помещения", "помещений"],
     buildingForms: null,
+    unitAction: "помещение",
+    buildingAction: null,
     structureHint: "Помещения",
   },
   CUSTOM: {
@@ -52,9 +64,19 @@ export const objectPresentation: Record<ObjectType, ObjectPresentation> = {
     usesBuildings: true,
     unitForms: ["единица", "единицы", "единиц"],
     buildingForms: ["здание", "здания", "зданий"],
+    unitAction: "единицу",
+    buildingAction: "здание",
     structureHint: "Здания и единицы",
   },
 };
+
+export function unitTypeFor(type: ObjectType): Unit["type"] {
+  if (type === "COTTAGE_COMMUNITY") return "HOUSE";
+  if (type === "APARTMENT_COMPLEX") return "APARTMENT_UNIT";
+  if (type === "MULTI_FAMILY_BUILDING") return "ROOM";
+  if (type === "CUSTOM") return "CUSTOM";
+  return "APARTMENT";
+}
 
 export function structureLine(type: ObjectType, buildings: number | null, units: number): string {
   const presentation = objectPresentation[type];

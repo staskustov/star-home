@@ -1,14 +1,11 @@
 import { AdminFrame } from "@/components/admin/AdminFrame";
 import { AdminPreviewProvider } from "@/components/admin/AdminPreview";
-import { adminDashboard } from "@/mocks/admin-dashboard";
+import { requireAdminContext } from "@/server/access";
 
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
+export default async function AdminLayout({ children }: { children: React.ReactNode }) {
+  const admin = await requireAdminContext();
   return (
-    <AdminPreviewProvider
-      companyName={adminDashboard.company.name}
-      actorLabel={adminDashboard.actorLabel}
-      initialObjects={adminDashboard.objects}
-    >
+    <AdminPreviewProvider companyName={admin.companyName} actorLabel={admin.actorLabel} initialObjects={admin.objects}>
       <AdminFrame>{children}</AdminFrame>
     </AdminPreviewProvider>
   );

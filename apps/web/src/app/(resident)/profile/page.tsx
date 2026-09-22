@@ -1,18 +1,33 @@
 import Link from "next/link";
-import { residentHome } from "@/mocks/resident-home";
+import { profileView } from "@/server/access";
 
-export default function ProfilePage() {
+export default async function ProfilePage() {
+  const profile = await profileView();
   return (
     <section>
-      <h1 className="text-[32px] tracking-[-0.03em] text-ink">{residentHome.residentName}</h1>
-      <p className="mt-3 text-[17px] text-graphite">{residentHome.object.name}</p>
-      <p className="mt-1 text-[15px] text-muted">{residentHome.unit.name}</p>
-      <Link
-        href="/"
-        className="mt-10 inline-flex h-12 items-center rounded-[14px] border border-line bg-surface px-5 text-[15px] text-ink"
-      >
-        Выйти
-      </Link>
+      <h1 className="text-[32px] tracking-[-0.03em] text-ink">{profile.name}</h1>
+      {profile.place ? <p className="mt-3 text-[17px] text-graphite">{profile.place}</p> : null}
+      {profile.choosePlaces ? (
+        <Link href="/my-objects" className="mt-8 block text-[15px] text-ink">
+          Мои объекты
+        </Link>
+      ) : null}
+      {profile.adminMembershipId ? (
+        <form action="/api/session/membership" method="post" className="mt-4">
+          <input type="hidden" name="membershipId" value={profile.adminMembershipId} />
+          <button type="submit" className="text-[15px] text-ink">
+            Администрирование
+          </button>
+        </form>
+      ) : null}
+      <form action="/api/auth/logout" method="post">
+        <button
+          type="submit"
+          className="mt-10 inline-flex h-12 items-center rounded-[14px] border border-line bg-surface px-5 text-[15px] text-ink"
+        >
+          Выйти
+        </button>
+      </form>
     </section>
   );
 }

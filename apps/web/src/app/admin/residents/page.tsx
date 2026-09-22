@@ -1,5 +1,10 @@
-import { AdminSection } from "@/components/admin/AdminSection";
+import { notFound } from "next/navigation";
+import { ResidentsPanel } from "@/components/admin/ResidentsPanel";
+import { residentBoard, residentsActor } from "@/server/residents";
 
-export default function ResidentsPage() {
-  return <AdminSection title="Жители" text="Люди выбранного объекта и их дома." />;
+export default async function ResidentsPage() {
+  const actor = await residentsActor();
+  if (!actor.ok) notFound();
+  const board = residentBoard(actor.value);
+  return <ResidentsPanel people={board.people} objects={board.objects} />;
 }

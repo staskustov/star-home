@@ -13,7 +13,30 @@ export const lifeModes = ["HOME", "WORK", "VACATION"] as const;
 
 export type LifeMode = (typeof lifeModes)[number];
 
+export const roles = [
+  "SUPER_ADMIN",
+  "COMPANY_ADMIN",
+  "OBJECT_ADMIN",
+  "MANAGER",
+  "SECURITY",
+  "SERVICE_OPERATOR",
+  "RESIDENT",
+  "FAMILY_MEMBER",
+  "GUEST",
+] as const;
+
+export type Role = (typeof roles)[number];
+
 export type Tone = "success" | "warning" | "danger" | "info";
+
+export type Membership = {
+  id: string;
+  userId: string;
+  companyId: string;
+  role: Role;
+  objectId: string | null;
+  unitId: string | null;
+};
 
 export type Company = {
   id: string;
@@ -37,6 +60,15 @@ export type Unit = {
   type: "HOUSE" | "APARTMENT" | "APARTMENT_UNIT" | "TOWNHOUSE" | "ROOM" | "PARKING" | "CUSTOM";
 };
 
+export const lifeModeChecks = [
+  { id: "leak", label: "Протечки" },
+  { id: "temperature", label: "Температура" },
+  { id: "power", label: "Электричество" },
+  { id: "access", label: "Доступ" },
+] as const;
+
+export type LifeModeCheck = (typeof lifeModeChecks)[number]["id"];
+
 export type LifeModeSetting = {
   mode: LifeMode;
   label: string;
@@ -44,6 +76,11 @@ export type LifeModeSetting = {
   detail: string;
   securityLabel: string;
   securityTone: Tone;
+  climate: string;
+  lighting: string;
+  security: string;
+  notifications: string;
+  checks: LifeModeCheck[];
 };
 
 export type QuickAction = {
@@ -71,14 +108,14 @@ export type ResidentHome = {
   climate: {
     temperatureC: number;
     humidityPercent: number;
-  };
+  } | null;
   quickActions: QuickAction[];
-  visitor: VisitorPreview;
-  balance: Money;
+  visitor: VisitorPreview | null;
+  balance: Money | null;
   todayEvent: {
     title: string;
     detail: string;
-  };
+  } | null;
   serviceCategories: string[];
   aiPrompt: string;
 };

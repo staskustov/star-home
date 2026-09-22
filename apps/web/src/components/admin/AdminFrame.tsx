@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { AdminSidebar } from "@/components/admin/AdminSidebar";
 import { useAdminPreview } from "@/components/admin/AdminPreview";
 import { Icon } from "@/components/icons";
@@ -11,6 +11,11 @@ import { AppShell } from "@/components/shell/AppShell";
 export function AdminFrame({ children }: { children: React.ReactNode }) {
   const preview = useAdminPreview();
   const pathname = usePathname();
+  const router = useRouter();
+  function selectObject(id: string) {
+    preview.select(id);
+    if (/^\/admin\/objects\/[^/]+$/.test(pathname)) router.push(`/admin/objects/${id}`);
+  }
   const [menuPath, setMenuPath] = useState<string | null>(null);
   const menuOpen = menuPath === pathname;
 
@@ -38,11 +43,11 @@ export function AdminFrame({ children }: { children: React.ReactNode }) {
             <p className="truncate text-[17px] text-ink">{preview.companyName}</p>
           </div>
           <div className="hidden min-w-0 sm:block">
-            <ObjectSwitcher objects={preview.objects} value={preview.selectedId} onChange={preview.select} />
+            <ObjectSwitcher objects={preview.objects} value={preview.selectedId} onChange={selectObject} />
           </div>
         </div>
         <div className="mt-3 sm:hidden">
-          <ObjectSwitcher objects={preview.objects} value={preview.selectedId} onChange={preview.select} />
+          <ObjectSwitcher objects={preview.objects} value={preview.selectedId} onChange={selectObject} />
         </div>
       </header>
       <div className="px-5 py-6 lg:px-10 lg:py-8">{children}</div>

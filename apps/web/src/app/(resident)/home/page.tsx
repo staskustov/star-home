@@ -1,6 +1,7 @@
 import { ResidentHomeScreen } from "@/components/home/ResidentHomeScreen";
-import { residentHome } from "@/mocks/resident-home";
+import { requireHome } from "@/server/access";
 
-export default function ResidentHomePage() {
-  return <ResidentHomeScreen data={residentHome} />;
+export default async function ResidentHomePage() {
+  const home = await requireHome();
+  return <ResidentHomeScreen data={home} />;
 }

@@ -22,6 +22,23 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
   const current = data.lifeModes.find((item) => item.mode === mode) ?? data.lifeModes[0];
   const greeting = greetingForHour(new Date().getHours(), data.residentName);
 
+  async function changeMode(next: LifeMode) {
+    const previous = mode;
+    setMode(next);
+    setNotice(null);
+    const response = await fetch("/api/life-mode", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ mode: next }),
+    });
+    if (!response.ok) {
+      setMode(previous);
+      setNotice("Не удалось сохранить режим.");
+      return;
+    }
+    router.refresh();
+  }
+
   function onAction(id: string) {
     if (id === "guests") {
       router.push("/access");
@@ -35,14 +52,14 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
   return (
     <div className="space-y-8">
       <Header mark="STAR HOME" title={greeting} meta={`${data.object.name} · ${data.unit.name}`} />
-      <LifeModeSwitcher modes={data.lifeModes} value={current.mode} onChange={setMode} />
+      <LifeModeSwitcher modes={data.lifeModes} value={current.mode} onChange={changeMode} />
       <HomeStatus
         unitName={data.unit.name}
         summary={current.summary}
         tone={current.securityTone}
         detail={current.detail}
-        temperatureC={data.climate.temperatureC}
-        humidityPercent={data.climate.humidityPercent}
+        temperatureC={data.climate?.temperatureC ?? null}
+        humidityPercent={data.climate?.humidityPercent ?? null}
       />
       <SecurityStatus label="Защита" state={current.securityLabel} tone={current.securityTone} />
       <section>
@@ -56,14 +73,20 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
       </section>
       <section>
         <h2 className="mb-3 text-sm text-muted">Сегодня</h2>
-        <div className="space-y-3">
-          <VisitorCard title={data.visitor.title} detail={data.visitor.detail} />
-          <PaymentCard title="Счёт" amount={data.balance.amount} currency={data.balance.currency} />
-          <article className="rounded-[20px] border border-line bg-surface px-5 py-4">
-            <h3 className="text-[17px] text-ink">{data.todayEvent.title}</h3>
-            <p className="mt-1 text-sm text-muted">{data.todayEvent.detail}</p>
-          </article>
-        </div>
+        {data.visitor || data.balance || data.todayEvent ? (
+          <div className="space-y-3">
+            {data.visitor ? <VisitorCard title={data.visitor.title} detail={data.visitor.detail} /> : null}
+            {data.balance ? <PaymentCard title="Счёт" amount={data.balance.amount} currency={data.balance.currency} /> : null}
+            {data.todayEvent ? (
+              <article className="rounded-[20px] border border-line bg-surface px-5 py-4">
+                <h3 className="text-[17px] text-ink">{data.todayEvent.title}</h3>
+                <p className="mt-1 text-sm text-muted">{data.todayEvent.detail}</p>
+              </article>
+            ) : null}
+          </div>
+        ) : (
+          <p className="text-[15px] text-muted">Пока тихо.</p>
+        )}
       </section>
       <AIBar prompt={data.aiPrompt} />
     </div>

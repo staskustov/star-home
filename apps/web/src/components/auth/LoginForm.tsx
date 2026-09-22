@@ -8,7 +8,7 @@ export function LoginForm() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
 
-  function onSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const login = String(form.get("login") ?? "").trim();
@@ -18,7 +18,19 @@ export function LoginForm() {
       return;
     }
     setError(null);
-    router.push("/home");
+    const response = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ login, password }),
+    });
+    const body = (await response.json().catch(() => null)) as { message?: string; redirectTo?: string } | null;
+    const redirectTo = body?.redirectTo;
+    if (!response.ok || !redirectTo?.startsWith("/") || redirectTo.startsWith("//")) {
+      setError(body?.message ?? "Неверный логин или пароль");
+      return;
+    }
+    router.push(redirectTo);
+    router.refresh();
   }
 
   return (

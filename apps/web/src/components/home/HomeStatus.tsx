@@ -14,8 +14,8 @@ export function HomeStatus({
   summary: string;
   tone: Tone;
   detail: string;
-  temperatureC: number;
-  humidityPercent: number;
+  temperatureC: number | null;
+  humidityPercent: number | null;
 }) {
   return (
     <section className="rounded-[20px] border border-line bg-surface px-5 py-5">
@@ -24,16 +24,18 @@ export function HomeStatus({
         <StatusBadge tone={tone}>{summary}</StatusBadge>
         <p className="mt-2 text-sm text-muted">{detail}</p>
       </div>
-      <dl className="mt-6 grid grid-cols-2 gap-4">
-        <div>
-          <dt className="text-sm text-muted">Температура</dt>
-          <dd className="mt-1 text-[32px] leading-none tracking-[-0.04em] text-ink">{formatTemperature(temperatureC)}</dd>
-        </div>
-        <div>
-          <dt className="text-sm text-muted">Влажность</dt>
-          <dd className="mt-1 text-[32px] leading-none tracking-[-0.04em] text-ink">{formatHumidity(humidityPercent)}</dd>
-        </div>
-      </dl>
+      {temperatureC !== null && humidityPercent !== null ? (
+        <dl className="mt-6 grid grid-cols-2 gap-4">
+          <div>
+            <dt className="text-sm text-muted">Температура</dt>
+            <dd className="mt-1 text-[32px] leading-none tracking-[-0.04em] text-ink">{formatTemperature(temperatureC)}</dd>
+          </div>
+          <div>
+            <dt className="text-sm text-muted">Влажность</dt>
+            <dd className="mt-1 text-[32px] leading-none tracking-[-0.04em] text-ink">{formatHumidity(humidityPercent)}</dd>
+          </div>
+        </dl>
+      ) : null}
     </section>
   );
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { AddObjectButton } from "@/components/admin/ObjectDraftSheet";
 import { AdminStats } from "@/components/admin/AdminStats";
 import { useAdminPreview } from "@/components/admin/AdminPreview";
@@ -9,6 +10,17 @@ import { objectPresentation } from "@/lib/object-presentation";
 
 export function AdminOverview() {
   const { selected } = useAdminPreview();
+  if (!selected) {
+    return (
+      <div>
+        <h1 className="text-[36px] leading-none tracking-[-0.04em] text-ink">Объекты</h1>
+        <p className="mt-4 text-[17px] text-muted">В компании пока нет объектов.</p>
+        <div className="mt-6">
+          <AddObjectButton />
+        </div>
+      </div>
+    );
+  }
   const presentation = objectPresentation[selected.type];
 
   return (
@@ -18,7 +30,15 @@ export function AdminOverview() {
           <h1 className="text-[36px] leading-none tracking-[-0.04em] text-ink">{selected.name}</h1>
           <p className="mt-3 text-[15px] text-muted">{presentation.label}</p>
         </div>
-        <AddObjectButton />
+        <div className="flex flex-wrap gap-3">
+          <Link
+            href={`/admin/objects/${selected.id}`}
+            className="inline-flex h-12 items-center rounded-[14px] border border-line px-5 text-[15px] text-ink"
+          >
+            Структура
+          </Link>
+          <AddObjectButton />
+        </div>
       </div>
       <AdminStats object={selected} />
       <div className="grid gap-4 lg:grid-cols-2">
