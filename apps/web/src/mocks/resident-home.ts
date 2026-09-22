@@ -1,0 +1,82 @@
+import type { ResidentHome } from "@/types/domain";
+
+export const residentHome: ResidentHome = {
+  company: { id: "cmp_star", name: "Star" },
+  object: {
+    id: "obj_siyanie",
+    companyId: "cmp_star",
+    name: "КП Сияние",
+    type: "COTTAGE_COMMUNITY",
+    address: "Московская область",
+  },
+  unit: {
+    id: "unit_24",
+    objectId: "obj_siyanie",
+    buildingId: null,
+    name: "Дом №24",
+    number: "24",
+    type: "HOUSE",
+  },
+  residentName: "Станислав",
+  activeLifeMode: "HOME",
+  lifeModes: [
+    {
+      mode: "HOME",
+      label: "Дома",
+      summary: "Всё в норме",
+      detail: "Комфортный режим",
+      securityLabel: "Активна",
+      securityTone: "success",
+    },
+    {
+      mode: "WORK",
+      label: "На работе",
+      summary: "Экономичный режим",
+      detail: "Безопасность активна. Климат и свет экономные.",
+      securityLabel: "Активна",
+      securityTone: "success",
+    },
+    {
+      mode: "VACATION",
+      label: "В отпуске",
+      summary: "Усиленная защита",
+      detail: "Экономичный климат. Контроль протечек, температуры, электричества и доступа.",
+      securityLabel: "Усилена",
+      securityTone: "info",
+    },
+  ],
+  climate: {
+    temperatureC: 22.4,
+    humidityPercent: 48,
+  },
+  quickActions: [
+    { id: "open-gate", label: "Открыть ворота" },
+    { id: "guests", label: "Гости" },
+    { id: "security", label: "Охрана" },
+    { id: "pay", label: "Оплатить" },
+  ],
+  visitor: {
+    title: "Гость",
+    detail: "Ожидается сегодня до 18:00",
+  },
+  balance: {
+    amount: 12450,
+    currency: "RUB",
+  },
+  todayEvent: {
+    title: "Событие",
+    detail: "Утренний въезд на территорию",
+  },
+  serviceCategories: [
+    "Электричество",
+    "Вода",
+    "Отопление",
+    "Уборка",
+    "Территория",
+    "Охрана",
+    "Интернет",
+    "Ремонт",
+    "Другое",
+  ],
+  aiPrompt: "Что сделать?",
+};
