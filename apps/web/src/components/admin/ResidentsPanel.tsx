@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAdminPreview } from "@/components/admin/AdminPreview";
+import { Select } from "@/components/ui/Select";
 import type { ResidentObjectChoices, ResidentRow } from "@/server/residents";
 
 export function ResidentsPanel({ people, objects }: { people: ResidentRow[]; objects: ResidentObjectChoices[] }) {
@@ -69,32 +70,23 @@ export function ResidentsPanel({ people, objects }: { people: ResidentRow[]; obj
       <h1 className="text-[36px] leading-none tracking-[-0.04em] text-ink">Жители</h1>
       <p className="mt-3 text-[15px] text-muted">{selected.name}</p>
 
-      <form onSubmit={add} className="mt-8 rounded-[20px] border border-line bg-surface p-5">
+      <form onSubmit={add} className="mt-8 panel p-5">
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Имя" value={name} onChange={setName} />
           <Field label="Логин" value={login} onChange={setLogin} autoCapitalize="none" />
           <Field label="Пароль" value={password} onChange={setPassword} type="password" />
           <label className="block">
             <span className="text-sm text-muted">Роль</span>
-            <select
-              value={role}
-              onChange={(event) => setRole(event.target.value)}
-              className="mt-2 h-[52px] w-full rounded-[14px] border border-line bg-bg px-3 text-base text-ink outline-none focus:border-accent"
-            >
+            <Select wrapClassName="mt-2" value={role} onChange={(event) => setRole(event.target.value)}>
               <option value="RESIDENT">Житель</option>
               <option value="FAMILY_MEMBER">Семья</option>
               <option value="GUEST">Гость</option>
-            </select>
+            </Select>
           </label>
           {role === "GUEST" ? <Field label="Срок пропуска" value={expiresAt} onChange={setExpiresAt} type="date" /> : null}
           <label className="block">
             <span className="text-sm text-muted">Единица</span>
-            <select
-              value={selectedUnit}
-              onChange={(event) => setUnitId(event.target.value)}
-              disabled={units.length === 0}
-              className="mt-2 h-[52px] w-full rounded-[14px] border border-line bg-bg px-3 text-base text-ink outline-none focus:border-accent"
-            >
+            <Select wrapClassName="mt-2" value={selectedUnit} onChange={(event) => setUnitId(event.target.value)} disabled={units.length === 0}>
               {groups.map((group, index) =>
                 group.label ? (
                   <optgroup key={`${group.label}-${index}`} label={group.label}>
@@ -112,14 +104,14 @@ export function ResidentsPanel({ people, objects }: { people: ResidentRow[]; obj
                   ))
                 ),
               )}
-            </select>
+            </Select>
           </label>
         </div>
         {units.length === 0 ? <p className="mt-4 text-sm text-muted">Сначала добавьте единицы в структуре.</p> : null}
         <button
           type="submit"
           disabled={units.length === 0}
-          className="mt-5 h-12 rounded-[14px] bg-accent px-5 text-[15px] text-accent-contrast disabled:opacity-40"
+          className="mt-5 btn btn-primary disabled:opacity-40"
         >
           Добавить жителя
         </button>
@@ -135,7 +127,7 @@ export function ResidentsPanel({ people, objects }: { people: ResidentRow[]; obj
       {rows.length === 0 ? (
         <p className="mt-8 text-[15px] text-muted">Жителей пока нет.</p>
       ) : (
-        <ul className="mt-8 divide-y divide-line rounded-[20px] border border-line bg-surface">
+        <ul className="mt-8 divide-y divide-line panel">
           {rows.map((person) => (
             <li key={person.membershipId} className="flex items-center justify-between gap-3 px-5 py-4">
               <div className="min-w-0">
@@ -149,7 +141,7 @@ export function ResidentsPanel({ people, objects }: { people: ResidentRow[]; obj
                 onClick={() =>
                   pendingDelete === person.membershipId ? remove(person.membershipId) : setPendingDelete(person.membershipId)
                 }
-                className="shrink-0 text-sm text-muted"
+                className={`btn btn-compact shrink-0 ${pendingDelete === person.membershipId ? "btn-danger" : "btn-secondary"}`}
               >
                 {pendingDelete === person.membershipId ? "Подтвердить" : "Убрать"}
               </button>
@@ -191,7 +183,7 @@ function Field({
         value={value}
         autoCapitalize={autoCapitalize}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-2 h-[52px] w-full rounded-[14px] border border-line bg-bg px-4 text-base text-ink outline-none focus:border-accent"
+        className="control mt-2"
       />
     </label>
   );

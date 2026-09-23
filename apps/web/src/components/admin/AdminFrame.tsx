@@ -31,16 +31,11 @@ export function AdminFrame({ children }: { children: React.ReactNode }) {
     >
       <header className="sticky top-0 z-20 border-b border-line bg-bg/95 px-5 py-4 backdrop-blur lg:px-10">
         <div className="flex items-center gap-3">
-          <button
-            type="button"
-            className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-line md:hidden"
-            aria-label="Меню"
-            onClick={() => setMenuPath(pathname)}
-          >
+          <button type="button" className="btn btn-secondary btn-icon md:hidden" aria-label="Меню" onClick={() => setMenuPath(pathname)}>
             <Icon name="menu" />
           </button>
           <div className="min-w-0 flex-1">
-            <p className="text-[11px] font-semibold tracking-[0.18em] text-accent">STAR HOME</p>
+            <p className="kicker text-accent">STAR HOME</p>
             <p className="mt-1 text-sm text-muted">{preview.actorLabel}</p>
             <p className="truncate text-[17px] text-ink">{preview.companyName}</p>
           </div>
@@ -56,8 +51,8 @@ export function AdminFrame({ children }: { children: React.ReactNode }) {
       <div className="px-5 py-6 lg:px-10 lg:py-8">{children}</div>
       {menuOpen ? (
         <div className="fixed inset-0 z-40 md:hidden">
-          <button type="button" className="absolute inset-0 bg-ink/30" aria-label="Закрыть меню" onClick={() => setMenuPath(null)} />
-          <div className="absolute inset-y-0 left-0 w-[280px] overflow-y-auto bg-surface">
+          <button type="button" className="absolute inset-0 bg-ink/40 backdrop-blur-sm" aria-label="Закрыть меню" onClick={() => setMenuPath(null)} />
+          <div className="absolute inset-y-0 left-0 w-[280px] overflow-y-auto border-r border-line bg-surface shadow-[16px_0_40px_rgba(26,26,26,0.08)]">
             <AdminSidebar />
           </div>
         </div>

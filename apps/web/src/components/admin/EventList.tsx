@@ -3,7 +3,7 @@ import type { AccessEvent } from "@/types/domain";
 
 export function EventList({ events }: { events: AccessEvent[] }) {
   return (
-    <section className="rounded-[20px] border border-line bg-surface px-5 py-5">
+    <section className="panel px-5 py-5">
       <h2 className="text-[20px] tracking-[-0.03em] text-ink">События доступа</h2>
       {events.length === 0 ? (
         <p className="mt-4 text-sm text-muted">Событий пока нет.</p>

@@ -4,7 +4,7 @@ export function ThemeToggle() {
   return (
     <button
       type="button"
-      className="theme-toggle inline-flex h-12 items-center rounded-[14px] border border-line bg-surface px-5 text-[15px] text-ink"
+      className="theme-toggle btn btn-secondary"
       onClick={() => {
         const root = document.documentElement;
         const dark = root.dataset.theme !== "dark";

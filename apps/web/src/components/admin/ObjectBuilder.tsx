@@ -75,13 +75,13 @@ export function ObjectBuilder({ tree }: { tree: CatalogTree }) {
       <h1 className="mt-3 text-[36px] leading-none tracking-[-0.04em] text-ink">{tree.object.name}</h1>
       <p className="mt-3 text-[15px] text-muted">{presentation.label}</p>
 
-      <form onSubmit={saveObject} className="mt-8 rounded-[20px] border border-line bg-surface p-5">
+      <form onSubmit={saveObject} className="mt-8 panel p-5">
         <label className="block">
           <span className="text-sm text-muted">Название</span>
           <input
             value={name}
             onChange={(event) => setName(event.target.value)}
-            className="mt-2 h-[52px] w-full rounded-[14px] border border-line bg-bg px-4 text-base text-ink outline-none focus:border-accent"
+            className="control mt-2"
           />
         </label>
         <label className="mt-4 block">
@@ -89,10 +89,10 @@ export function ObjectBuilder({ tree }: { tree: CatalogTree }) {
           <input
             value={address}
             onChange={(event) => setAddress(event.target.value)}
-            className="mt-2 h-[52px] w-full rounded-[14px] border border-line bg-bg px-4 text-base text-ink outline-none focus:border-accent"
+            className="control mt-2"
           />
         </label>
-        <button type="submit" className="mt-5 h-12 rounded-[14px] bg-accent px-5 text-[15px] text-accent-contrast">
+        <button type="submit" className="mt-5 btn btn-primary">
           Сохранить
         </button>
       </form>
@@ -138,16 +138,16 @@ export function ObjectBuilder({ tree }: { tree: CatalogTree }) {
                 buildingLabel={buildingLabel}
               />
             ))}
-            <form onSubmit={addBuilding} className="rounded-[20px] border border-line bg-surface p-5">
+            <form onSubmit={addBuilding} className="panel p-5">
               <label className="block">
                 <span className="text-sm text-muted">Название</span>
                 <input
                   value={buildingName}
                   onChange={(event) => setBuildingName(event.target.value)}
-                  className="mt-2 h-[52px] w-full rounded-[14px] border border-line bg-bg px-4 text-base text-ink outline-none focus:border-accent"
+                  className="control mt-2"
                 />
               </label>
-              <button type="submit" className="mt-4 h-12 rounded-[14px] bg-accent px-5 text-[15px] text-accent-contrast">
+              <button type="submit" className="mt-4 btn btn-primary">
                 Добавить {buildingLabel}
               </button>
             </form>
@@ -170,7 +170,7 @@ export function ObjectBuilder({ tree }: { tree: CatalogTree }) {
                 ? remove(`/api/catalog/objects/${tree.object.id}`)
                 : setPendingDelete(tree.object.id)
             }
-            className="h-12 rounded-[14px] border border-line px-5 text-[15px] text-danger"
+            className="btn btn-danger"
           >
             {pendingDelete === tree.object.id ? "Подтвердить удаление" : "Удалить объект"}
           </button>
@@ -205,7 +205,7 @@ function UnitFilter({
       <input
         value={query}
         onChange={(event) => onQuery(event.target.value)}
-        className="mt-2 h-[52px] w-full rounded-[14px] border border-line bg-surface px-4 text-base text-ink outline-none focus:border-accent"
+        className="control mt-2"
       />
     </label>
   );
@@ -223,16 +223,16 @@ function UnitForm({
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
 }) {
   return (
-    <form onSubmit={onSubmit} className="rounded-[20px] border border-line bg-surface p-5">
+    <form onSubmit={onSubmit} className="panel p-5">
       <label className="block">
         <span className="text-sm text-muted">Название</span>
         <input
           value={value}
           onChange={(event) => onChange(event.target.value)}
-          className="mt-2 h-[52px] w-full rounded-[14px] border border-line bg-bg px-4 text-base text-ink outline-none focus:border-accent"
+          className="control mt-2"
         />
       </label>
-      <button type="submit" className="mt-4 h-12 rounded-[14px] bg-accent px-5 text-[15px] text-accent-contrast">
+      <button type="submit" className="mt-4 btn btn-primary">
         {label}
       </button>
     </form>
@@ -252,7 +252,7 @@ function UnitList({
 }) {
   if (units.length === 0) return <p className="mt-4 text-sm text-muted">Пока пусто.</p>;
   return (
-    <ul className="mt-4 divide-y divide-line rounded-[20px] border border-line bg-surface">
+    <ul className="mt-4 divide-y divide-line panel">
       {units.map((unit) => (
         <li key={unit.id} className="flex items-center justify-between gap-3 px-5 py-3">
           <span className="min-w-0 truncate text-[15px] text-ink">{unit.name}</span>
@@ -260,7 +260,7 @@ function UnitList({
             <button
               type="button"
               onClick={() => (pendingDelete === unit.id ? onRemove(unit.id) : onAsk(unit.id))}
-              className="shrink-0 text-sm text-muted"
+              className={`btn btn-compact shrink-0 ${pendingDelete === unit.id ? "btn-danger" : "btn-secondary"}`}
             >
               {pendingDelete === unit.id ? "Подтвердить" : "Удалить"}
             </button>
@@ -303,13 +303,13 @@ function BuildingBlock({
   const [query, setQuery] = useState("");
   const blocked = building.units.some((unit) => !unit.canDelete);
   return (
-    <section className="rounded-[20px] border border-line bg-surface p-5">
+    <section className="panel p-5">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="text-[20px] tracking-[-0.03em] text-ink">{building.name}</h3>
           <p className="mt-1 text-sm text-muted">{countLabel}</p>
         </div>
-        <button type="button" onClick={onToggle} className="shrink-0 text-sm text-graphite">
+        <button type="button" onClick={onToggle} className="btn btn-secondary btn-compact shrink-0">
           {open ? "Скрыть" : "Показать"}
         </button>
       </div>
@@ -332,7 +332,7 @@ function BuildingBlock({
         <button
           type="button"
           onClick={() => (pendingDelete === building.id ? onRemoveBuilding() : onAsk(building.id))}
-          className="mt-4 text-sm text-muted"
+          className={`btn btn-compact mt-4 ${pendingDelete === building.id ? "btn-danger" : "btn-secondary"}`}
         >
           {pendingDelete === building.id ? "Подтвердить удаление" : `Удалить ${buildingLabel}`}
         </button>

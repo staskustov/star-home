@@ -70,7 +70,7 @@ export function AccessPanel({
               <button
                 type="button"
                 onClick={() => openPoint(point.id)}
-                className="flex h-[52px] w-full items-center justify-between rounded-[14px] bg-accent px-5 text-left text-[15px] text-accent-contrast"
+                className="btn btn-primary w-full justify-between text-left"
               >
                 <span>{point.name}</span>
                 <span className="text-sm opacity-80">{point.kind}</span>
@@ -80,11 +80,11 @@ export function AccessPanel({
         </ul>
       ) : null}
       {canCreate ? (
-        <form onSubmit={add} className="mt-8 space-y-3 rounded-[20px] border border-line bg-surface p-5">
+        <form onSubmit={add} className="mt-8 space-y-3 panel p-5">
           <Field label="Гость" value={guestName} onChange={setGuestName} />
           <Field label="Срок" value={detail} onChange={setDetail} />
           <Field label="Автомобиль" value={vehicle} onChange={setVehicle} />
-          <button type="submit" className="h-12 rounded-[14px] bg-accent px-5 text-sm text-accent-contrast">
+          <button type="submit" className="btn btn-primary">
             Оформить пропуск
           </button>
           {notice ? <p className="text-sm text-muted">{notice}</p> : null}
@@ -93,7 +93,7 @@ export function AccessPanel({
         <p className="mt-8 text-[15px] text-muted">Пропуск оформляет житель.</p>
       )}
       {!canCreate && notice ? <p className="mt-3 text-sm text-muted">{notice}</p> : null}
-      <ul className="mt-6 divide-y divide-line rounded-[20px] border border-line bg-surface">
+      <ul className="mt-6 divide-y divide-line panel">
         {passes.length === 0 ? (
           <li className="px-5 py-4 text-[15px] text-muted">Гостей нет.</li>
         ) : (
@@ -108,7 +108,7 @@ export function AccessPanel({
           ))
         )}
       </ul>
-      <ul className="mt-6 divide-y divide-line rounded-[20px] border border-line bg-surface">
+      <ul className="mt-6 divide-y divide-line panel">
         {events.length === 0 ? (
           <li className="px-5 py-4 text-[15px] text-muted">История пуста.</li>
         ) : (
@@ -136,7 +136,7 @@ function Field({ label, value, onChange }: { label: string; value: string; onCha
       <input
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-2 h-12 w-full rounded-[14px] border border-line bg-bg px-4 text-base text-ink outline-none focus:border-accent"
+        className="control mt-2"
       />
     </label>
   );

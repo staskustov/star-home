@@ -55,7 +55,7 @@ export function AccessDesk({
 
   return (
     <Shell title="Доступ">
-      <button type="button" onClick={openGate} className="h-12 rounded-[14px] bg-accent px-5 text-sm text-accent-contrast">
+      <button type="button" onClick={openGate} className="btn btn-primary">
         Открыть ворота
       </button>
       {notice ? <p className="text-sm text-muted">{notice}</p> : null}
@@ -146,7 +146,7 @@ export function RequestDesk({
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <span className="text-sm text-graphite">{requestStatus[request.status] ?? request.status}</span>
               {nextStatus[request.status] ? (
-                <button type="button" onClick={() => move(request.id, nextStatus[request.status])} className="text-sm text-ink">
+                <button type="button" onClick={() => move(request.id, nextStatus[request.status])} className="btn btn-secondary btn-compact">
                   Дальше
                 </button>
               ) : null}
@@ -254,7 +254,7 @@ export function SecurityDesk({
               <p className="text-[16px] text-ink">{camera.name}</p>
               <p className="text-sm text-muted">{camera.state}</p>
             </div>
-            <button type="button" onClick={() => shot(camera.name)} className="h-12 rounded-[14px] border border-line px-4 text-sm text-ink">
+            <button type="button" onClick={() => shot(camera.name)} className="btn btn-secondary">
               Кадр
             </button>
           </li>
@@ -306,7 +306,7 @@ function List({ empty, children }: { empty: string; children: ReactNode }) {
   const list = Array.isArray(children) ? children : [children];
   const filled = list.some(Boolean);
   return (
-    <ul className="divide-y divide-line rounded-[20px] border border-line bg-surface">
+    <ul className="divide-y divide-line panel">
       {filled ? children : <li className="px-5 py-4 text-[15px] text-muted">{empty}</li>}
     </ul>
   );

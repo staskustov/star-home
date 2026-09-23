@@ -71,7 +71,7 @@ function ModeEditor({
               event.preventDefault();
               void save(mode);
             }}
-            className="rounded-[20px] border border-line bg-surface p-5"
+            className="panel p-5"
           >
             <h2 className="text-[20px] tracking-[-0.03em] text-ink">{mode.label}</h2>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
@@ -92,7 +92,7 @@ function ModeEditor({
                 value={mode.detail}
                 onChange={(event) => patch(mode.mode, { detail: event.target.value })}
                 rows={2}
-                className="mt-2 w-full rounded-[14px] border border-line bg-bg px-4 py-3 text-base text-ink outline-none focus:border-accent"
+                className="control mt-2"
               />
             </label>
             <div className="mt-4 flex flex-wrap gap-2">
@@ -104,14 +104,14 @@ function ModeEditor({
                     type="button"
                     aria-pressed={on}
                     onClick={() => toggleCheck(mode.mode, check.id)}
-                    className={`h-10 rounded-full px-4 text-sm ${on ? "bg-accent text-accent-contrast" : "border border-line text-ink"}`}
+                    className={`btn btn-compact btn-pill ${on ? "btn-primary" : "btn-secondary"}`}
                   >
                     {check.label}
                   </button>
                 );
               })}
             </div>
-            <button type="submit" className="mt-5 h-12 rounded-[14px] bg-accent px-5 text-[15px] text-accent-contrast">
+            <button type="submit" className="mt-5 btn btn-primary">
               Сохранить
             </button>
           </form>
@@ -134,7 +134,7 @@ function Field({ label, value, onChange }: { label: string; value: string; onCha
       <input
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-2 h-[52px] w-full rounded-[14px] border border-line bg-bg px-4 text-base text-ink outline-none focus:border-accent"
+        className="control mt-2"
       />
     </label>
   );

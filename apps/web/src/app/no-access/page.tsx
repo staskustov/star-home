@@ -17,7 +17,7 @@ export default async function NoAccessPage() {
           Сейчас для этого входа нет открытого дома или действующего пропуска.
         </p>
         <form action="/api/auth/logout" method="post" className="mt-8">
-          <button type="submit" className="h-12 rounded-[14px] bg-accent px-5 text-[15px] text-accent-contrast">
+          <button type="submit" className="btn btn-primary">
             Выйти
           </button>
         </form>

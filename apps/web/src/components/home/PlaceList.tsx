@@ -31,7 +31,7 @@ export function PlaceList({ places }: { places: { membershipId: string; title: s
           type="button"
           onClick={() => choose(place.membershipId)}
           disabled={pendingId !== null}
-          className="w-full rounded-[20px] border border-line bg-surface px-5 py-5 text-left"
+          className="panel w-full px-5 py-5 text-left"
         >
           <span className="block text-[22px] tracking-[-0.03em] text-ink">{place.title}</span>
           <span className="mt-1 block text-sm text-muted">{place.meta}</span>

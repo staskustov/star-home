@@ -18,7 +18,7 @@ export function HomeStatus({
   humidityPercent: number | null;
 }) {
   return (
-    <section className="rounded-[20px] border border-line bg-surface px-5 py-5">
+    <section className="panel px-5 py-5">
       <h2 className="text-[22px] tracking-[-0.03em] text-ink">{unitName}</h2>
       <div key={summary} className="fade-in mt-3">
         <StatusBadge tone={tone}>{summary}</StatusBadge>
@@ -28,11 +28,11 @@ export function HomeStatus({
         <dl className="mt-6 grid grid-cols-2 gap-4">
           <div>
             <dt className="text-sm text-muted">Температура</dt>
-            <dd className="mt-1 text-[32px] leading-none tracking-[-0.04em] text-ink">{formatTemperature(temperatureC)}</dd>
+            <dd className="mt-2 text-[40px] leading-none font-medium tracking-[-0.05em] text-ink">{formatTemperature(temperatureC)}</dd>
           </div>
           <div>
             <dt className="text-sm text-muted">Влажность</dt>
-            <dd className="mt-1 text-[32px] leading-none tracking-[-0.04em] text-ink">{formatHumidity(humidityPercent)}</dd>
+            <dd className="mt-2 text-[40px] leading-none font-medium tracking-[-0.05em] text-ink">{formatHumidity(humidityPercent)}</dd>
           </div>
         </dl>
       ) : null}

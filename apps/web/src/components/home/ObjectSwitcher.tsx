@@ -1,3 +1,5 @@
+import { Select } from "@/components/ui/Select";
+
 export function ObjectSwitcher({
   objects,
   value,
@@ -11,23 +13,19 @@ export function ObjectSwitcher({
   if (!current) return null;
 
   if (objects.length <= 1) {
-    return <p className="text-[15px] text-ink">{current.name}</p>;
+    return <p className="text-[15px] font-medium tracking-[-0.02em] text-ink">{current.name}</p>;
   }
 
   return (
     <label className="block min-w-0">
       <span className="sr-only">Объект</span>
-      <select
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="h-11 w-full min-w-0 rounded-[14px] border border-line bg-surface px-3 text-[15px] text-ink outline-none focus:border-accent sm:w-auto"
-      >
+      <Select wrapClassName="w-full sm:w-[240px]" value={value} onChange={(event) => onChange(event.target.value)}>
         {objects.map((object) => (
           <option key={object.id} value={object.id}>
             {object.name}
           </option>
         ))}
-      </select>
+      </Select>
     </label>
   );
 }

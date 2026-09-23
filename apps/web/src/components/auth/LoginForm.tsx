@@ -36,17 +36,14 @@ export function LoginForm() {
 
   return (
     <form onSubmit={onSubmit} noValidate>
-      <h1 className="text-center text-[28px] font-semibold tracking-[0.22em] text-ink sm:text-[32px]">STAR HOME</h1>
-      <div className="mt-8 flex justify-center">
-        <ThemeToggle />
-      </div>
+      <h1 className="text-center text-[28px] font-semibold tracking-[0.28em] text-ink sm:text-[32px]">STAR HOME</h1>
 
       <label className="mt-12 block">
         <span className="text-sm text-muted">Логин</span>
         <input
           name="login"
           autoComplete="username"
-          className="mt-2 h-[52px] w-full rounded-[14px] border border-line bg-surface px-4 text-base text-ink outline-none transition-colors duration-200 focus:border-accent"
+          className="control mt-2"
         />
       </label>
 
@@ -56,7 +53,7 @@ export function LoginForm() {
           name="password"
           type="password"
           autoComplete="current-password"
-          className="mt-2 h-[52px] w-full rounded-[14px] border border-line bg-surface px-4 text-base text-ink outline-none transition-colors duration-200 focus:border-accent"
+          className="control mt-2"
         />
       </label>
 
@@ -68,16 +65,19 @@ export function LoginForm() {
 
       <button
         type="submit"
-        className="mt-8 h-[52px] w-full rounded-[14px] bg-accent text-[15px] font-medium text-accent-contrast transition-opacity duration-200 hover:opacity-90"
+        className="mt-8 btn btn-primary btn-block"
       >
         Войти
       </button>
 
-      <p className="mt-6 text-center">
-        <Link href="/forgot-password" className="text-sm text-muted underline-offset-4 hover:underline">
+      <p className="mt-5 text-center">
+        <Link href="/forgot-password" className="text-sm text-muted underline-offset-4 hover:text-ink hover:underline">
           Забыли пароль?
         </Link>
       </p>
+      <div className="mt-8 flex justify-center">
+        <ThemeToggle />
+      </div>
     </form>
   );
 }

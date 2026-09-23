@@ -48,7 +48,7 @@ export function AdminOverview() {
         <div className="flex flex-wrap gap-3">
           <Link
             href={`/admin/objects/${selected.id}`}
-            className="inline-flex h-12 items-center rounded-[14px] border border-line px-5 text-[15px] text-ink"
+            className="btn btn-secondary"
           >
             Структура
           </Link>
@@ -58,7 +58,7 @@ export function AdminOverview() {
       <AdminStats object={selected} />
       <div className="grid gap-4 lg:grid-cols-2">
         <EventList events={selected.accessEvents} />
-        <section className="rounded-[20px] border border-line bg-surface px-5 py-5">
+        <section className="panel px-5 py-5">
           <h2 className="text-[20px] tracking-[-0.03em] text-ink">Состояние систем</h2>
           {selected.systems.length === 0 ? (
             <p className="mt-4 text-sm text-muted">Системы ещё не подключены.</p>
@@ -75,7 +75,7 @@ export function AdminOverview() {
         </section>
       </div>
       <div className="grid gap-4 lg:grid-cols-2">
-        <section className="rounded-[20px] border border-line bg-surface px-5 py-5">
+        <section className="panel px-5 py-5">
           <h2 className="text-[20px] tracking-[-0.03em] text-ink">Заявки</h2>
           {selected.openRequests.length === 0 ? (
             <p className="mt-4 text-sm text-muted">Открытых заявок нет.</p>
@@ -90,7 +90,7 @@ export function AdminOverview() {
             </ul>
           )}
         </section>
-        <section className="rounded-[20px] border border-line bg-surface px-5 py-5">
+        <section className="panel px-5 py-5">
           <h2 className="text-[20px] tracking-[-0.03em] text-ink">Уведомления</h2>
           {selected.notices.length === 0 ? (
             <p className="mt-4 text-sm text-muted">Уведомлений нет.</p>

@@ -11,8 +11,8 @@ export function MetricCard({
 }) {
   const labelClass = tone === "danger" || tone === "warning" ? "text-danger" : "text-muted";
   return (
-    <article className="rounded-[20px] border border-line bg-surface px-5 py-5">
-      <p className="text-[32px] leading-none tracking-[-0.04em] text-ink">{value}</p>
+    <article className="panel px-5 py-5">
+      <p className="text-[34px] leading-none font-medium tracking-[-0.05em] text-ink">{value}</p>
       <p className={`mt-3 text-sm ${labelClass}`}>{label}</p>
     </article>
   );

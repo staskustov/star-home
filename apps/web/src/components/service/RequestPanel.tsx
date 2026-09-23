@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { commandMessage, runCommand, unconfirmed } from "@/lib/command";
+import { Select } from "@/components/ui/Select";
 
 const statusLabel: Record<string, string> = {
   CREATED: "Создана",
@@ -55,34 +56,30 @@ export function RequestPanel({
     <section>
       <h1 className="text-[32px] tracking-[-0.03em] text-ink">Сервис</h1>
       <p className="mt-2 text-[15px] text-muted">Заявки по дому</p>
-      <form onSubmit={add} className="mt-8 space-y-3 rounded-[20px] border border-line bg-surface p-5">
+      <form onSubmit={add} className="mt-8 space-y-3 panel p-5">
         <label className="block">
           <span className="text-sm text-muted">Тема</span>
-          <select
-            value={selected}
-            onChange={(event) => setCategory(event.target.value)}
-            className="mt-2 h-12 w-full rounded-[14px] border border-line bg-bg px-4 text-base text-ink outline-none focus:border-accent"
-          >
+          <Select wrapClassName="mt-2" value={selected} onChange={(event) => setCategory(event.target.value)}>
             {categories.map((item) => (
               <option key={item} value={item}>
                 {item}
               </option>
             ))}
-          </select>
+          </Select>
         </label>
         <label className="block">
           <span className="text-sm text-muted">Описание</span>
           <textarea
             value={text}
             onChange={(event) => setText(event.target.value)}
-            className="mt-2 min-h-24 w-full rounded-[14px] border border-line bg-bg px-4 py-3 text-base text-ink outline-none focus:border-accent"
+            className="control mt-2"
           />
         </label>
         <label className="block">
           <span className="text-sm text-muted">Файл</span>
           <input
             type="file"
-            className="mt-2 block w-full text-sm text-muted"
+            className="control mt-2"
             onChange={(event) => {
               const file = event.target.files?.[0];
               if (!file) {
@@ -101,12 +98,12 @@ export function RequestPanel({
             }}
           />
         </label>
-        <button type="submit" className="h-12 rounded-[14px] bg-accent px-5 text-sm text-accent-contrast">
+        <button type="submit" className="btn btn-primary w-full sm:w-auto">
           Создать заявку
         </button>
         {notice ? <p className="text-sm text-muted">{notice}</p> : null}
       </form>
-      <ul className="mt-6 divide-y divide-line rounded-[20px] border border-line bg-surface">
+      <ul className="mt-6 divide-y divide-line panel">
         {requests.length === 0 ? (
           <li className="px-5 py-4 text-[15px] text-muted">Заявок пока нет.</li>
         ) : (

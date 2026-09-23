@@ -41,8 +41,8 @@ export function AIBar({ prompt }: { prompt: string }) {
   }
 
   return (
-    <form onSubmit={onSubmit} className="rounded-[20px] border border-line bg-surface px-4 py-4">
-      <p className="text-[12px] font-semibold tracking-[0.18em] text-muted">AI STAR HOME</p>
+    <form onSubmit={onSubmit} className="panel px-4 py-4">
+      <p className="kicker text-muted">AI STAR HOME</p>
       <div className="mt-3 flex gap-2">
         <label className="min-w-0 flex-1">
           <span className="sr-only">Запрос</span>
@@ -50,10 +50,10 @@ export function AIBar({ prompt }: { prompt: string }) {
             value={value}
             onChange={(event) => setValue(event.target.value)}
             placeholder={prompt}
-            className="h-12 w-full rounded-[14px] border border-line bg-bg px-4 text-base text-ink outline-none placeholder:text-muted focus:border-accent"
+            className="control"
           />
         </label>
-        <button type="submit" className="h-12 shrink-0 rounded-[14px] bg-accent px-4 text-sm text-accent-contrast">
+        <button type="submit" className="btn btn-primary shrink-0">
           Спросить
         </button>
       </div>
@@ -63,7 +63,7 @@ export function AIBar({ prompt }: { prompt: string }) {
         </p>
       ) : null}
       {token ? (
-        <button type="button" onClick={confirm} className="mt-3 h-12 rounded-[14px] bg-accent px-5 text-sm text-accent-contrast">
+        <button type="button" onClick={confirm} className="mt-3 btn btn-primary">
           Подтвердить
         </button>
       ) : null}

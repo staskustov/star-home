@@ -24,7 +24,7 @@ export function AppShell({
       <div className="min-h-dvh bg-bg lg:grid lg:grid-cols-[220px_minmax(0,1fr)]">
         <div className="hidden lg:block">{sidebar}</div>
         <div className="min-w-0">
-          <div className="mx-auto w-full max-w-[680px] px-5 pt-8 pb-28 lg:px-8 lg:pt-12 lg:pb-16">{children}</div>
+          <div className="mx-auto w-full max-w-[680px] px-5 pt-8 pb-32 lg:px-10 lg:pt-12 lg:pb-16">{children}</div>
         </div>
         <div className="lg:hidden">{bottomNav}</div>
       </div>

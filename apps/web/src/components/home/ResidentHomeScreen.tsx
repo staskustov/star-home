@@ -87,7 +87,7 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
       {data.meters.length > 0 ? (
         <ul className="grid gap-3">
           {data.meters.map((meter) => (
-            <li key={meter.name} className="rounded-[20px] border border-line bg-surface px-5 py-4">
+            <li key={meter.name} className="panel px-5 py-4">
               <p className="text-sm text-muted">{meter.name}</p>
               <p className="mt-1 text-[22px] tracking-[-0.03em] text-ink">
                 {meter.value} {meter.unit}
@@ -101,7 +101,7 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
         <p className="text-sm text-muted">{data.categories.join(" · ")}</p>
       ) : null}
       <section>
-        <h2 className="mb-3 text-sm text-muted">Быстрые действия</h2>
+        <h2 className="kicker mb-3 text-muted">Быстрые действия</h2>
         <QuickActions actions={data.quickActions} onSelect={onAction} />
         {notice ? (
           <p role="status" className="fade-in mt-3 text-sm text-muted">
@@ -110,19 +110,19 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
         ) : null}
       </section>
       <section>
-        <h2 className="mb-3 text-sm text-muted">Сегодня</h2>
+        <h2 className="kicker mb-3 text-muted">Сегодня</h2>
         {data.visitor || data.balance || data.todayEvent || data.todayRequest || data.paymentHistory.length > 0 ? (
           <div className="space-y-3">
             {data.visitor ? <VisitorCard title={data.visitor.title} detail={data.visitor.detail} /> : null}
             {data.balance ? <PaymentCard title="Счёт" amount={data.balance.amount} currency={data.balance.currency} /> : null}
             {data.todayEvent ? (
-              <article className="rounded-[20px] border border-line bg-surface px-5 py-4">
+              <article className="panel px-5 py-4">
                 <h3 className="text-[17px] text-ink">{data.todayEvent.title}</h3>
                 <p className="mt-1 text-sm text-muted">{data.todayEvent.detail}</p>
               </article>
             ) : null}
             {data.todayRequest ? (
-              <article className="rounded-[20px] border border-line bg-surface px-5 py-4">
+              <article className="panel px-5 py-4">
                 <h3 className="text-[17px] text-ink">Заявка</h3>
                 <p className="mt-1 text-sm text-muted">
                   {data.todayRequest.title}. {data.todayRequest.detail}
@@ -130,7 +130,7 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
               </article>
             ) : null}
             {data.paymentHistory.map((payment) => (
-              <article key={`${payment.title}-${payment.amount}`} className="rounded-[20px] border border-line bg-surface px-5 py-4">
+              <article key={`${payment.title}-${payment.amount}`} className="panel px-5 py-4">
                 <h3 className="text-[17px] text-ink">История</h3>
                 <p className="mt-1 text-sm text-muted">
                   {payment.title} · {formatMoney(payment.amount, payment.currency)}

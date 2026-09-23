@@ -24,7 +24,7 @@ export function InstallPrompt() {
         void prompt.prompt();
         setPrompt(null);
       }}
-      className="h-12 rounded-[14px] border border-line bg-surface px-5 text-sm text-ink"
+      className="btn btn-secondary"
     >
       Установить STAR HOME
     </button>

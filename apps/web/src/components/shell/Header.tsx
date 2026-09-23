@@ -1,11 +1,11 @@
 export function Header({ mark, title, meta }: { mark?: string; title: string; meta?: string }) {
   return (
     <header>
-      {mark ? <p className="text-[13px] font-semibold tracking-[0.22em] text-accent">{mark}</p> : null}
-      <h1 suppressHydrationWarning className={`${mark ? "mt-6" : ""} text-[32px] leading-[1.15] tracking-[-0.03em] text-ink sm:text-[36px]`}>
+      {mark ? <p className="kicker text-accent">{mark}</p> : null}
+      <h1 suppressHydrationWarning className={`${mark ? "mt-5" : ""} text-[34px] leading-[1.08] tracking-[-0.045em] text-ink sm:text-[40px]`}>
         {title}
       </h1>
-      {meta ? <p className="mt-2 text-[15px] text-muted">{meta}</p> : null}
+      {meta ? <p className="mt-3 text-[16px] text-graphite">{meta}</p> : null}
     </header>
   );
 }

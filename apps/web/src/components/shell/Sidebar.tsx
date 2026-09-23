@@ -31,8 +31,8 @@ export function Sidebar({
               <Link
                 href={item.href}
                 aria-current={active ? "page" : undefined}
-                className={`flex items-center gap-3 rounded-2xl px-3 py-2.5 text-[15px] transition-colors duration-200 ${
-                  active ? "bg-surface-muted text-ink" : "text-graphite hover:bg-surface-muted/70"
+                className={`flex items-center gap-3 rounded-2xl px-3 py-2.5 text-[15px] font-medium tracking-[-0.01em] transition-colors duration-200 ${
+                  active ? "bg-accent text-accent-contrast" : "text-graphite hover:bg-surface-muted"
                 } ${linkClass}`}
               >
                 <Icon name={item.icon} />

@@ -39,7 +39,7 @@ export function ServiceWorkerRegister() {
   if (!ready) return null;
   return (
     <div className="fixed inset-x-0 bottom-4 z-30 flex justify-center px-4">
-      <button type="button" onClick={update} disabled={busy} className="h-12 rounded-[14px] bg-accent px-5 text-sm text-accent-contrast disabled:opacity-40">
+      <button type="button" onClick={update} disabled={busy} className="btn btn-primary disabled:opacity-40">
         Обновить
       </button>
     </div>

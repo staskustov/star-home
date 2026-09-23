@@ -41,7 +41,7 @@ export function PushButton() {
 
   return (
     <div className="mt-8">
-      <button type="button" onClick={enable} className="h-12 rounded-[14px] border border-line bg-surface px-5 text-[15px] text-ink">
+      <button type="button" onClick={enable} className="btn btn-secondary">
         Уведомления на телефон
       </button>
       {notice ? <p className="mt-3 text-sm text-muted">{notice}</p> : null}
