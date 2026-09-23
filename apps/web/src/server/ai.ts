@@ -1,7 +1,9 @@
+import { formatHumidity, formatMoney, formatTemperature } from "@/lib/format";
+import { intentFromPrompt, type AiQuery, type AiToolName } from "@/server/ai-intent";
 import { placeFromSession, residentPlace, type Place, type SessionRef } from "@/server/actor";
-import { modeForUnit } from "@/server/life-mode-store";
+import { modeForUnit, modesForObject, setUnitMode } from "@/server/life-mode-store";
 import { createPass, createRequest, openGate, payOldest } from "@/server/operations";
-import { homeSignals, newId, readOps, writeOps, type PendingTool } from "@/server/ops-store";
+import { homeSignals, newId, passesForUnit, readOps, writeOps, type PendingTool } from "@/server/ops-store";
 
 export type AiReply = {
   reply: string;
@@ -11,50 +13,78 @@ export type AiReply = {
 type Proposal = {
   reply: string;
   pending: PendingTool | null;
+  query: AiQuery | null;
 };
 
-function rules(prompt: string): { tool: PendingTool["name"] | null; reply: string } {
-  const text = prompt.toLowerCase();
-  if (text.includes("ворот")) return { tool: "open_gate", reply: "Открыть ворота? Подтвердите действие." };
-  if (text.includes("пропуск") || text.includes("гость")) return { tool: "create_pass", reply: "Оформить пропуск для гостя? Подтвердите действие." };
-  if (text.includes("заяв")) return { tool: "create_request", reply: "Создать заявку? Подтвердите действие." };
-  if (text.includes("оплат")) return { tool: "pay", reply: "Оплатить открытый счёт? Подтвердите действие." };
-  return { tool: null, reply: "" };
-}
+const allowedTools = new Set<AiToolName>(["open_gate", "create_pass", "create_request", "pay", "switch_mode"]);
+const allowedQueries = new Set<AiQuery>(["status", "visitors", "balance"]);
+const lifeModes = new Set(["HOME", "WORK", "VACATION"]);
 
-const allowedTools = new Set<PendingTool["name"]>(["open_gate", "create_pass", "create_request", "pay"]);
+const unconfirmed: Proposal = { reply: "Не удалось подтвердить выполнение.", pending: null, query: null };
 
 async function propose(prompt: string, role: Place["role"]): Promise<Proposal> {
   const endpoint = process.env.STAR_HOME_LLM_URL;
-  let suggestion = rules(prompt);
+  let suggestion = intentFromPrompt(prompt);
   if (endpoint) {
     const response = await fetch(endpoint, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ prompt }),
     }).catch(() => null);
-    const payload = response?.ok ? ((await response.json().catch(() => null)) as { tool?: string; reply?: string } | null) : null;
-    if (!payload || (payload.tool && !allowedTools.has(payload.tool as PendingTool["name"]))) {
-      return { reply: "Не удалось подтвердить выполнение.", pending: null };
-    }
+    const payload = response?.ok
+      ? ((await response.json().catch(() => null)) as { tool?: string | null; query?: string | null; mode?: string | null; reply?: string } | null)
+      : null;
+    const tool = payload?.tool ?? null;
+    const query = payload?.query ?? null;
+    const mode = payload?.mode ?? null;
+    if (!payload || (tool && !allowedTools.has(tool as AiToolName)) || (query && !allowedQueries.has(query as AiQuery))) return unconfirmed;
+    if (tool === "switch_mode" && !lifeModes.has(mode ?? "")) return unconfirmed;
     suggestion = {
-      tool: (payload.tool as PendingTool["name"] | undefined) ?? null,
-      reply: payload.reply || suggestion.reply,
+      tool: (tool as AiToolName | null) ?? null,
+      query: tool ? null : ((query as AiQuery | null) ?? null),
+      mode: tool === "switch_mode" ? (mode as "HOME" | "WORK" | "VACATION") : null,
+      reply: payload.reply || "",
     };
   }
-  if (suggestion.tool === "pay" && role !== "RESIDENT") return { reply: "Оплата доступна только жителю.", pending: null };
-  if (suggestion.tool === "create_pass" && role !== "RESIDENT") return { reply: "Пропуск оформляет житель.", pending: null };
-  if (!suggestion.tool) return { reply: "", pending: null };
-  return { reply: suggestion.reply, pending: { name: suggestion.tool, token: newId("confirm") } };
+  if ((suggestion.tool === "pay" || suggestion.query === "balance") && role !== "RESIDENT") {
+    return { reply: "Оплата доступна только жителю.", pending: null, query: null };
+  }
+  if (suggestion.tool === "create_pass" && role !== "RESIDENT") return { reply: "Пропуск оформляет житель.", pending: null, query: null };
+  if (suggestion.query) return { reply: "", pending: null, query: suggestion.query };
+  if (!suggestion.tool) return { reply: "", pending: null, query: null };
+  const pending: PendingTool = { name: suggestion.tool, token: newId("confirm") };
+  if (suggestion.tool === "switch_mode" && suggestion.mode) pending.mode = suggestion.mode;
+  return { reply: suggestion.reply, pending, query: null };
+}
+
+function answer(place: Place, query: AiQuery): string {
+  const signals = homeSignals(place.unitId, place.objectId);
+  if (query === "visitors") {
+    const passes = passesForUnit(place.unitId);
+    if (passes.length === 0) return "Гостей нет.";
+    return passes.map((pass) => `${pass.guestName}. ${pass.detail}${pass.vehicle ? `. Автомобиль ${pass.vehicle}` : ""}. Код ${pass.code}.`).join(" ");
+  }
+  if (query === "balance") {
+    if (!signals.balance) return "Открытых счетов нет.";
+    return `Открытый счёт ${formatMoney(signals.balance.amount, signals.balance.currency)}.`;
+  }
+  const mode = modesForObject(place.objectId).find((item) => item.mode === modeForUnit(place.unitId));
+  const climate = signals.climate
+    ? `Сейчас ${formatTemperature(signals.climate.temperatureC)}. Влажность ${formatHumidity(signals.climate.humidityPercent)}.`
+    : "Показаний климата нет.";
+  const categories = signals.categories.length ? ` В доме: ${signals.categories.join(", ")}.` : "";
+  return `${climate} Режим «${mode?.label ?? "Дома"}». ${mode?.summary ?? ""}${categories}`;
 }
 
 export async function askAssistant(place: Place, prompt: string): Promise<AiReply> {
   const proposal = await propose(prompt, place.role);
   if (!proposal.pending) {
     const signals = homeSignals(place.unitId, place.objectId);
-    const mode = modeForUnit(place.unitId);
-    const temperature = signals.climate ? `${signals.climate.temperatureC.toString().replace(".", ",")}°` : "нет данных";
-    const reply = `Сейчас ${temperature}. Режим ${mode}. Могу открыть ворота, оформить пропуск, создать заявку или оплатить счёт.`;
+    const mode = modesForObject(place.objectId).find((item) => item.mode === modeForUnit(place.unitId));
+    const temperature = signals.climate ? formatTemperature(signals.climate.temperatureC) : "нет данных";
+    const reply = proposal.query
+      ? answer(place, proposal.query)
+      : proposal.reply || `Сейчас ${temperature}. Режим «${mode?.label ?? modeForUnit(place.unitId)}». Могу открыть ворота, оформить пропуск, создать заявку или оплатить счёт.`;
     const file = readOps();
     file.turns.unshift({
       id: newId("turn"),
@@ -87,10 +117,16 @@ export async function confirmAssistant(place: Place, token: string): Promise<AiR
   const turn = file.turns.find((item) => item.userId === place.userId && item.pending?.token === token);
   if (!turn?.pending) return { reply: "Подтверждение не найдено.", confirmToken: null };
   const tool = turn.pending.name;
+  const mode = turn.pending.mode;
   turn.pending = null;
   writeOps(file);
   let reply = "Не удалось подтвердить выполнение.";
   if (tool === "open_gate") reply = (await openGate(place)).message;
+  if (tool === "switch_mode" && mode && (place.role === "RESIDENT" || place.role === "FAMILY_MEMBER")) {
+    setUnitMode(place.unitId, mode);
+    const label = modesForObject(place.objectId).find((item) => item.mode === mode)?.label ?? mode;
+    reply = `Режим «${label}» включён.`;
+  }
   if (tool === "create_pass" && place.role === "RESIDENT") {
     createPass(place, "Гость", "По запросу в чате");
     reply = "Пропуск оформлен.";

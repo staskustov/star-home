@@ -15,7 +15,8 @@ type ProfileBody = {
 type AccessBody = {
   place: string;
   canCreate: boolean;
-  passes: { id: string; guestName: string; detail: string }[];
+  passes: { id: string; guestName: string; detail: string; vehicle?: string; code?: string }[];
+  points: { id: string; name: string; kind: string }[];
   events: AccessEvent[];
   redirect?: string;
 };
@@ -91,8 +92,8 @@ export async function requireSettings<T>(): Promise<T> {
   return result.body;
 }
 
-export async function requireGuest(): Promise<{ name: string; pass: { guestName: string; detail: string } | null }> {
-  const result = await rpc<{ name?: string; pass: { guestName: string; detail: string } | null; redirect?: string }>("guest");
+export async function requireGuest(): Promise<{ name: string; pass: { guestName: string; detail: string; code?: string } | null }> {
+  const result = await rpc<{ name?: string; pass: { guestName: string; detail: string; code?: string } | null; redirect?: string }>("guest");
   if (result.status === 401 || result.body.redirect || !result.body.name) await go(result);
   return { name: result.body.name as string, pass: result.body.pass };
 }

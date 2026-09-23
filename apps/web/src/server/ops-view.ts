@@ -1,5 +1,6 @@
 import { formatHumidity, formatTemperature } from "@/lib/format";
 import { findUnit } from "@/server/catalog-store";
+import { deviceLabel, isOpener } from "@/server/device-kinds";
 import { findUserById } from "@/server/directory";
 import { readOps } from "@/server/ops-store";
 
@@ -20,7 +21,17 @@ function unitName(unitId: string | null): string {
 export function residentAccess(unitId: string, objectId: string) {
   const file = readOps();
   return {
-    passes: file.passes.filter((pass) => pass.unitId === unitId).map((pass) => ({ id: pass.id, guestName: pass.guestName, detail: pass.detail })),
+    passes: file.passes.filter((pass) => pass.unitId === unitId).map((pass) => ({
+      id: pass.id,
+      guestName: pass.guestName,
+      detail: pass.detail,
+      vehicle: pass.vehicle || "",
+      code: pass.code,
+    })),
+    points: file.devices
+      .filter((device) => device.objectId === objectId && (device.unitId === unitId || device.unitId === null))
+      .filter((device) => isOpener(device.kind))
+      .map((device) => ({ id: device.id, name: device.name, kind: deviceLabel(device.kind) })),
     events: file.events
       .filter((event) => event.objectId === objectId && (event.unitId === unitId || !event.unitId))
       .map((event) => ({ id: event.id, time: event.time, title: event.title, result: event.result })),
@@ -77,7 +88,7 @@ export function companyOps(companyId: string) {
         return {
           objectId: device.objectId,
           name: device.name,
-          kind: device.kind === "GATE" ? "Ворота" : "Климат",
+          kind: deviceLabel(device.kind),
           state: reading ? `${formatTemperature(reading.temperatureC)} · ${formatHumidity(reading.humidityPercent)}` : "На связи",
         };
       }),

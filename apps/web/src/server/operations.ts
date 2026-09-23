@@ -1,6 +1,6 @@
 import { adminObjectFrom, placeFromSession, residentPlace, type Place, type SessionRef } from "@/server/actor";
 import { publishLive, pushNotice } from "@/server/store-bind";
-import { gateFor, runDevice } from "@/server/devices";
+import { accessPoint, gateFor, runDevice } from "@/server/devices";
 import { paymentProvider } from "@/server/payments";
 import {
   clock,
@@ -8,6 +8,7 @@ import {
   readOps,
   writeOps,
   type AuditEntry,
+  type Device,
   type Pass,
   type RequestStatus,
   type ServiceRequest,
@@ -30,17 +31,18 @@ export function recordAudit(entry: Omit<AuditEntry, "id" | "at">): void {
   audit(entry);
 }
 
-export async function openGate(place: Place): Promise<{ confirmed: boolean; message: string }> {
-  const device = gateFor(place.objectId, place.unitId);
+async function openDevice(place: Place, device: Device | null): Promise<{ confirmed: boolean; message: string }> {
   const result = device ? await runDevice(device, "OPEN") : { confirmed: false };
+  const gate = device?.kind === "GATE";
+  const message = result.confirmed ? (gate ? "Ворота открыты." : `${device?.name ?? "Точка"}: открыто.`) : "Не удалось подтвердить выполнение.";
   const file = readOps();
   file.events.unshift({
     id: newId("evt"),
     companyId: place.companyId,
     objectId: place.objectId,
-    unitId: place.unitId,
+    unitId: place.unitId || null,
     time: clock(),
-    title: result.confirmed ? "Ворота открыты" : "Команда ворот не подтверждена",
+    title: result.confirmed ? (gate ? "Ворота открыты" : device?.name ?? "Точка доступа") : "Команда не подтверждена",
     result: result.confirmed ? "SUCCESS" : "UNCONFIRMED",
   });
   writeOps(file);
@@ -53,14 +55,19 @@ export async function openGate(place: Place): Promise<{ confirmed: boolean; mess
     result: result.confirmed ? "SUCCESS" : "ERROR",
     error: result.confirmed ? "" : "Нет подтверждения адаптера",
   });
-  publishLive({ objectId: place.objectId, kind: "access", title: result.confirmed ? "Ворота открыты" : "Команда не подтверждена" });
-  return {
-    confirmed: result.confirmed,
-    message: result.confirmed ? "Ворота открыты." : "Не удалось подтвердить выполнение.",
-  };
+  publishLive({ objectId: place.objectId, kind: "access", title: message.replace(/\.$/, "") });
+  return { confirmed: result.confirmed, message };
 }
 
-export function createPass(place: Place, guestName: string, detail: string): Pass {
+export async function openGate(place: Place): Promise<{ confirmed: boolean; message: string }> {
+  return openDevice(place, gateFor(place.objectId, place.unitId));
+}
+
+export async function openAccessPoint(place: Place, pointId: string): Promise<{ confirmed: boolean; message: string }> {
+  return openDevice(place, accessPoint(place.objectId, place.unitId, pointId));
+}
+
+export function createPass(place: Place, guestName: string, detail: string, vehicle = ""): Pass {
   const file = readOps();
   const pass: Pass = {
     id: newId("pass"),
@@ -69,6 +76,8 @@ export function createPass(place: Place, guestName: string, detail: string): Pas
     unitId: place.unitId,
     guestName,
     detail,
+    vehicle,
+    code: newId("code").slice(-8).toUpperCase(),
   };
   file.passes.unshift(pass);
   writeOps(file);
@@ -240,14 +249,39 @@ export async function openObjectGate(objectId: unknown) {
   return openObjectGateFor(await currentSession(), objectId);
 }
 
-export async function addPassFor(session: SessionRef | null, guestName: unknown, detail: unknown) {
+export async function cameraFrameFor(session: SessionRef | null, objectId: unknown, name: unknown) {
+  if (typeof objectId !== "string" || typeof name !== "string" || !name.trim()) {
+    return { ok: false as const, status: 400, message: "Камера не найдена" };
+  }
+  const admin = adminObjectFrom(session, objectId);
+  if (!admin.ok) return admin;
+  const device = readOps().devices.find(
+    (item) => item.objectId === admin.value.objectId && item.companyId === admin.value.companyId && item.kind === "CAMERA" && item.name === name.trim(),
+  );
+  if (!device) return { ok: false as const, status: 404, message: "Камера не найдена" };
+  const result = await runDevice(device, "READ");
+  return {
+    ok: true as const,
+    value: { confirmed: result.confirmed, message: result.confirmed ? "Кадр получен." : "Не удалось подтвердить выполнение." },
+  };
+}
+
+export async function openPointFor(session: SessionRef | null, pointId: unknown) {
+  const place = placeFromSession(session);
+  if (!place.ok) return place;
+  if (typeof pointId !== "string" || !pointId) return { ok: false as const, status: 400, message: "Точка доступа не найдена" };
+  return { ok: true as const, value: await openAccessPoint(place.value, pointId) };
+}
+
+export async function addPassFor(session: SessionRef | null, guestName: unknown, detail: unknown, vehicle?: unknown) {
   const place = placeFromSession(session, new Set(["RESIDENT"]));
   if (!place.ok) return place;
   const name = clean(guestName, "Введите имя гостя", 80);
   if (typeof name !== "string") return name;
   const note = clean(detail, "Введите срок или комментарий", 160);
   if (typeof note !== "string") return note;
-  return { ok: true as const, value: createPass(place.value, name, note) };
+  const car = typeof vehicle === "string" ? vehicle.trim().replace(/\s+/g, " ").slice(0, 40) : "";
+  return { ok: true as const, value: createPass(place.value, name, note, car) };
 }
 
 export async function addOwnPass(guestName: unknown, detail: unknown) {

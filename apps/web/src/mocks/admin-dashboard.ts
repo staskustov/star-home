@@ -26,6 +26,8 @@ export const adminDashboard: AdminDashboard = {
         { id: "sys_power", name: "Электричество", state: "В норме", tone: "success" },
         { id: "sys_water", name: "Вода", state: "В норме", tone: "success" },
       ],
+      openRequests: [],
+      notices: [],
     },
     {
       id: "obj_park",
@@ -47,6 +49,8 @@ export const adminDashboard: AdminDashboard = {
         { id: "sys_lifts", name: "Лифты", state: "В норме", tone: "success" },
         { id: "sys_water_2", name: "Вода", state: "В норме", tone: "success" },
       ],
+      openRequests: [],
+      notices: [],
     },
     {
       id: "obj_sky",
@@ -64,6 +68,8 @@ export const adminDashboard: AdminDashboard = {
         { id: "sys_security_3", name: "Защита", state: "В норме", tone: "success" },
         { id: "sys_climate_3", name: "Климат", state: "В норме", tone: "success" },
       ],
+      openRequests: [],
+      notices: [],
     },
   ],
 };

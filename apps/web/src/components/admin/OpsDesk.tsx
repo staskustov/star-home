@@ -222,14 +222,45 @@ export function DeviceDesk({
 export function SecurityDesk({
   alarms,
   audit,
+  cameras = [],
 }: {
   alarms: { id: string; objectId: string; title: string; unitName: string; at: string; status: "OPEN" | "CLOSED" }[];
   audit: { id: string; objectId: string; actor: string; action: string; target: string; result: "SUCCESS" | "ERROR"; error: string; at: string }[];
+  cameras?: { objectId: string; name: string; state: string }[];
 }) {
   const calls = useObjectRows(alarms);
   const journal = useObjectRows(audit);
+  const eyes = useObjectRows(cameras);
+  const { selected } = useAdminPreview();
+  const [frame, setFrame] = useState<string | null>(null);
+  async function shot(name: string) {
+    if (!selected) return;
+    setFrame(null);
+    const result = await runCommand(() =>
+      fetch("/api/security/camera", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ objectId: selected.id, name }),
+      }),
+    );
+    setFrame(commandMessage(result.payload));
+  }
   return (
     <Shell title="Охрана">
+      <List empty="Камер нет.">
+        {eyes.map((camera) => (
+          <li key={`${camera.objectId}-${camera.name}`} className="flex items-center justify-between gap-4 px-5 py-4">
+            <div>
+              <p className="text-[16px] text-ink">{camera.name}</p>
+              <p className="text-sm text-muted">{camera.state}</p>
+            </div>
+            <button type="button" onClick={() => shot(camera.name)} className="h-12 rounded-[14px] border border-line px-4 text-sm text-ink">
+              Кадр
+            </button>
+          </li>
+        ))}
+      </List>
+      {frame ? <p className="text-sm text-muted">{frame}</p> : null}
       <List empty="Тревог нет.">
         {calls.map((alarm) => (
           <li key={alarm.id} className="px-5 py-4">

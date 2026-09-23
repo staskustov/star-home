@@ -13,6 +13,8 @@ import EmbeddedPostgres from "embedded-postgres";
 import Redis from "ioredis";
 import webpush from "web-push";
 import { WebSocketServer, type WebSocket } from "ws";
+import { projectSnapshot } from "./project";
+import { intentFromPrompt } from "../../web/src/server/ai-intent";
 import { bindFiles, bindLive, bindPush, bindStore, storesFlushed } from "../../web/src/server/store-bind";
 import { bindLoginLimit } from "../../web/src/server/login-limit";
 
@@ -32,37 +34,91 @@ function signaturesMatch(actual: string, expected: string): boolean {
   return timingSafeEqual(left, right);
 }
 
-function modelReply(prompt: string): { tool: string | null; reply: string } {
-  const text = prompt.toLowerCase();
-  if (text.includes("ворот")) return { tool: "open_gate", reply: "Открыть ворота? Подтвердите действие." };
-  if (text.includes("пропуск") || text.includes("гость")) return { tool: "create_pass", reply: "Оформить пропуск для гостя? Подтвердите действие." };
-  if (text.includes("заяв")) return { tool: "create_request", reply: "Создать заявку? Подтвердите действие." };
-  if (text.includes("оплат")) return { tool: "pay", reply: "Оплатить открытый счёт? Подтвердите действие." };
-  return { tool: null, reply: "" };
+function modelReply(prompt: string): { tool: string | null; query: string | null; mode: string | null; reply: string } {
+  const intent = intentFromPrompt(prompt);
+  return { tool: intent.tool, query: intent.query, mode: intent.mode, reply: intent.reply };
 }
 
 @Controller()
 class GatewayController {
   @Post("rpc")
-  async rpc(@Req() req: RawBodyRequest<Request>, @Res() res: Response): Promise<void> {
-    const raw = req.rawBody;
-    const header = req.header("x-star-home-signature") ?? "";
-    if (!raw || !handle) {
-      res.status(503).json({ message: "Не удалось подтвердить выполнение." });
-      return;
-    }
-    const expected = createHmac("sha256", secret()).update(raw).digest("hex");
-    if (!signaturesMatch(header, expected)) {
-      res.status(401).json({ message: "Нужно войти" });
-      return;
-    }
-    const payload = JSON.parse(raw.toString("utf8")) as {
-      method?: string;
-      input?: unknown;
-      session?: { userId: string; membershipId: string | null } | null;
-    };
-    const result = await handle(payload.method ?? "", payload.input, payload.session ?? null);
-    res.status(result.status).json(result.body);
+  rpc(@Req() req: RawBodyRequest<Request>, @Res() res: Response): Promise<void> {
+    return signed(null, req, res);
+  }
+
+  @Post("auth")
+  auth(@Req() req: RawBodyRequest<Request>, @Res() res: Response): Promise<void> {
+    return signed("login", req, res);
+  }
+
+  @Post("users")
+  users(@Req() req: RawBodyRequest<Request>, @Res() res: Response): Promise<void> {
+    return signed("residents", req, res);
+  }
+
+  @Post("companies")
+  companies(@Req() req: RawBodyRequest<Request>, @Res() res: Response): Promise<void> {
+    return signed("admin", req, res);
+  }
+
+  @Post("objects")
+  objects(@Req() req: RawBodyRequest<Request>, @Res() res: Response): Promise<void> {
+    return signed("admin", req, res);
+  }
+
+  @Post("buildings")
+  buildings(@Req() req: RawBodyRequest<Request>, @Res() res: Response): Promise<void> {
+    return signed("tree", req, res);
+  }
+
+  @Post("units")
+  units(@Req() req: RawBodyRequest<Request>, @Res() res: Response): Promise<void> {
+    return signed("tree", req, res);
+  }
+
+  @Post("residents")
+  residents(@Req() req: RawBodyRequest<Request>, @Res() res: Response): Promise<void> {
+    return signed("residents", req, res);
+  }
+
+  @Post("access")
+  access(@Req() req: RawBodyRequest<Request>, @Res() res: Response): Promise<void> {
+    return signed("access", req, res);
+  }
+
+  @Post("visitors")
+  visitors(@Req() req: RawBodyRequest<Request>, @Res() res: Response): Promise<void> {
+    return signed("access", req, res);
+  }
+
+  @Post("security")
+  security(@Req() req: RawBodyRequest<Request>, @Res() res: Response): Promise<void> {
+    return signed("ops", req, res);
+  }
+
+  @Post("devices")
+  devices(@Req() req: RawBodyRequest<Request>, @Res() res: Response): Promise<void> {
+    return signed("ops", req, res);
+  }
+
+  @Post("payments")
+  payments(@Req() req: RawBodyRequest<Request>, @Res() res: Response): Promise<void> {
+    return signed("ops", req, res);
+  }
+
+  @Post("service-requests")
+  requests(@Req() req: RawBodyRequest<Request>, @Res() res: Response): Promise<void> {
+    return signed("requests", req, res);
+  }
+
+  @Post("notifications")
+  notifications(@Req() req: RawBodyRequest<Request>, @Res() res: Response): Promise<void> {
+    return signed("profile", req, res);
+  }
+
+  @Post("ai")
+  ai(@Req() req: RawBodyRequest<Request>, @Res() res: Response): Promise<void> {
+    return signed("ask", req, res);
   }
 
   @Post("bank/charge")
@@ -83,6 +139,27 @@ class GatewayController {
 
 @Module({ controllers: [GatewayController] })
 class AppModule {}
+
+async function signed(method: string | null, req: RawBodyRequest<Request>, res: Response): Promise<void> {
+  const raw = req.rawBody;
+  const header = req.header("x-star-home-signature") ?? "";
+  if (!raw || !handle) {
+    res.status(503).json({ message: "Не удалось подтвердить выполнение." });
+    return;
+  }
+  const expected = createHmac("sha256", secret()).update(raw).digest("hex");
+  if (!signaturesMatch(header, expected)) {
+    res.status(401).json({ message: "Нужно войти" });
+    return;
+  }
+  const payload = JSON.parse(raw.toString("utf8")) as {
+    method?: string;
+    input?: unknown;
+    session?: { userId: string; membershipId: string | null } | null;
+  };
+  const result = await handle(method ?? payload.method ?? "", payload.input, payload.session ?? null);
+  res.status(result.status).json(result.body);
+}
 
 function waitForPort(target: number): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -219,23 +296,7 @@ async function main(): Promise<void> {
       memory.set(name, snapshot);
       return prisma.snapshot
         .upsert({ where: { id: name }, create: { id: name, body: snapshot }, update: { body: snapshot } })
-        .then(async () => {
-          if (name !== "ops") return;
-          for (const meter of snapshot.meters ?? []) {
-            await prisma.meter.upsert({
-              where: { id: meter.id },
-              create: meter,
-              update: { name: meter.name, unit: meter.unit, unitId: meter.unitId, objectId: meter.objectId, companyId: meter.companyId },
-            });
-          }
-          for (const reading of snapshot.meterReadings ?? []) {
-            await prisma.meterReading.upsert({
-              where: { id: reading.id },
-              create: reading,
-              update: { value: reading.value, at: reading.at, meterId: reading.meterId },
-            });
-          }
-        });
+        .then(() => projectSnapshot(prisma, name, snapshot));
     },
   });
 
@@ -334,6 +395,7 @@ async function main(): Promise<void> {
   life.modesForObject("obj_park");
   life.modesForObject("obj_sky");
   await storesFlushed();
+  for (const [name, body] of memory) await projectSnapshot(prisma, name, body);
   handle = domain.handleRpc;
 
   const app = await NestFactory.create(AppModule, { rawBody: true, logger: ["error", "warn", "log"] });

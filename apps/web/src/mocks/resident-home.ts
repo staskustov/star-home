@@ -82,6 +82,9 @@ export const residentHome: ResidentHome = {
     title: "Событие",
     detail: "Утренний въезд на территорию",
   },
+  todayRequest: null,
+  paymentHistory: [],
+  categories: [],
   serviceCategories: [
     "Электричество",
     "Вода",

@@ -5,7 +5,11 @@
   "lang": "ru",
   "start_url": "/",
   "scope": "/",
+  "id": "/",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "categories": ["lifestyle"],
+  "prefer_related_applications": false,
   "background_color": "#F6F4F0",
   "theme_color": "#F6F4F0",
   "icons": [

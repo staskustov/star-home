@@ -1,7 +1,9 @@
 import { requireGuest } from "@/server/access";
+import { passQr } from "@/server/pass-qr";
 
 export default async function GuestPage() {
   const guest = await requireGuest();
+  const qr = guest.pass?.code ? await passQr(guest.pass.code) : "";
   return (
     <main className="grid min-h-dvh place-items-center bg-bg px-6">
       <section className="w-full max-w-sm">
@@ -11,6 +13,8 @@ export default async function GuestPage() {
           <article className="mt-8 rounded-[20px] border border-line bg-surface px-5 py-4">
             <p className="text-[17px] text-ink">{guest.pass.guestName}</p>
             <p className="mt-1 text-sm text-muted">{guest.pass.detail}</p>
+            {guest.pass.code ? <p className="mt-3 text-[20px] tracking-[0.18em] text-ink">{guest.pass.code}</p> : null}
+            {qr ? <div className="mt-4 w-32 bg-white" dangerouslySetInnerHTML={{ __html: qr }} /> : null}
           </article>
         ) : (
           <p className="mt-8 text-[15px] text-muted">Пропуск не найден.</p>

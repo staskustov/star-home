@@ -118,6 +118,12 @@ export type ResidentHome = {
     title: string;
     detail: string;
   } | null;
+  todayRequest: {
+    title: string;
+    detail: string;
+  } | null;
+  paymentHistory: { title: string; amount: number; currency: string }[];
+  categories: string[];
   serviceCategories: string[];
   aiPrompt: string;
   meters: { name: string; value: string; unit: string }[];
@@ -150,6 +156,8 @@ export type AdminObjectSnapshot = {
   alarms: number;
   accessEvents: AccessEvent[];
   systems: SystemState[];
+  openRequests: { id: string; title: string; detail: string }[];
+  notices: { id: string; title: string; detail: string }[];
 };
 
 export type AdminDashboard = {

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { PushButton } from "@/components/pwa/PushButton";
+import { ThemeToggle } from "@/components/shell/ThemeToggle";
 import { profileView } from "@/server/access";
 
 export default async function ProfilePage() {
@@ -33,6 +34,9 @@ export default async function ProfilePage() {
           </button>
         </form>
       ) : null}
+      <div className="mt-8">
+        <ThemeToggle />
+      </div>
       <PushButton />
       <form action="/api/auth/logout" method="post">
         <button

@@ -6,6 +6,7 @@ import { AdminSidebar } from "@/components/admin/AdminSidebar";
 import { useAdminPreview } from "@/components/admin/AdminPreview";
 import { Icon } from "@/components/icons";
 import { ObjectSwitcher } from "@/components/home/ObjectSwitcher";
+import { ThemeToggle } from "@/components/shell/ThemeToggle";
 import { AppShell } from "@/components/shell/AppShell";
 
 export function AdminFrame({ children }: { children: React.ReactNode }) {
@@ -39,9 +40,11 @@ export function AdminFrame({ children }: { children: React.ReactNode }) {
             <Icon name="menu" />
           </button>
           <div className="min-w-0 flex-1">
-            <p className="text-sm text-muted">{preview.actorLabel}</p>
+            <p className="text-[11px] font-semibold tracking-[0.18em] text-accent">STAR HOME</p>
+            <p className="mt-1 text-sm text-muted">{preview.actorLabel}</p>
             <p className="truncate text-[17px] text-ink">{preview.companyName}</p>
           </div>
+          <ThemeToggle />
           <div className="hidden min-w-0 sm:block">
             <ObjectSwitcher objects={preview.objects} value={preview.selectedId} onChange={selectObject} />
           </div>

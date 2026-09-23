@@ -44,3 +44,214 @@ model PushSubscription {
   p256dh   String
   auth     String
 }
+
+model Company {
+  id   String @id
+  name String
+}
+
+model Role {
+  name String @id
+}
+
+model User {
+  id           String @id
+  login        String
+  name         String
+  passwordHash String
+}
+
+model Membership {
+  id        String  @id
+  userId    String
+  companyId String
+  role      String
+  objectId  String?
+  unitId    String?
+  expiresAt String?
+  passId    String?
+}
+
+model Resident {
+  id        String @id
+  userId    String
+  companyId String
+  objectId  String
+  unitId    String
+  name      String
+}
+
+model FamilyMember {
+  id        String @id
+  userId    String
+  companyId String
+  objectId  String
+  unitId    String
+  name      String
+}
+
+model ResidentialObject {
+  id        String @id
+  companyId String
+  name      String
+  type      String
+  address   String
+}
+
+model Building {
+  id       String @id
+  objectId String
+  name     String
+  number   String
+}
+
+model Unit {
+  id         String  @id
+  objectId   String
+  buildingId String?
+  name       String
+  number     String
+  type       String
+}
+
+model Visitor {
+  id     String @id
+  name   String
+  passId String
+}
+
+model VisitorPass {
+  id        String @id
+  companyId String
+  objectId  String
+  unitId    String
+  guestName String
+  detail    String
+  vehicle   String
+  code      String
+}
+
+model Vehicle {
+  id     String @id
+  passId String
+  plate  String
+}
+
+model AccessEvent {
+  id        String  @id
+  companyId String
+  objectId  String
+  unitId    String?
+  time      String
+  title     String
+  result    String
+}
+
+model Device {
+  id        String  @id
+  companyId String
+  objectId  String
+  unitId    String?
+  kind      String
+  name      String
+  adapter   String
+}
+
+model DeviceState {
+  deviceId         String @id
+  state            String
+  temperatureC     Float?
+  humidityPercent  Float?
+}
+
+model Automation {
+  id       String @id
+  objectId String
+  mode     String
+  climate  String
+  lighting String
+  security String
+}
+
+model LifeModeSetting {
+  id       String @id
+  objectId String
+  mode     String
+  label    String
+  summary  String
+}
+
+model LifeModeActive {
+  unitId String @id
+  mode   String
+}
+
+model SecurityEvent {
+  id        String @id
+  companyId String
+  objectId  String
+  unitId    String
+  title     String
+  status    String
+  at        String
+}
+
+model Invoice {
+  id        String @id
+  companyId String
+  objectId  String
+  unitId    String
+  title     String
+  amount    Int
+  currency  String
+  status    String
+}
+
+model Payment {
+  id        String @id
+  invoiceId String @unique
+  amount    Int
+  currency  String
+  status    String
+}
+
+model ServiceRequest {
+  id           String @id
+  companyId    String
+  objectId     String
+  unitId       String
+  authorUserId String
+  category     String
+  text         String
+  status       String
+}
+
+model Notification {
+  id        String @id
+  companyId String
+  userId    String
+  title     String
+  body      String
+  at        String
+}
+
+model AiMessage {
+  id        String @id
+  companyId String
+  userId    String
+  unitId    String
+  prompt    String
+  reply     String
+}
+
+model AuditLog {
+  id          String @id
+  actorUserId String
+  companyId   String
+  objectId    String
+  action      String
+  target      String
+  result      String
+  error       String
+  at          String
+}

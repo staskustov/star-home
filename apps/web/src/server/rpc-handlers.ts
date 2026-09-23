@@ -32,12 +32,15 @@ import {
   addPassFor,
   addRequestFor,
   alarmFor,
+  cameraFrameFor,
   openGateFor,
   openObjectGateFor,
+  openPointFor,
   payFor,
   setRequestStatusFor,
 } from "@/server/operations";
 import { verifyPassword } from "@/server/password";
+import { record, text } from "@/server/schema";
 import { addResident, removeResident, residentBoard } from "@/server/residents";
 import { destinationFor, guardPath, initialMembershipId } from "@/server/routing";
 import { keepFile, storesFlushed } from "@/server/store-bind";
@@ -100,10 +103,11 @@ async function dispatch(method: string, input: unknown, session: SessionRef | nu
   if (method === "subscribe") return subscribe(session, input);
   if (method === "liveToken") return liveToken(session);
   if (method === "openGate") return asReply(await openGateFor(session));
+  if (method === "openPoint") return asReply(await openPointFor(session, (input as { pointId?: unknown } | null)?.pointId));
   if (method === "openObjectGate") return asReply(await openObjectGateFor(session, (input as { objectId?: unknown } | null)?.objectId));
   if (method === "addPass") {
-    const body = input as { guestName?: unknown; detail?: unknown } | null;
-    return asReply(await addPassFor(session, body?.guestName, body?.detail));
+    const body = input as { guestName?: unknown; detail?: unknown; vehicle?: unknown } | null;
+    return asReply(await addPassFor(session, body?.guestName, body?.detail, body?.vehicle));
   }
   if (method === "addRequest") return addRequest(session, input);
   if (method === "setRequestStatus") {
@@ -112,6 +116,10 @@ async function dispatch(method: string, input: unknown, session: SessionRef | nu
   }
   if (method === "pay") return asReply(await payFor(session));
   if (method === "alarm") return asReply(await alarmFor(session));
+  if (method === "cameraFrame") {
+    const body = input as { objectId?: unknown; name?: unknown } | null;
+    return asReply(await cameraFrameFor(session, body?.objectId, body?.name));
+  }
   if (method === "ask") return asReply(await askFor(session, (input as { prompt?: unknown } | null)?.prompt));
   if (method === "confirm") return asReply(await confirmFor(session, (input as { token?: unknown } | null)?.token));
   if (method === "switchMode") return asReply(switchModeFor(session, (input as { mode?: unknown } | null)?.mode));
@@ -129,10 +137,10 @@ async function dispatch(method: string, input: unknown, session: SessionRef | nu
 }
 
 async function login(input: unknown): Promise<Reply> {
-  const body = input as { login?: unknown; password?: unknown } | null;
-  const loginName = typeof body?.login === "string" ? body.login.trim() : "";
+  const body = record(input);
+  const loginName = text(body?.login, 1, 80) ?? "";
   const password = typeof body?.password === "string" ? body.password : "";
-  if (!loginName || !password) return fail(400, "Введите логин и пароль");
+  if (!loginName || password.length < 1 || password.length > 200) return fail(400, "Введите логин и пароль");
   if (await loginLimited(loginName)) return fail(429, "Слишком много попыток. Подождите немного.");
   const user = findUserByLogin(loginName);
   const matches = user ? verifyPassword(password, user.passwordHash) : verifyPassword(password, "missing.missing");
@@ -168,9 +176,15 @@ function home(session: SessionRef | null): Reply {
       ...base,
       quickActions,
       balance: membership.role === "RESIDENT" ? signals.balance : null,
-      climate: signals.climate ?? base.climate,
+      climate: signals.climate,
       visitor: signals.visitor,
-      todayEvent: signals.today ?? base.todayEvent,
+      todayEvent: signals.today,
+      todayRequest:
+        signals.request && (membership.role !== "FAMILY_MEMBER" || signals.request.authorUserId === session.userId)
+          ? { title: signals.request.title, detail: signals.request.detail }
+          : null,
+      paymentHistory: membership.role === "RESIDENT" ? signals.payments : [],
+      categories: signals.categories,
       meters: signals.meters,
     },
   });
@@ -209,7 +223,7 @@ function guest(session: SessionRef | null): Reply {
     return ok({ redirect: destinationFor(session.userId, session.membershipId) });
   }
   const pass = readOps().passes.find((item) => item.id === membership.passId);
-  return ok({ name: user.name, pass: pass ? { guestName: pass.guestName, detail: pass.detail } : null });
+  return ok({ name: user.name, pass: pass ? { guestName: pass.guestName, detail: pass.detail, code: pass.code } : null });
 }
 
 function admin(session: SessionRef | null): Reply {

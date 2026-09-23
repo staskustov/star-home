@@ -1,6 +1,7 @@
-import { randomBytes } from "crypto";
+import { createHash, randomBytes } from "crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
+import { deviceLabel, type DeviceKind } from "@/server/device-kinds";
 import { boundValue, remember } from "@/server/store-bind";
 import type { AccessEvent } from "@/types/domain";
 
@@ -11,6 +12,8 @@ export type Pass = {
   unitId: string;
   guestName: string;
   detail: string;
+  vehicle: string;
+  code: string;
 };
 
 export const requestStatuses = ["CREATED", "ACCEPTED", "ASSIGNED", "IN_PROGRESS", "WAITING", "DONE", "CLOSED"] as const;
@@ -56,7 +59,7 @@ export type Invoice = {
   status: "OPEN" | "PAID";
 };
 
-export type DeviceKind = "GATE" | "CLIMATE";
+export type { DeviceKind };
 
 export type Device = {
   id: string;
@@ -65,7 +68,7 @@ export type Device = {
   unitId: string | null;
   kind: DeviceKind;
   name: string;
-  adapter: "local" | "http";
+  adapter: "local" | "http" | "matter" | "mqtt" | "modbus" | "onvif" | "rs485";
   endpoint?: string;
 };
 
@@ -113,8 +116,9 @@ export type StoredAccessEvent = AccessEvent & {
 };
 
 export type PendingTool = {
-  name: "open_gate" | "create_pass" | "create_request" | "pay";
+  name: "open_gate" | "create_pass" | "create_request" | "pay" | "switch_mode";
   token: string;
+  mode?: "HOME" | "WORK" | "VACATION";
 };
 
 export type AiTurn = {
@@ -150,7 +154,10 @@ function id(prefix: string): string {
 }
 
 export function clock(): string {
-  return new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  const date = new Date();
+  const day = date.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" });
+  const time = date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  return `${day} ${time}`;
 }
 
 function seed(): OpsFile {
@@ -163,6 +170,8 @@ function seed(): OpsFile {
         unitId: "unit_24",
         guestName: "Гость",
         detail: "Ожидается сегодня до 18:00",
+        vehicle: "",
+        code: "A1B2C3D4",
       },
       {
         id: "pass_84",
@@ -171,6 +180,8 @@ function seed(): OpsFile {
         unitId: "unit_84",
         guestName: "Гость",
         detail: "Завтра, корпус 2",
+        vehicle: "",
+        code: "E5F60718",
       },
     ],
     events: [
@@ -253,6 +264,51 @@ function seed(): OpsFile {
         name: "Климат квартиры",
         adapter: "local",
       },
+      {
+        id: "dev_wicket_siyanie",
+        companyId: "cmp_star",
+        objectId: "obj_siyanie",
+        unitId: null,
+        kind: "WICKET",
+        name: "Калитка",
+        adapter: "local",
+      },
+      {
+        id: "dev_barrier_park",
+        companyId: "cmp_star",
+        objectId: "obj_park",
+        unitId: null,
+        kind: "BARRIER",
+        name: "Шлагбаум",
+        adapter: "local",
+      },
+      {
+        id: "dev_camera_24",
+        companyId: "cmp_star",
+        objectId: "obj_siyanie",
+        unitId: "unit_24",
+        kind: "CAMERA",
+        name: "Камера входа",
+        adapter: "local",
+      },
+      {
+        id: "dev_leak_24",
+        companyId: "cmp_star",
+        objectId: "obj_siyanie",
+        unitId: "unit_24",
+        kind: "LEAK",
+        name: "Датчик протечки",
+        adapter: "local",
+      },
+      {
+        id: "dev_lock_84",
+        companyId: "cmp_star",
+        objectId: "obj_park",
+        unitId: "unit_84",
+        kind: "LOCK",
+        name: "Замок",
+        adapter: "local",
+      },
     ],
     readings: [
       { deviceId: "dev_climate_24", temperatureC: 22.4, humidityPercent: 48 },
@@ -273,11 +329,26 @@ function seed(): OpsFile {
   };
 }
 
+function catalogDevices(): Device[] {
+  return seed().devices;
+}
+
 function normalize(file: OpsFile): OpsFile {
   file.meters ??= [];
   file.meterReadings ??= [];
+  file.passes ??= [];
+  file.devices ??= [];
   for (const request of file.requests ?? []) {
     if ((request.status as string) === "NEW") request.status = "CREATED";
+  }
+  for (const pass of file.passes) {
+    pass.vehicle ??= "";
+    if (!pass.code || pass.code.length < 6) {
+      pass.code = createHash("sha256").update(pass.id).digest("hex").slice(0, 8).toUpperCase();
+    }
+  }
+  for (const device of catalogDevices()) {
+    if (!file.devices.some((item) => item.id === device.id)) file.devices.push({ ...device });
   }
   return file;
 }
@@ -371,19 +442,31 @@ export function homeSignals(unitId: string, objectId: string): {
   balance: { amount: number; currency: string } | null;
   today: { title: string; detail: string } | null;
   meters: { name: string; value: string; unit: string }[];
+  request: { title: string; detail: string; authorUserId: string } | null;
+  payments: { title: string; amount: number; currency: string }[];
+  categories: string[];
 } {
   const file = load();
   const climateDevice = file.devices.find((device) => device.kind === "CLIMATE" && device.unitId === unitId);
   const reading = climateDevice ? file.readings.find((item) => item.deviceId === climateDevice.id) : undefined;
   const pass = file.passes.find((item) => item.unitId === unitId);
-  const open = file.invoices.filter((invoice) => invoice.unitId === unitId && invoice.status === "OPEN");
-  const event = file.events.find((item) => item.objectId === objectId);
+  const invoices = file.invoices.filter((invoice) => invoice.unitId === unitId);
+  const open = invoices.filter((invoice) => invoice.status === "OPEN");
+  const event = file.events.find((item) => item.objectId === objectId && (item.unitId === unitId || !item.unitId));
+  const request = file.requests.find((item) => item.unitId === unitId && item.status !== "DONE" && item.status !== "CLOSED");
   const meters = (file.meters ?? [])
     .filter((meter) => meter.unitId === unitId)
     .map((meter) => {
       const latest = (file.meterReadings ?? []).filter((item) => item.meterId === meter.id).at(-1);
       return { name: meter.name, value: latest ? latest.value.toString().replace(".", ",") : "—", unit: meter.unit };
     });
+  const categories = [
+    ...new Set(
+      file.devices
+        .filter((device) => device.objectId === objectId && (device.unitId === unitId || device.unitId === null))
+        .map((device) => deviceLabel(device.kind)),
+    ),
+  ];
   return {
     climate: reading ? { temperatureC: reading.temperatureC, humidityPercent: reading.humidityPercent } : null,
     visitor: pass ? { title: pass.guestName, detail: pass.detail } : null,
@@ -392,5 +475,10 @@ export function homeSignals(unitId: string, objectId: string): {
       : null,
     today: event ? { title: "Событие", detail: event.title } : null,
     meters,
+    request: request ? { title: request.category, detail: request.text, authorUserId: request.authorUserId } : null,
+    payments: invoices
+      .filter((invoice) => invoice.status === "PAID")
+      .map((invoice) => ({ title: invoice.title, amount: invoice.amount, currency: invoice.currency })),
+    categories,
   };
 }

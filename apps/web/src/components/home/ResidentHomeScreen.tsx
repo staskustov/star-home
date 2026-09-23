@@ -12,6 +12,7 @@ import { VisitorCard } from "@/components/home/VisitorCard";
 import { Header } from "@/components/shell/Header";
 import { InstallPrompt } from "@/components/pwa/InstallPrompt";
 import { LiveRefresh } from "@/components/pwa/LiveRefresh";
+import { formatMoney } from "@/lib/format";
 import { commandMessage, runCommand, unconfirmed } from "@/lib/command";
 import { greetingForHour } from "@/lib/greeting";
 import type { LifeMode, ResidentHome } from "@/types/domain";
@@ -95,7 +96,10 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
           ))}
         </ul>
       ) : null}
-      <SecurityStatus label="Защита" state={current.securityLabel} tone={current.securityTone} />
+      <SecurityStatus label="Безопасность" state={current.securityLabel} tone={current.securityTone} />
+      {data.categories.length > 0 ? (
+        <p className="text-sm text-muted">{data.categories.join(" · ")}</p>
+      ) : null}
       <section>
         <h2 className="mb-3 text-sm text-muted">Быстрые действия</h2>
         <QuickActions actions={data.quickActions} onSelect={onAction} />
@@ -107,7 +111,7 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
       </section>
       <section>
         <h2 className="mb-3 text-sm text-muted">Сегодня</h2>
-        {data.visitor || data.balance || data.todayEvent ? (
+        {data.visitor || data.balance || data.todayEvent || data.todayRequest || data.paymentHistory.length > 0 ? (
           <div className="space-y-3">
             {data.visitor ? <VisitorCard title={data.visitor.title} detail={data.visitor.detail} /> : null}
             {data.balance ? <PaymentCard title="Счёт" amount={data.balance.amount} currency={data.balance.currency} /> : null}
@@ -117,6 +121,22 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
                 <p className="mt-1 text-sm text-muted">{data.todayEvent.detail}</p>
               </article>
             ) : null}
+            {data.todayRequest ? (
+              <article className="rounded-[20px] border border-line bg-surface px-5 py-4">
+                <h3 className="text-[17px] text-ink">Заявка</h3>
+                <p className="mt-1 text-sm text-muted">
+                  {data.todayRequest.title}. {data.todayRequest.detail}
+                </p>
+              </article>
+            ) : null}
+            {data.paymentHistory.map((payment) => (
+              <article key={`${payment.title}-${payment.amount}`} className="rounded-[20px] border border-line bg-surface px-5 py-4">
+                <h3 className="text-[17px] text-ink">История</h3>
+                <p className="mt-1 text-sm text-muted">
+                  {payment.title} · {formatMoney(payment.amount, payment.currency)}
+                </p>
+              </article>
+            ))}
           </div>
         ) : (
           <p className="text-[15px] text-muted">Пока тихо.</p>

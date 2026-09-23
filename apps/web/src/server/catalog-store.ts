@@ -99,6 +99,13 @@ function seed(): Catalog {
   for (let number = 1; number <= 96; number += 1) {
     units.push(apartment("obj_sky", number <= 48 ? "bld_sky_a" : "bld_sky_b", number, "APARTMENT_UNIT"));
   }
+  buildings.push({ id: "bld_new_1", objectId: "obj_new", name: "Корпус 1", number: "1", floors: null });
+  units.push(
+    { id: "unit_new_1", objectId: "obj_new", buildingId: "bld_new_1", name: "Квартира №1", number: "1", type: "APARTMENT" },
+    { id: "unit_new_2", objectId: "obj_new", buildingId: "bld_new_1", name: "Квартира №2", number: "2", type: "APARTMENT" },
+    { id: "unit_new_house_1", objectId: "obj_new_cottage", buildingId: null, name: "Дом №1", number: "1", type: "HOUSE" },
+    { id: "unit_new_house_2", objectId: "obj_new_cottage", buildingId: null, name: "Дом №2", number: "2", type: "HOUSE" },
+  );
   return {
     companies: [{ id: "cmp_star", name: "Star" }],
     objects: [
@@ -132,21 +139,66 @@ function seed(): Catalog {
         createdAt,
         updatedAt: createdAt,
       },
+      {
+        id: "obj_new",
+        companyId: "cmp_star",
+        name: "ЖК Новый",
+        type: "RESIDENTIAL_COMPLEX",
+        address: "",
+        description: "",
+        createdAt,
+        updatedAt: createdAt,
+      },
+      {
+        id: "obj_new_cottage",
+        companyId: "cmp_star",
+        name: "КП Новый",
+        type: "COTTAGE_COMMUNITY",
+        address: "",
+        description: "",
+        createdAt,
+        updatedAt: createdAt,
+      },
     ],
     buildings,
     units,
   };
 }
 
+function withScale(catalog: Catalog): Catalog {
+  const extra = seed();
+  let changed = false;
+  for (const object of extra.objects) {
+    if (!catalog.objects.some((item) => item.id === object.id)) {
+      catalog.objects.push(object);
+      changed = true;
+    }
+  }
+  for (const building of extra.buildings) {
+    if (!catalog.buildings.some((item) => item.id === building.id)) {
+      catalog.buildings.push(building);
+      changed = true;
+    }
+  }
+  for (const unit of extra.units) {
+    if (!catalog.units.some((item) => item.id === unit.id)) {
+      catalog.units.push(unit);
+      changed = true;
+    }
+  }
+  if (changed) persist(catalog);
+  return catalog;
+}
+
 function load(): Catalog {
   if (globalStore.__starHomeCatalog) return globalStore.__starHomeCatalog;
   const bound = boundValue("catalog");
   if (bound) {
-    globalStore.__starHomeCatalog = bound as Catalog;
+    globalStore.__starHomeCatalog = withScale(bound as Catalog);
     return globalStore.__starHomeCatalog;
   }
   if (existsSync(filePath)) {
-    globalStore.__starHomeCatalog = JSON.parse(readFileSync(filePath, "utf8")) as Catalog;
+    globalStore.__starHomeCatalog = withScale(JSON.parse(readFileSync(filePath, "utf8")) as Catalog);
     return globalStore.__starHomeCatalog;
   }
   const catalog = seed();

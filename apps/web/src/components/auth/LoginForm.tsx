@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { ThemeToggle } from "@/components/shell/ThemeToggle";
 
 export function LoginForm() {
   const router = useRouter();
@@ -36,6 +37,9 @@ export function LoginForm() {
   return (
     <form onSubmit={onSubmit} noValidate>
       <h1 className="text-center text-[28px] font-semibold tracking-[0.22em] text-ink sm:text-[32px]">STAR HOME</h1>
+      <div className="mt-8 flex justify-center">
+        <ThemeToggle />
+      </div>
 
       <label className="mt-12 block">
         <span className="text-sm text-muted">Логин</span>

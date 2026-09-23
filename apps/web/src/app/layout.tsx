@@ -32,7 +32,14 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="ru" className={`${inter.variable} h-full antialiased`}>
+    <html lang="ru" className={`${inter.variable} h-full antialiased`} suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: "try{if(localStorage.getItem('star-home-theme')==='dark')document.documentElement.dataset.theme='dark'}catch(e){}",
+          }}
+        />
+      </head>
       <body className="min-h-full">
         {children}
         <ServiceWorkerRegister />

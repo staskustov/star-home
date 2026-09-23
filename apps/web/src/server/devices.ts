@@ -1,3 +1,4 @@
+import { isOpener } from "@/server/device-kinds";
 import type { Device } from "@/server/ops-store";
 import { readOps, writeOps } from "@/server/ops-store";
 
@@ -14,7 +15,7 @@ export interface DeviceAdapter {
 
 class LocalAdapter implements DeviceAdapter {
   async execute(device: Device, command: DeviceCommand): Promise<DeviceResult> {
-    if (command === "OPEN" && device.kind === "GATE") return { confirmed: true };
+    if (command === "OPEN" && isOpener(device.kind)) return { confirmed: true };
     if (command === "READ" && device.kind === "CLIMATE") {
       const reading = readOps().readings.find((item) => item.deviceId === device.id);
       return reading ? { confirmed: true, reading } : { confirmed: false };
@@ -37,9 +38,16 @@ class HttpAdapter implements DeviceAdapter {
   }
 }
 
+const http = new HttpAdapter();
+
 const adapters: Record<Device["adapter"], DeviceAdapter> = {
   local: new LocalAdapter(),
-  http: new HttpAdapter(),
+  http,
+  matter: http,
+  mqtt: http,
+  modbus: http,
+  onvif: http,
+  rs485: http,
 };
 
 export async function runDevice(device: Device, command: DeviceCommand): Promise<DeviceResult> {
@@ -51,6 +59,13 @@ export async function runDevice(device: Device, command: DeviceCommand): Promise
 export function gateFor(objectId: string, unitId: string): Device | null {
   const devices = readOps().devices.filter((device) => device.objectId === objectId && device.kind === "GATE");
   return devices.find((device) => device.unitId === unitId) ?? devices.find((device) => device.unitId === null) ?? null;
+}
+
+export function accessPoint(objectId: string, unitId: string, pointId: string): Device | null {
+  const device = readOps().devices.find((item) => item.id === pointId && item.objectId === objectId);
+  if (!device || !isOpener(device.kind)) return null;
+  if (device.unitId !== null && device.unitId !== unitId) return null;
+  return device;
 }
 
 export function rememberReading(deviceId: string, temperatureC: number, humidityPercent: number): void {
