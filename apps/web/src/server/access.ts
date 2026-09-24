@@ -1,10 +1,11 @@
 import { redirect } from "next/navigation";
 import { rpc } from "@/server/rpc";
-import type { AccessEvent, AdminObjectSnapshot, ResidentHome } from "@/types/domain";
+import type { DashboardView } from "@/types/dashboard";
+import type { AccessEvent, AdminObjectSnapshot, NavGroup, ResidentHome } from "@/types/domain";
 
 type HomeBody = { home?: ResidentHome; redirect?: string };
 type PlacesBody = { name?: string; places?: { membershipId: string; title: string; meta: string }[]; redirect?: string };
-type AdminBody = { companyName?: string; actorLabel?: string; objects?: AdminObjectSnapshot[]; redirect?: string };
+type AdminBody = { companyName?: string; actorLabel?: string; objects?: AdminObjectSnapshot[]; sections?: NavGroup[]; redirect?: string };
 type ProfileBody = {
   name: string;
   place: string | null;
@@ -40,14 +41,21 @@ export async function requirePlaces(): Promise<{ name: string; places: { members
   return { name: result.body.name as string, places: result.body.places as { membershipId: string; title: string; meta: string }[] };
 }
 
-export async function requireAdminContext(): Promise<{ companyName: string; actorLabel: string; objects: AdminObjectSnapshot[] }> {
+export async function requireAdminContext(): Promise<{ companyName: string; actorLabel: string; objects: AdminObjectSnapshot[]; sections: NavGroup[] }> {
   const result = await rpc<AdminBody>("admin");
   if (result.status === 401 || result.body.redirect || !result.body.objects) await go(result, "/home");
   return {
     companyName: result.body.companyName ?? "",
     actorLabel: result.body.actorLabel ?? "",
     objects: result.body.objects as AdminObjectSnapshot[],
+    sections: result.body.sections ?? [],
   };
+}
+
+export async function requireDashboard(): Promise<DashboardView> {
+  const result = await rpc<DashboardView>("dashboard");
+  if (result.status !== 200) await go({ status: result.status, body: {} }, "/no-access");
+  return result.body;
 }
 
 export async function profileView(): Promise<ProfileBody> {

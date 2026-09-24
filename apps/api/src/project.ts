@@ -7,6 +7,7 @@ const roles = [
   "MANAGER",
   "SECURITY",
   "SERVICE_OPERATOR",
+  "ACCOUNTANT",
   "RESIDENT",
   "FAMILY_MEMBER",
   "GUEST",

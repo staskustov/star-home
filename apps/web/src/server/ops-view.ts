@@ -4,7 +4,7 @@ import { deviceLabel, isOpener } from "@/server/device-kinds";
 import { findUserById } from "@/server/directory";
 import { readOps } from "@/server/ops-store";
 
-const actions: Record<string, string> = {
+export const auditActionLabels: Record<string, string> = {
   OPEN_GATE: "Открытие ворот",
   CREATE_PASS: "Пропуск",
   CREATE_REQUEST: "Заявка",
@@ -108,7 +108,7 @@ export function companyOps(companyId: string) {
         id: entry.id,
         objectId: entry.objectId,
         actor: findUserById(entry.actorUserId)?.name ?? "Сотрудник",
-        action: actions[entry.action] ?? entry.action,
+        action: auditActionLabels[entry.action] ?? entry.action,
         target: entry.target,
         result: entry.result,
         error: entry.error,

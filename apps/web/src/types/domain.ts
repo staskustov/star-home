@@ -20,6 +20,7 @@ export const roles = [
   "MANAGER",
   "SECURITY",
   "SERVICE_OPERATOR",
+  "ACCOUNTANT",
   "RESIDENT",
   "FAMILY_MEMBER",
   "GUEST",
@@ -173,4 +174,9 @@ export type NavItem = {
   href: string;
   label: string;
   icon: "home" | "access" | "ai" | "service" | "profile" | "overview" | "objects" | "residents" | "security" | "requests" | "payments" | "devices" | "settings" | "rooms";
+};
+
+export type NavGroup = {
+  label: string;
+  items: NavItem[];
 };

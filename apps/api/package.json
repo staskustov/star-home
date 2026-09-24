@@ -3,6 +3,7 @@
   "private": true,
   "scripts": {
     "dev": "tsx src/main.ts",
+    "test": "tsx --test test/*.test.ts",
     "prisma": "prisma generate"
   },
   "dependencies": {

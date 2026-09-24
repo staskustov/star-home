@@ -5,6 +5,8 @@ type Forms = readonly [string, string, string];
 
 export type ObjectPresentation = {
   label: string;
+  placeLabel: string;
+  unitsLabel: string;
   usesBuildings: boolean;
   unitForms: Forms;
   buildingForms: Forms | null;
@@ -16,6 +18,8 @@ export type ObjectPresentation = {
 export const objectPresentation: Record<ObjectType, ObjectPresentation> = {
   COTTAGE_COMMUNITY: {
     label: "Коттеджный посёлок",
+    placeLabel: "Посёлок",
+    unitsLabel: "Дома",
     usesBuildings: false,
     unitForms: ["дом", "дома", "домов"],
     buildingForms: null,
@@ -25,6 +29,8 @@ export const objectPresentation: Record<ObjectType, ObjectPresentation> = {
   },
   RESIDENTIAL_COMPLEX: {
     label: "Жилой комплекс",
+    placeLabel: "Комплекс",
+    unitsLabel: "Квартиры",
     usesBuildings: true,
     unitForms: ["квартира", "квартиры", "квартир"],
     buildingForms: ["корпус", "корпуса", "корпусов"],
@@ -34,6 +40,8 @@ export const objectPresentation: Record<ObjectType, ObjectPresentation> = {
   },
   APARTMENT_COMPLEX: {
     label: "Апарт-комплекс",
+    placeLabel: "Комплекс",
+    unitsLabel: "Апартаменты",
     usesBuildings: true,
     unitForms: ["апартамент", "апартамента", "апартаментов"],
     buildingForms: ["корпус", "корпуса", "корпусов"],
@@ -43,6 +51,8 @@ export const objectPresentation: Record<ObjectType, ObjectPresentation> = {
   },
   APARTMENT_BUILDING: {
     label: "Многоквартирный дом",
+    placeLabel: "Дом",
+    unitsLabel: "Квартиры",
     usesBuildings: false,
     unitForms: ["квартира", "квартиры", "квартир"],
     buildingForms: null,
@@ -52,6 +62,8 @@ export const objectPresentation: Record<ObjectType, ObjectPresentation> = {
   },
   MULTI_FAMILY_BUILDING: {
     label: "Дом на несколько семей",
+    placeLabel: "Дом",
+    unitsLabel: "Помещения",
     usesBuildings: false,
     unitForms: ["помещение", "помещения", "помещений"],
     buildingForms: null,
@@ -61,6 +73,8 @@ export const objectPresentation: Record<ObjectType, ObjectPresentation> = {
   },
   CUSTOM: {
     label: "Объект",
+    placeLabel: "Объект",
+    unitsLabel: "Единицы",
     usesBuildings: true,
     unitForms: ["единица", "единицы", "единиц"],
     buildingForms: ["здание", "здания", "зданий"],

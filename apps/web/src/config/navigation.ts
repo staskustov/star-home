@@ -10,16 +10,3 @@ export const residentNav: NavItem[] = [
 ];
 
 export const residentDock = ["/home", "/rooms", "/devices", "/service"];
-
-export const adminNav: NavItem[] = [
-  { href: "/admin", label: "Обзор", icon: "overview" },
-  { href: "/admin/objects", label: "Объекты", icon: "objects" },
-  { href: "/admin/residents", label: "Жители", icon: "residents" },
-  { href: "/admin/access", label: "Доступ", icon: "access" },
-  { href: "/admin/security", label: "Охрана", icon: "security" },
-  { href: "/admin/requests", label: "Заявки", icon: "requests" },
-  { href: "/admin/payments", label: "Платежи", icon: "payments" },
-  { href: "/admin/devices", label: "Устройства", icon: "devices" },
-  { href: "/admin/ai", label: "AI", icon: "ai" },
-  { href: "/admin/settings", label: "Настройки", icon: "settings" },
-];

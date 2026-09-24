@@ -39,7 +39,10 @@ import {
   payFor,
   setRequestStatusFor,
 } from "@/server/operations";
+import { dashboardFor } from "@/server/dashboard";
 import { verifyPassword } from "@/server/password";
+import { staffActor, withPermission } from "@/server/rbac/decide";
+import { sectionsFor } from "@/server/rbac/sections";
 import { record, text } from "@/server/schema";
 import { addResident, removeResident, residentBoard } from "@/server/residents";
 import { destinationFor, guardPath, initialMembershipId } from "@/server/routing";
@@ -93,6 +96,7 @@ async function dispatch(method: string, input: unknown, session: SessionRef | nu
   if (method === "profile") return profile(session);
   if (method === "guest") return guest(session);
   if (method === "admin") return admin(session);
+  if (method === "dashboard") return dashboard(session);
   if (method === "ops") return ops(session);
   if (method === "access") return access(session);
   if (method === "requests") return requests(session);
@@ -236,12 +240,20 @@ function admin(session: SessionRef | null): Reply {
   const admins = adminMemberships(session.userId);
   const selected = session.membershipId ? findMembership(session.userId, session.membershipId) : undefined;
   const membership = selected && isAdminRole(selected.role) ? selected : admins[0];
-  if (!actor.ok || !user || !membership) return ok({ redirect: destinationFor(session.userId, session.membershipId) });
+  const staff = staffActor(session);
+  if (!actor.ok || !staff.ok || !user || !membership) return ok({ redirect: destinationFor(session.userId, session.membershipId) });
   return ok({
     companyName: companyName(membership.companyId),
     actorLabel: user.name,
     objects: adminObjectsFor(membership),
+    sections: sectionsFor(staff.value),
   });
+}
+
+function dashboard(session: SessionRef | null): Reply {
+  const actor = withPermission(staffActor(session), "dashboard.view");
+  if (!actor.ok) return fail(actor.status, actor.message);
+  return ok(dashboardFor(actor.value));
 }
 
 function ops(session: SessionRef | null): Reply {

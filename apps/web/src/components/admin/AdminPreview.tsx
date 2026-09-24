@@ -2,12 +2,13 @@
 
 import { createContext, useContext, useState } from "react";
 import { usePathname } from "next/navigation";
-import type { AdminObjectSnapshot } from "@/types/domain";
+import type { AdminObjectSnapshot, NavGroup } from "@/types/domain";
 
 type AdminPreviewValue = {
   companyName: string;
   actorLabel: string;
   objects: AdminObjectSnapshot[];
+  sections: NavGroup[];
   selectedId: string;
   selected: AdminObjectSnapshot | null;
   select: (id: string) => void;
@@ -19,11 +20,13 @@ export function AdminPreviewProvider({
   companyName,
   actorLabel,
   initialObjects,
+  sections,
   children,
 }: {
   companyName: string;
   actorLabel: string;
   initialObjects: AdminObjectSnapshot[];
+  sections: NavGroup[];
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -39,6 +42,7 @@ export function AdminPreviewProvider({
         companyName,
         actorLabel,
         objects: initialObjects,
+        sections,
         selectedId: selected?.id ?? "",
         selected,
         select: setSelectedId,

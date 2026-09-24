@@ -1,0 +1,138 @@
+import { permissions, type Permission } from "@/server/rbac/permissions";
+import type { Role } from "@/types/domain";
+
+export type ScopeKind = "PLATFORM" | "COMPANY" | "OBJECT" | "BUILDING" | "UNIT";
+
+const householdOnly = new Set<Permission>(["payments.pay", "home.view", "home.mode.switch", "home.family.manage", "guest.pass.view"]);
+
+const staffAll = permissions.filter((permission) => !householdOnly.has(permission));
+
+const objectAdminDenied = new Set<Permission>([
+  "objects.create",
+  "objects.delete",
+  "payments.refund",
+  "ai.manage",
+  "users.delete",
+  "roles.edit",
+  "audit.export",
+  "settings.company.edit",
+]);
+
+const grants: Record<Role, readonly Permission[]> = {
+  SUPER_ADMIN: staffAll,
+  COMPANY_ADMIN: staffAll,
+  OBJECT_ADMIN: staffAll.filter((permission) => !objectAdminDenied.has(permission)),
+  MANAGER: [
+    "dashboard.view",
+    "objects.view",
+    "objects.structure.edit",
+    "residents.view",
+    "residents.create",
+    "residents.edit",
+    "access.view",
+    "access.pass.create",
+    "access.pass.revoke",
+    "access.gate.open",
+    "security.view",
+    "security.alarm.raise",
+    "security.alarm.handle",
+    "security.camera.view",
+    "service.view",
+    "service.create",
+    "service.edit",
+    "payments.view",
+    "devices.view",
+    "devices.command",
+    "devices.edit",
+    "engineering.view",
+    "engineering.command",
+    "ai.use",
+    "settings.view",
+  ],
+  SECURITY: [
+    "dashboard.view",
+    "objects.view",
+    "residents.view",
+    "access.view",
+    "access.pass.create",
+    "access.pass.revoke",
+    "access.gate.open",
+    "security.view",
+    "security.alarm.raise",
+    "security.alarm.handle",
+    "security.camera.view",
+    "devices.view",
+    "audit.view",
+  ],
+  SERVICE_OPERATOR: ["dashboard.view", "objects.view", "residents.view", "service.view", "service.create", "service.edit", "devices.view", "engineering.view"],
+  ACCOUNTANT: ["dashboard.view", "objects.view", "residents.view", "payments.view", "payments.invoice.create", "payments.invoice.edit", "payments.export"],
+  RESIDENT: [
+    "access.view",
+    "access.pass.create",
+    "access.pass.revoke",
+    "access.gate.open",
+    "security.alarm.raise",
+    "security.camera.view",
+    "service.view",
+    "service.create",
+    "payments.view",
+    "payments.pay",
+    "devices.view",
+    "ai.use",
+    "home.view",
+    "home.mode.switch",
+    "home.family.manage",
+  ],
+  FAMILY_MEMBER: [
+    "access.view",
+    "access.gate.open",
+    "security.alarm.raise",
+    "security.camera.view",
+    "service.view",
+    "service.create",
+    "devices.view",
+    "ai.use",
+    "home.view",
+    "home.mode.switch",
+  ],
+  GUEST: ["access.view", "guest.pass.view"],
+};
+
+const selfOnly: Partial<Record<Role, readonly Permission[]>> = {
+  FAMILY_MEMBER: ["service.view"],
+  GUEST: ["access.view"],
+};
+
+export const roleRank: Record<Role, number> = {
+  SUPER_ADMIN: 100,
+  COMPANY_ADMIN: 90,
+  OBJECT_ADMIN: 70,
+  MANAGER: 50,
+  SECURITY: 40,
+  SERVICE_OPERATOR: 40,
+  ACCOUNTANT: 40,
+  RESIDENT: 10,
+  FAMILY_MEMBER: 5,
+  GUEST: 1,
+};
+
+export const roleScopes: Record<Role, readonly ScopeKind[]> = {
+  SUPER_ADMIN: ["PLATFORM"],
+  COMPANY_ADMIN: ["COMPANY"],
+  OBJECT_ADMIN: ["OBJECT"],
+  MANAGER: ["OBJECT", "BUILDING"],
+  SECURITY: ["OBJECT", "BUILDING"],
+  SERVICE_OPERATOR: ["OBJECT", "BUILDING"],
+  ACCOUNTANT: ["COMPANY", "OBJECT"],
+  RESIDENT: ["UNIT"],
+  FAMILY_MEMBER: ["UNIT"],
+  GUEST: ["UNIT"],
+};
+
+export function permissionsOf(role: Role): ReadonlySet<Permission> {
+  return new Set(grants[role]);
+}
+
+export function selfOnlyOf(role: Role): ReadonlySet<Permission> {
+  return new Set(selfOnly[role] ?? []);
+}

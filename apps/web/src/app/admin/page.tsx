@@ -1,5 +1,6 @@
-import { AdminOverview } from "@/components/admin/AdminOverview";
+import { AdminDashboard } from "@/components/admin/AdminDashboard";
+import { requireDashboard } from "@/server/access";
 
-export default function AdminPage() {
-  return <AdminOverview />;
+export default async function AdminPage() {
+  return <AdminDashboard view={await requireDashboard()} />;
 }

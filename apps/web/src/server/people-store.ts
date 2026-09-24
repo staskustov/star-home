@@ -14,7 +14,45 @@ export type StoredUser = {
 type PeopleFile = {
   users: StoredUser[];
   memberships: Membership[];
+  staffSeed?: number;
 };
+
+const staffSeedVersion = 1;
+
+const demoStaff: { user: StoredUser; membership: Membership }[] = [
+  {
+    user: {
+      id: "usr_object",
+      login: "object",
+      name: "Ольга Соколова",
+      passwordHash: "1caxM7VkG9ibtZ6Pbd7wiw._Nx2jdUF5cGujF3WEakOuhUo93mhfHhLPEhBnhPFEP4",
+    },
+    membership: { id: "mem_object_siyanie", userId: "usr_object", companyId: "cmp_star", role: "OBJECT_ADMIN", objectId: "obj_siyanie", unitId: null },
+  },
+  {
+    user: {
+      id: "usr_manager",
+      login: "manager",
+      name: "Андрей Ким",
+      passwordHash: "x2UF9UugV-KjhHFLS3CSqA.SBymB-gaSzviH_fI5jHRqtfZ1Ar7i79jyc2XTm7DAFU",
+    },
+    membership: { id: "mem_manager_siyanie", userId: "usr_manager", companyId: "cmp_star", role: "MANAGER", objectId: "obj_siyanie", unitId: null },
+  },
+];
+
+function withStaff(people: PeopleFile): PeopleFile {
+  globalStore.__starHomePeople = people;
+  if ((people.staffSeed ?? 0) >= staffSeedVersion) return people;
+  for (const entry of demoStaff) {
+    const taken = people.users.some((user) => user.id === entry.user.id || user.login === entry.user.login);
+    if (taken) continue;
+    people.users.push({ ...entry.user });
+    people.memberships.push({ ...entry.membership });
+  }
+  people.staffSeed = staffSeedVersion;
+  persist(people);
+  return people;
+}
 
 const filePath = path.join(process.cwd(), "data", "people.json");
 const globalStore = globalThis as typeof globalThis & { __starHomePeople?: PeopleFile };
@@ -81,17 +119,9 @@ function seed(): PeopleFile {
 function load(): PeopleFile {
   if (globalStore.__starHomePeople) return globalStore.__starHomePeople;
   const bound = boundValue("people");
-  if (bound) {
-    globalStore.__starHomePeople = bound as PeopleFile;
-    return globalStore.__starHomePeople;
-  }
-  if (existsSync(filePath)) {
-    globalStore.__starHomePeople = JSON.parse(readFileSync(filePath, "utf8")) as PeopleFile;
-    return globalStore.__starHomePeople;
-  }
-  const people = seed();
-  persist(people);
-  return people;
+  if (bound) return withStaff(bound as PeopleFile);
+  if (existsSync(filePath)) return withStaff(JSON.parse(readFileSync(filePath, "utf8")) as PeopleFile);
+  return withStaff(seed());
 }
 
 function persist(people: PeopleFile): void {

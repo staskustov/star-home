@@ -13,16 +13,18 @@ function isActive(pathname: string, href: string) {
 export function Sidebar({
   items,
   labels = "always",
+  navLabel = "Разделы",
 }: {
   items: NavItem[];
   labels?: "always" | "from-lg";
+  navLabel?: string;
 }) {
   const pathname = usePathname();
   const labelClass = labels === "from-lg" ? "sr-only lg:not-sr-only" : "";
   const linkClass = labels === "from-lg" ? "justify-center px-0 lg:justify-start lg:px-3" : "";
 
   return (
-    <nav aria-label="Разделы">
+    <nav aria-label={navLabel}>
       <ul className="flex flex-col gap-1">
         {items.map((item) => {
           const active = isActive(pathname, item.href);
