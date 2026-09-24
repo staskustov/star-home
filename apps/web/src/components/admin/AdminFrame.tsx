@@ -6,7 +6,7 @@ import { AdminSidebar } from "@/components/admin/AdminSidebar";
 import { useAdminPreview } from "@/components/admin/AdminPreview";
 import { Icon } from "@/components/icons";
 import { ObjectSwitcher } from "@/components/home/ObjectSwitcher";
-import { ThemeToggle } from "@/components/shell/ThemeToggle";
+import { TopBarActions } from "@/components/shell/TopBarActions";
 import { AppShell } from "@/components/shell/AppShell";
 
 export function AdminFrame({ children }: { children: React.ReactNode }) {
@@ -24,12 +24,12 @@ export function AdminFrame({ children }: { children: React.ReactNode }) {
     <AppShell
       variant="admin"
       sidebar={
-        <aside className="sticky top-0 h-dvh border-r border-line bg-surface">
+        <aside className="glass-rail sticky top-0 h-dvh border-r">
           <AdminSidebar labels="from-lg" />
         </aside>
       }
     >
-      <header className="sticky top-0 z-20 border-b border-line bg-bg/95 px-5 py-4 backdrop-blur lg:px-10">
+      <header className="sticky top-0 z-20 border-b border-line/60 bg-bg/40 px-5 py-4 backdrop-blur-xl lg:px-10">
         <div className="flex items-center gap-3">
           <button type="button" className="btn btn-secondary btn-icon md:hidden" aria-label="Меню" onClick={() => setMenuPath(pathname)}>
             <Icon name="menu" />
@@ -39,7 +39,7 @@ export function AdminFrame({ children }: { children: React.ReactNode }) {
             <p className="mt-1 text-sm text-muted">{preview.actorLabel}</p>
             <p className="truncate text-[17px] text-ink">{preview.companyName}</p>
           </div>
-          <ThemeToggle />
+          <TopBarActions />
           <div className="hidden min-w-0 sm:block">
             <ObjectSwitcher objects={preview.objects} value={preview.selectedId} onChange={selectObject} />
           </div>
@@ -52,7 +52,7 @@ export function AdminFrame({ children }: { children: React.ReactNode }) {
       {menuOpen ? (
         <div className="fixed inset-0 z-40 md:hidden">
           <button type="button" className="absolute inset-0 bg-ink/40 backdrop-blur-sm" aria-label="Закрыть меню" onClick={() => setMenuPath(null)} />
-          <div className="absolute inset-y-0 left-0 w-[280px] overflow-y-auto border-r border-line bg-surface shadow-[16px_0_40px_rgba(26,26,26,0.08)]">
+          <div className="absolute inset-y-0 left-0 w-[280px] overflow-y-auto border-r border-line bg-bg shadow-[16px_0_40px_rgba(26,26,26,0.08)]">
             <AdminSidebar />
           </div>
         </div>

@@ -89,7 +89,14 @@ export function companyOps(companyId: string) {
           objectId: device.objectId,
           name: device.name,
           kind: deviceLabel(device.kind),
-          state: reading ? `${formatTemperature(reading.temperatureC)} · ${formatHumidity(reading.humidityPercent)}` : "На связи",
+          state:
+            device.work === "FAULT"
+              ? "Неисправно"
+              : device.work === "OFF"
+                ? "Отключено"
+                : reading
+                  ? `${formatTemperature(reading.temperatureC)} · ${formatHumidity(reading.humidityPercent)}`
+                  : "На связи",
         };
       }),
     alarms: file.alarms

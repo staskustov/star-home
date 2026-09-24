@@ -23,7 +23,7 @@ export function LifeModeSwitcher({
             onClick={() => onChange(mode.mode)}
             className="segment-item"
           >
-            <Icon name={lifeModeIcon[mode.mode]} className="h-5 w-5" />
+            <Icon name={lifeModeIcon[mode.mode]} className="h-6 w-6" />
             {mode.label}
           </button>
         );

@@ -21,7 +21,7 @@ export function destinationFor(userId: string, membershipId: string | null): str
   return "/no-access";
 }
 
-const residentPaths = ["/home", "/access", "/ai", "/service", "/profile", "/my-objects"];
+const residentPaths = ["/home", "/access", "/rooms", "/devices", "/service", "/profile", "/my-objects"];
 const adminPrefix = "/admin";
 
 export function guardPath(userId: string, membershipId: string | null, pathname: string): { redirect?: string } {
@@ -34,6 +34,10 @@ export function guardPath(userId: string, membershipId: string | null, pathname:
   }
   if (pathname.startsWith(adminPrefix)) {
     if (adminMemberships(userId).length === 0) return { redirect: destination };
+    return {};
+  }
+  if (pathname === "/profile") {
+    if (guest) return { redirect: destination };
     return {};
   }
   if (pathname === "/my-objects") {

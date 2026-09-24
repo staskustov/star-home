@@ -1,21 +1,22 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AIBar } from "@/components/home/AIBar";
-import { HomeStatus } from "@/components/home/HomeStatus";
+import { StarMark } from "@/components/brand/StarMark";
+import { CameraBlock } from "@/components/home/CameraBlock";
+import { HomeHero } from "@/components/home/HomeHero";
 import { LifeModeSwitcher } from "@/components/home/LifeModeSwitcher";
-import { PaymentCard } from "@/components/home/PaymentCard";
 import { QuickActions } from "@/components/home/QuickActions";
-import { SecurityStatus } from "@/components/home/SecurityStatus";
-import { VisitorCard } from "@/components/home/VisitorCard";
-import { Header } from "@/components/shell/Header";
-import { InstallPrompt } from "@/components/pwa/InstallPrompt";
+import { Icon, type IconName } from "@/components/icons";
 import { LiveRefresh } from "@/components/pwa/LiveRefresh";
 import { formatMoney } from "@/lib/format";
 import { commandMessage, runCommand, unconfirmed } from "@/lib/command";
 import { greetingForHour } from "@/lib/greeting";
+import { houseReadout } from "@/lib/house-status";
 import type { LifeMode, ResidentHome } from "@/types/domain";
+
+type TodayRow = { key: string; icon: IconName; title: string; detail: string; href?: string };
 
 export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
   const router = useRouter();
@@ -69,80 +70,105 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
   }
 
   if (!current) return null;
+  const readout = houseReadout(data.devices, current);
+  const security = readout.tone === "danger" ? "Есть проблема" : current.securityLabel;
+
+  const today: TodayRow[] = [
+    ...(data.visitor ? [{ key: "visitor", icon: "guests" as const, title: data.visitor.title, detail: data.visitor.detail, href: "/access" }] : []),
+    ...(data.balance ? [{ key: "balance", icon: "payments" as const, title: "Счёт", detail: formatMoney(data.balance.amount, data.balance.currency) }] : []),
+    ...(data.todayEvent ? [{ key: "event", icon: "event" as const, title: data.todayEvent.title, detail: data.todayEvent.detail }] : []),
+    ...(data.todayRequest
+      ? [{ key: "request", icon: "requests" as const, title: "Заявка", detail: `${data.todayRequest.title}. ${data.todayRequest.detail}`, href: "/service" }]
+      : []),
+    ...data.paymentHistory.map((payment) => ({
+      key: `pay-${payment.title}-${payment.amount}`,
+      icon: "payments" as const,
+      title: "Оплачено",
+      detail: `${payment.title} · ${formatMoney(payment.amount, payment.currency)}`,
+    })),
+    ...data.meters.map((meter) => ({ key: `meter-${meter.name}`, icon: "meter" as const, title: meter.name, detail: `${meter.value} ${meter.unit}` })),
+  ];
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-7">
       <LiveRefresh />
-      <InstallPrompt />
-      <Header mark="STAR HOME" title={greeting} meta={`${data.object.name} · ${data.unit.name}`} />
+      <header>
+        <div className="flex items-center justify-between lg:hidden">
+          <p className="flex items-center gap-2 text-[12px] font-medium tracking-[0.26em] text-ink">
+            <StarMark className="h-4 w-4 text-accent" />
+            STAR HOME
+          </p>
+          <Link href="/profile" aria-label="Личный кабинет" className="avatar">
+            {data.residentName.slice(0, 1) || "·"}
+          </Link>
+        </div>
+        <h1 suppressHydrationWarning className="mt-6 text-[28px] leading-[1.1] tracking-[-0.035em] text-ink sm:text-[34px] lg:mt-0">
+          {greeting}
+        </h1>
+        <p className="mt-2 text-[15px] text-muted">
+          {data.object.name} · {data.unit.name}
+        </p>
+      </header>
+
       <LifeModeSwitcher modes={data.lifeModes} value={current.mode} onChange={changeMode} />
-      <HomeStatus
+
+      <CameraBlock cameras={data.cameras} />
+
+      <HomeHero
         unitName={data.unit.name}
-        summary={current.summary}
-        tone={current.securityTone}
-        detail={current.detail}
+        rooms={data.rooms}
+        summary={readout.summary}
+        detail={readout.detail}
+        tone={readout.tone}
+        security={security}
         temperatureC={data.climate?.temperatureC ?? null}
         humidityPercent={data.climate?.humidityPercent ?? null}
       />
-      {data.meters.length > 0 ? (
-        <ul className="grid gap-3">
-          {data.meters.map((meter) => (
-            <li key={meter.name} className="panel px-5 py-4">
-              <p className="text-sm text-muted">{meter.name}</p>
-              <p className="mt-1 text-[22px] tracking-[-0.03em] text-ink">
-                {meter.value} {meter.unit}
-              </p>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-      <SecurityStatus label="Безопасность" state={current.securityLabel} tone={current.securityTone} />
-      {data.categories.length > 0 ? (
-        <p className="text-sm text-muted">{data.categories.join(" · ")}</p>
-      ) : null}
-      <section>
-        <h2 className="kicker mb-3 text-muted">Быстрые действия</h2>
+
+      <div className="space-y-3">
         <QuickActions actions={data.quickActions} onSelect={onAction} />
         {notice ? (
-          <p role="status" className="fade-in mt-3 text-sm text-muted">
+          <p role="status" className="fade-in text-[15px] text-muted">
             {notice}
           </p>
         ) : null}
-      </section>
-      <section>
-        <h2 className="kicker mb-3 text-muted">Сегодня</h2>
-        {data.visitor || data.balance || data.todayEvent || data.todayRequest || data.paymentHistory.length > 0 ? (
-          <div className="space-y-3">
-            {data.visitor ? <VisitorCard title={data.visitor.title} detail={data.visitor.detail} /> : null}
-            {data.balance ? <PaymentCard title="Счёт" amount={data.balance.amount} currency={data.balance.currency} /> : null}
-            {data.todayEvent ? (
-              <article className="panel px-5 py-4">
-                <h3 className="text-[17px] text-ink">{data.todayEvent.title}</h3>
-                <p className="mt-1 text-sm text-muted">{data.todayEvent.detail}</p>
-              </article>
-            ) : null}
-            {data.todayRequest ? (
-              <article className="panel px-5 py-4">
-                <h3 className="text-[17px] text-ink">Заявка</h3>
-                <p className="mt-1 text-sm text-muted">
-                  {data.todayRequest.title}. {data.todayRequest.detail}
-                </p>
-              </article>
-            ) : null}
-            {data.paymentHistory.map((payment) => (
-              <article key={`${payment.title}-${payment.amount}`} className="panel px-5 py-4">
-                <h3 className="text-[17px] text-ink">История</h3>
-                <p className="mt-1 text-sm text-muted">
-                  {payment.title} · {formatMoney(payment.amount, payment.currency)}
-                </p>
-              </article>
+      </div>
+
+      <section aria-label="Сегодня">
+        <h2 className="mb-3 text-[19px] tracking-[-0.02em] text-ink">Сегодня</h2>
+        {today.length > 0 ? (
+          <ul className="panel overflow-hidden">
+            {today.map((row) => (
+              <li key={row.key} className="list-row">
+                <TodayContent row={row} />
+              </li>
             ))}
-          </div>
+          </ul>
         ) : (
-          <p className="text-[15px] text-muted">Пока тихо.</p>
+          <p className="panel px-5 py-5 text-[15px] text-muted">Пока тихо.</p>
         )}
       </section>
-      <AIBar prompt={data.aiPrompt} />
     </div>
+  );
+}
+
+function TodayContent({ row }: { row: TodayRow }) {
+  const body = (
+    <>
+      <span className="tile-icon">
+        <Icon name={row.icon} className="h-[18px] w-[18px]" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[15px] text-ink">{row.title}</span>
+        <span className="mt-0.5 block truncate text-[13px] text-muted">{row.detail}</span>
+      </span>
+    </>
+  );
+  if (!row.href) return body;
+  return (
+    <Link href={row.href} className="-my-1 flex min-w-0 flex-1 items-center gap-[14px] py-1">
+      {body}
+      <Icon name="chevron" className="h-4 w-4 shrink-0 text-muted" />
+    </Link>
   );
 }

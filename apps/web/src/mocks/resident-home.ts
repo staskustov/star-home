@@ -85,6 +85,9 @@ export const residentHome: ResidentHome = {
   todayRequest: null,
   paymentHistory: [],
   categories: [],
+  rooms: [],
+  cameras: [],
+  devices: [],
   serviceCategories: [
     "Электричество",
     "Вода",

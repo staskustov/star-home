@@ -70,6 +70,7 @@ export type Device = {
   name: string;
   adapter: "local" | "http" | "matter" | "mqtt" | "modbus" | "onvif" | "rs485";
   endpoint?: string;
+  work?: "ON" | "OFF" | "FAULT";
 };
 
 export type DeviceReading = {
@@ -290,6 +291,27 @@ function seed(): OpsFile {
         kind: "CAMERA",
         name: "Камера входа",
         adapter: "local",
+        work: "ON",
+      },
+      {
+        id: "dev_camera_yard_24",
+        companyId: "cmp_star",
+        objectId: "obj_siyanie",
+        unitId: "unit_24",
+        kind: "CAMERA",
+        name: "Камера двора",
+        adapter: "local",
+        work: "ON",
+      },
+      {
+        id: "dev_camera_wicket_24",
+        companyId: "cmp_star",
+        objectId: "obj_siyanie",
+        unitId: "unit_24",
+        kind: "CAMERA",
+        name: "Камера калитки",
+        adapter: "local",
+        work: "OFF",
       },
       {
         id: "dev_leak_24",
@@ -299,6 +321,7 @@ function seed(): OpsFile {
         kind: "LEAK",
         name: "Датчик протечки",
         adapter: "local",
+        work: "FAULT",
       },
       {
         id: "dev_lock_84",
@@ -349,6 +372,11 @@ function normalize(file: OpsFile): OpsFile {
   }
   for (const device of catalogDevices()) {
     if (!file.devices.some((item) => item.id === device.id)) file.devices.push({ ...device });
+  }
+  for (const device of file.devices) {
+    if (device.work) continue;
+    const seeded = catalogDevices().find((item) => item.id === device.id);
+    device.work = seeded?.work ?? "ON";
   }
   return file;
 }
@@ -445,6 +473,8 @@ export function homeSignals(unitId: string, objectId: string): {
   request: { title: string; detail: string; authorUserId: string } | null;
   payments: { title: string; amount: number; currency: string }[];
   categories: string[];
+  cameras: { name: string; state: string }[];
+  devices: { name: string; label: string; state: "ON" | "OFF" | "FAULT" }[];
 } {
   const file = load();
   const climateDevice = file.devices.find((device) => device.kind === "CLIMATE" && device.unitId === unitId);
@@ -480,5 +510,11 @@ export function homeSignals(unitId: string, objectId: string): {
       .filter((invoice) => invoice.status === "PAID")
       .map((invoice) => ({ title: invoice.title, amount: invoice.amount, currency: invoice.currency })),
     categories,
+    cameras: file.devices
+      .filter((device) => device.kind === "CAMERA" && device.unitId === unitId)
+      .map((device) => ({ name: device.name, state: device.work === "OFF" ? "Отключено" : device.work === "FAULT" ? "Неисправно" : "На связи" })),
+    devices: file.devices
+      .filter((device) => device.objectId === objectId && (device.unitId === unitId || device.unitId === null))
+      .map((device) => ({ name: device.name, label: deviceLabel(device.kind), state: device.work === "OFF" ? "OFF" : device.work === "FAULT" ? "FAULT" : "ON" })),
   };
 }

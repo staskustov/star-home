@@ -25,18 +25,18 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#F6F4F0",
+  themeColor: "#1B1713",
   width: "device-width",
   initialScale: 1,
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="ru" className={`${inter.variable} h-full antialiased`} suppressHydrationWarning>
+    <html lang="ru" className={`${inter.variable} h-full antialiased`} data-theme="dark" data-palette="bronze" suppressHydrationWarning>
       <head>
         <script
           dangerouslySetInnerHTML={{
-            __html: "try{if(localStorage.getItem('star-home-theme')==='dark')document.documentElement.dataset.theme='dark'}catch(e){}",
+            __html: "try{var raw=localStorage.getItem('star-home-appearance')||'dark:bronze';var parts=raw.split(':');var mode=parts[0]==='light'?'light':'dark';var palette=parts[1]||'bronze';if(mode==='dark')document.documentElement.dataset.theme='dark';if(['bronze','blue','red','yellow','ink'].indexOf(palette)>=0)document.documentElement.dataset.palette=palette}catch(e){document.documentElement.dataset.theme='dark';document.documentElement.dataset.palette='bronze'}",
           }}
         />
       </head>

@@ -3,13 +3,19 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAdminPreview } from "@/components/admin/AdminPreview";
+import { ThemePalette } from "@/components/shell/ThemePalette";
 import { lifeModeChecks, type LifeModeCheck, type LifeModeSetting } from "@/types/domain";
 
 export function LifeModeSettings({ objects }: { objects: { objectId: string; modes: LifeModeSetting[] }[] }) {
   const { selected } = useAdminPreview();
   const modes = objects.find((object) => object.objectId === selected?.id)?.modes;
   if (!selected || !modes) {
-    return <h1 className="text-[36px] leading-none tracking-[-0.04em] text-ink">Настройки</h1>;
+    return (
+      <div className="mx-auto max-w-3xl">
+        <h1 className="text-[36px] leading-none tracking-[-0.04em] text-ink">Настройки</h1>
+        <ThemePalette />
+      </div>
+    );
   }
   return <ModeEditor key={selected.id} objectId={selected.id} objectName={selected.name} modes={modes} />;
 }
@@ -62,7 +68,8 @@ function ModeEditor({
   return (
     <div className="mx-auto max-w-3xl">
       <h1 className="text-[36px] leading-none tracking-[-0.04em] text-ink">Настройки</h1>
-      <p className="mt-3 text-[15px] text-muted">{objectName}. Три режима жизни.</p>
+      <ThemePalette />
+      <p className="mt-10 text-[15px] text-muted">{objectName}. Три режима жизни.</p>
       <div className="mt-8 space-y-4">
         {drafts.map((mode) => (
           <form

@@ -197,8 +197,15 @@ export function adminObjectsFor(membership: Membership): AdminObjectSnapshot[] {
         return {
           id: device.id,
           name: device.name,
-          state: reading ? `${String(reading.temperatureC).replace(".", ",")}° · ${reading.humidityPercent}%` : "На связи",
-          tone: "success" as const,
+          state:
+            device.work === "FAULT"
+              ? "Неисправно"
+              : device.work === "OFF"
+                ? "Отключено"
+                : reading
+                  ? `${String(reading.temperatureC).replace(".", ",")}° · ${reading.humidityPercent}%`
+                  : "На связи",
+          tone: device.work === "FAULT" ? ("danger" as const) : device.work === "OFF" ? ("warning" as const) : ("success" as const),
         };
       }),
       openRequests: openRequests.slice(0, 4).map((request) => ({ id: request.id, title: request.category, detail: request.text })),

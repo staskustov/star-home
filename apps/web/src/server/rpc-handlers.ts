@@ -185,6 +185,9 @@ function home(session: SessionRef | null): Reply {
           : null,
       paymentHistory: membership.role === "RESIDENT" ? signals.payments : [],
       categories: signals.categories,
+      rooms: base.unit.type === "HOUSE" ? [{ name: "Гостиная" }, { name: "Спальня" }, { name: "Детская" }, { name: "Кабинет" }, { name: "Котельная" }] : [],
+      cameras: signals.cameras,
+      devices: signals.devices,
       meters: signals.meters,
     },
   });

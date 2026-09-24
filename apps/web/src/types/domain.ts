@@ -124,6 +124,9 @@ export type ResidentHome = {
   } | null;
   paymentHistory: { title: string; amount: number; currency: string }[];
   categories: string[];
+  rooms: { name: string }[];
+  cameras: { name: string; state: string }[];
+  devices: { name: string; label: string; state: "ON" | "OFF" | "FAULT" }[];
   serviceCategories: string[];
   aiPrompt: string;
   meters: { name: string; value: string; unit: string }[];
@@ -169,5 +172,5 @@ export type AdminDashboard = {
 export type NavItem = {
   href: string;
   label: string;
-  icon: "home" | "access" | "ai" | "service" | "profile" | "overview" | "objects" | "residents" | "security" | "requests" | "payments" | "devices" | "settings";
+  icon: "home" | "access" | "ai" | "service" | "profile" | "overview" | "objects" | "residents" | "security" | "requests" | "payments" | "devices" | "settings" | "rooms";
 };
