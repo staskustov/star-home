@@ -76,6 +76,7 @@ async function projectPeople(prisma: PrismaClient, body: Record<string, unknown>
     companyId: string;
     role: string;
     objectId: string | null;
+    buildingId?: string | null;
     unitId: string | null;
     expiresAt?: string | null;
     passId?: string | null;
@@ -88,6 +89,7 @@ async function projectPeople(prisma: PrismaClient, body: Record<string, unknown>
       companyId: membership.companyId,
       role: membership.role,
       objectId: membership.objectId,
+      buildingId: membership.buildingId ?? null,
       unitId: membership.unitId,
       expiresAt: membership.expiresAt ?? null,
       passId: membership.passId ?? null,

@@ -1,5 +1,5 @@
 import { placeFromSession, type Place, type SessionRef } from "@/server/actor";
-import { can, objectFor, type StaffActor } from "@/server/rbac/decide";
+import { can, objectFor, reaches, type StaffActor } from "@/server/rbac/decide";
 import { publishLive, pushNotice } from "@/server/store-bind";
 import { accessPoint, gateFor, runDevice } from "@/server/devices";
 import { paymentProvider } from "@/server/payments";
@@ -240,6 +240,7 @@ export async function cameraFrameFor(actor: StaffActor, objectId: unknown, name:
     (item) => item.objectId === object.value.id && item.companyId === object.value.companyId && item.kind === "CAMERA" && item.name === name.trim(),
   );
   if (!device) return { ok: false as const, status: 404, message: "Камера не найдена" };
+  if (!reaches(actor, device)) return denied;
   const result = await runDevice(device, "READ");
   return {
     ok: true as const,
@@ -285,6 +286,9 @@ export async function setRequestStatusFor(actor: StaffActor, requestId: unknown,
   if (typeof status !== "string" || !statuses.has(status as RequestStatus)) {
     return { ok: false as const, status: 400, message: "Неизвестный статус" };
   }
+  const current = readOps().requests.find((item) => item.id === requestId && item.companyId === object.value.companyId && item.objectId === object.value.id);
+  if (!current) return { ok: false as const, status: 404, message: "Заявка не найдена" };
+  if (!reaches(actor, current)) return denied;
   const request = updateRequestStatus(actor.userId, object.value.companyId, object.value.id, requestId, status as RequestStatus);
   if (!request) return { ok: false as const, status: 404, message: "Заявка не найдена" };
   return { ok: true as const, value: request };

@@ -320,10 +320,7 @@ function requests(session: SessionRef): Reply {
 }
 
 function tree(actor: StaffActor, input: Input): Result {
-  if (typeof input.objectId !== "string") return { ok: false, status: 400, message: "Объект не найден" };
-  const value = treeFor(actor, input.objectId);
-  if (!value) return { ok: false, status: 404, message: "Объект не найден" };
-  return { ok: true, value };
+  return treeFor(actor, typeof input.objectId === "string" ? input.objectId : "");
 }
 
 async function addRequest(session: SessionRef, input: Input): Promise<Reply> {

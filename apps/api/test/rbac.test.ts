@@ -374,3 +374,223 @@ describe("roles", () => {
     assert.deepEqual(column?.granted, column?.ceiling);
   });
 });
+
+const building = { userId: "usr_building", membershipId: "mem_manager_park_2" };
+const unitOne = "unit_obj_park_1";
+const unitTwo = "unit_84";
+
+type Rows = Record<string, { id?: string; objectId: string; name?: string }[]>;
+type Tree = { buildings: { id: string; units: { id: string }[] }[] | null; can: Record<string, boolean> };
+
+describe("building scope", () => {
+  let restore: () => void = () => {};
+
+  before(async () => {
+    const ops = await import("../../web/src/server/ops-store");
+    const file = ops.readOps();
+    const request = (id: string, unitId: string) => ({
+      id,
+      companyId: "cmp_star",
+      objectId: "obj_park",
+      unitId,
+      authorUserId: "usr_test",
+      category: "Сантехника",
+      text: "Тест",
+      status: "CREATED" as const,
+    });
+    ops.writeOps({
+      ...file,
+      requests: [...file.requests, request("req_park_1", unitOne), request("req_park_2", unitTwo)],
+      devices: [
+        ...file.devices,
+        { id: "dev_park_gate", companyId: "cmp_star", objectId: "obj_park", unitId: null, kind: "GATE", name: "Въезд Парк", adapter: "local" },
+        { id: "dev_park_1_leak", companyId: "cmp_star", objectId: "obj_park", unitId: unitOne, kind: "LEAK", name: "Протечка 1", adapter: "local" },
+      ],
+    });
+    restore = () => ops.writeOps(file);
+  });
+
+  it("builds a building scope only from a building of the same object", async () => {
+    const { staffActor } = await import("../../web/src/server/rbac/decide");
+    const actor = staffActor(building);
+    assert.ok(actor.ok);
+    assert.deepEqual(actor.value.scope, { kind: "BUILDING", objectId: "obj_park", buildingId: "bld_2" });
+    const people = await import("../../web/src/server/people-store");
+    const broken = people.createStaffMembership({ userId: "usr_building", companyId: "cmp_star", role: "MANAGER", objectId: "obj_siyanie", buildingId: "bld_2", createdBy: "test" });
+    assert.equal(staffActor({ userId: "usr_building", membershipId: broken.id }).ok, false);
+    people.updateMembership(broken.id, { status: "REVOKED" });
+  });
+
+  it("serves only rows of units in the building plus shared infrastructure", async () => {
+    const own = (await rpc("desk", { section: "requests" }, building)).body as Rows;
+    const all = (await rpc("desk", { section: "requests" }, admin)).body as Rows;
+    const ids = (own.requests ?? []).map((row) => row.id);
+    assert.ok(ids.includes("req_park_2"));
+    assert.ok(!ids.includes("req_park_1"));
+    assert.ok((own.requests ?? []).every((row) => row.objectId === "obj_park"));
+    assert.ok((all.requests ?? []).some((row) => row.id === "req_park_1"));
+    const devices = (await rpc("desk", { section: "devices" }, building)).body as Rows;
+    const names = (devices.devices ?? []).map((row) => row.name);
+    assert.ok(names.includes("Въезд Парк"), "shared gate stays visible");
+    assert.ok(!names.includes("Протечка 1"));
+  });
+
+  it("changes only requests inside the building", async () => {
+    assert.equal((await rpc("setRequestStatus", { id: "req_park_1", status: "ACCEPTED", objectId: "obj_park" }, building)).status, 403);
+    assert.equal((await rpc("setRequestStatus", { id: "req_park_2", status: "ACCEPTED", objectId: "obj_park" }, building)).status, 200);
+    assert.equal((await rpc("setRequestStatus", { id: "req_park_2", status: "ACCEPTED", objectId: "obj_siyanie" }, building)).status, 403);
+  });
+
+  it("shows the building and lets it change units only inside it", async () => {
+    const reply = await rpc("tree", { objectId: "obj_park" }, building);
+    const tree = reply.body as Tree;
+    assert.equal(reply.status, 200);
+    assert.deepEqual(
+      tree.buildings?.map((item) => item.id),
+      ["bld_2"],
+    );
+    assert.equal(tree.can.buildings, false);
+    assert.equal(tree.can.edit, false);
+    assert.equal(tree.can.structure, true);
+    assert.equal((await rpc("createBuilding", { objectId: "obj_park", name: "Корпус 9" }, building)).status, 403);
+    assert.equal((await rpc("removeBuilding", { buildingId: "bld_park_1" }, building)).status, 403);
+    assert.equal((await rpc("createUnit", { objectId: "obj_park", name: "Квартира 999", buildingId: "bld_park_1" }, building)).status, 403);
+    assert.equal((await rpc("removeUnit", { unitId: unitOne }, building)).status, 403);
+    const created = await rpc("createUnit", { objectId: "obj_park", name: "Квартира 999", buildingId: "bld_2" }, building);
+    assert.equal(created.status, 201);
+    assert.equal((await rpc("removeUnit", { unitId: (created.body as { id: string }).id }, building)).status, 200);
+  });
+
+  it("keeps residents of other buildings out of sight and out of reach", async () => {
+    const people = await import("../../web/src/server/people-store");
+    const neighbour = people.createPerson({ login: "neighbour.test", name: "Сосед", passwordHash: "x" });
+    const far = people.createResidentMembership({ userId: neighbour.id, companyId: "cmp_star", objectId: "obj_park", unitId: unitOne });
+    const board = (await rpc("residents", null, building)).body as { people: { membershipId: string; unitId: string }[]; objects: { groups: { label: string | null }[] }[] };
+    assert.ok(!board.people.some((person) => person.membershipId === far.id));
+    assert.ok(board.people.every((person) => person.unitId !== unitOne));
+    assert.deepEqual(
+      board.objects.flatMap((object) => object.groups.map((group) => group.label)),
+      ["Корпус 2"],
+    );
+    const newcomer = { objectId: "obj_park", name: "Новый", login: "new.resident.test", password: "secret-1" };
+    assert.equal((await rpc("addResident", { ...newcomer, unitId: unitOne }, building)).status, 403);
+    assert.equal((await rpc("addResident", { ...newcomer, unitId: "unit_missing" }, building)).status, 404);
+    assert.equal((await rpc("removeResident", { membershipId: "mem_missing" }, admin)).status, 404);
+    assert.equal((await rpc("removeResident", { membershipId: far.id }, admin)).status, 200);
+  });
+
+  it("counts only the building on the dashboard", async () => {
+    const catalog = await import("../../web/src/server/catalog-store");
+    const body = (await rpc("dashboard", null, building)).body as { objects: { id: string; typeLabel: string; pulse: { id: string; value: number }[] }[] };
+    assert.deepEqual(
+      body.objects.map((object) => object.id),
+      ["obj_park"],
+    );
+    assert.ok(body.objects[0]?.typeLabel.endsWith("Корпус 2"));
+    assert.equal(body.objects[0]?.pulse.find((item) => item.id === "units")?.value, catalog.unitIdsOfBuilding("bld_2").length);
+  });
+
+  it("answers 403 inside the company and 404 outside it", async () => {
+    assert.equal((await rpc("tree", { objectId: "obj_siyanie" }, building)).status, 403);
+    assert.equal((await rpc("tree", { objectId: "obj_missing" }, building)).status, 404);
+    assert.equal((await rpc("tree", { objectId: "obj_park" }, objectAdmin)).status, 403);
+    assert.equal((await rpc("removeUnit", { unitId: "unit_missing" }, admin)).status, 404);
+  });
+
+  it("ends the test data", () => {
+    restore();
+  });
+});
+
+describe("team with buildings", () => {
+  let added = "";
+
+  it("offers buildings only for roles that work per building", async () => {
+    const board = (await rpc("team", null, admin)).body as { places: { key: string; buildingId: string | null; label: string }[]; roles: { value: string; perBuilding: boolean }[] };
+    assert.ok(board.places.some((place) => place.buildingId === "bld_park_1" && place.label.endsWith(" · Корпус 1")));
+    assert.equal(board.roles.find((role) => role.value === "MANAGER")?.perBuilding, true);
+    assert.equal(board.roles.find((role) => role.value === "OBJECT_ADMIN")?.perBuilding, false);
+  });
+
+  it("assigns a building and checks it on the server", async () => {
+    const person = { name: "Корпусный", login: "corpus.test", password: "password-8", role: "MANAGER" };
+    assert.equal((await rpc("teamAdd", { ...person, role: "OBJECT_ADMIN", objectId: "obj_park", buildingId: "bld_park_1" }, admin)).status, 400);
+    assert.equal((await rpc("teamAdd", { ...person, objectId: "obj_siyanie", buildingId: "bld_park_1" }, admin)).status, 404);
+    assert.equal((await rpc("teamAdd", { ...person, objectId: "obj_park", buildingId: "bld_park_1" }, objectAdmin)).status, 403);
+    const reply = await rpc("teamAdd", { ...person, objectId: "obj_park", buildingId: "bld_park_1" }, admin);
+    assert.equal(reply.status, 201);
+    added = (reply.body as { membershipId: string }).membershipId;
+    const people = await import("../../web/src/server/people-store");
+    const user = people.listUsers().find((item) => item.login === person.login);
+    assert.ok(user);
+    const session = { userId: user.id, membershipId: added };
+    const rows = (await rpc("desk", { section: "requests" }, session)).body as Rows;
+    assert.ok((rows.requests ?? []).every((row) => row.objectId === "obj_park"));
+    assert.equal((await rpc("teamAccess", { membershipId: added, role: "MANAGER", objectId: "obj_park", buildingId: "bld_2" }, admin)).status, 200);
+    const membership = people.listMemberships().find((item) => item.id === added);
+    assert.equal(membership?.buildingId, "bld_2");
+    const empty = await rpc("createBuilding", { objectId: "obj_park", name: "Корпус 7" }, admin);
+    const spare = (empty.body as { id: string }).id;
+    assert.equal((await rpc("teamAccess", { membershipId: added, role: "MANAGER", objectId: "obj_park", buildingId: spare }, admin)).status, 200);
+    assert.equal((await rpc("removeBuilding", { buildingId: spare }, admin)).status, 409, "a building with staff stays");
+    assert.equal((await rpc("teamAccess", { membershipId: added, role: "MANAGER", objectId: "obj_park", buildingId: null }, admin)).status, 200);
+    assert.equal((await rpc("removeBuilding", { buildingId: spare }, admin)).status, 200);
+    assert.equal(people.listMemberships().find((item) => item.id === added)?.buildingId, null);
+    assert.equal((await rpc("teamRemove", { membershipId: added }, admin)).status, 200);
+  });
+});
+
+describe("security audit", () => {
+  it("shows the guard only access and security records", async () => {
+    const ops = await import("../../web/src/server/ops-store");
+    const file = ops.readOps();
+    const entry = (id: string, action: string) => ({
+      id,
+      actorUserId: "usr_admin",
+      companyId: "cmp_star",
+      objectId: "obj_siyanie",
+      action,
+      target: "Тест",
+      result: "SUCCESS" as const,
+      error: "",
+      at: "24.09 10:00",
+    });
+    ops.writeOps({ ...file, audit: [...file.audit, entry("aud_gate_test", "OPEN_GATE"), entry("aud_team_test", "TEAM_ADD"), entry("aud_pay_test", "PAY_INVOICE")] });
+    const guard = (((await rpc("desk", { section: "security" }, security)).body as Rows).audit ?? []).map((row) => row.id);
+    const chief = (((await rpc("desk", { section: "security" }, admin)).body as Rows).audit ?? []).map((row) => row.id);
+    assert.ok(guard.includes("aud_gate_test"));
+    assert.ok(!guard.includes("aud_team_test") && !guard.includes("aud_pay_test"));
+    assert.ok(chief.includes("aud_team_test") && chief.includes("aud_pay_test"));
+    ops.writeOps(file);
+  });
+});
+
+describe("self scope", () => {
+  it("shows a family member only their own requests and a guest only their pass", async () => {
+    const people = await import("../../web/src/server/people-store");
+    const kid = people.createPerson({ login: "kid.test", name: "Ребёнок", passwordHash: "x" });
+    const family = people.createResidentMembership({ userId: kid.id, companyId: "cmp_star", objectId: "obj_siyanie", unitId: "unit_24", role: "FAMILY_MEMBER" });
+    const kidSession = { userId: kid.id, membershipId: family.id };
+    assert.equal((await rpc("addRequest", { category: "Сантехника", text: "От жителя" }, resident)).status, 200);
+    assert.equal((await rpc("addRequest", { category: "Сантехника", text: "От ребёнка" }, kidSession)).status, 200);
+    type Requests = { requests: { text: string }[] };
+    const own = ((await rpc("requests", null, kidSession)).body as Requests).requests.map((row) => row.text);
+    const parent = ((await rpc("requests", null, resident)).body as Requests).requests.map((row) => row.text);
+    assert.ok(own.includes("От ребёнка") && !own.includes("От жителя"));
+    assert.ok(parent.includes("От ребёнка") && parent.includes("От жителя"));
+    assert.equal((await rpc("pay", null, kidSession)).status, 403);
+
+    assert.equal((await rpc("addPass", { guestName: "Второй гость", detail: "Сегодня" }, resident)).status, 200);
+    const ops = await import("../../web/src/server/ops-store");
+    const passes = ops.readOps().passes.filter((pass) => pass.unitId === "unit_24");
+    const mine = passes[0];
+    assert.ok(mine && passes.length > 1);
+    const visitor = people.createPerson({ login: "visitor.test", name: "Гость", passwordHash: "x" });
+    const pass = people.createResidentMembership({ userId: visitor.id, companyId: "cmp_star", objectId: "obj_siyanie", unitId: "unit_24", role: "GUEST", passId: mine.id, expiresAt: "2999-01-01T00:00:00" });
+    const guestSession = { userId: visitor.id, membershipId: pass.id };
+    const card = (await rpc("guest", null, guestSession)).body as { pass: { code: string } | null };
+    assert.equal(card.pass?.code, mine.code);
+    const access = (await rpc("access", null, guestSession)).body as { passes?: unknown[]; redirect?: string };
+    assert.equal(access.passes, undefined, "a guest never sees the unit's other passes");
+  });
+});

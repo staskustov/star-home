@@ -9,8 +9,6 @@ import type { TeamBoard, TeamMember } from "@/types/team";
 
 type Draft = { mode: "new" } | { mode: "edit"; member: TeamMember };
 
-const noPlace = "company";
-
 function initials(name: string): string {
   return name
     .split(" ")
@@ -34,7 +32,15 @@ async function send(op: string, body: Record<string, unknown>): Promise<string |
 function placesFor(board: TeamBoard, role: Role): TeamBoard["places"] {
   const meta = board.roles.find((item) => item.value === role);
   if (!meta) return board.places;
-  return board.places.filter((place) => (place.id === null ? meta.companyWide : meta.perObject));
+  return board.places.filter((place) => {
+    if (place.objectId === null) return meta.companyWide;
+    return place.buildingId ? meta.perBuilding : meta.perObject;
+  });
+}
+
+function placeInput(board: TeamBoard, key: string): { objectId: string | null; buildingId: string | null } {
+  const place = board.places.find((item) => item.key === key);
+  return { objectId: place?.objectId ?? null, buildingId: place?.buildingId ?? null };
 }
 
 function Field({
@@ -100,7 +106,7 @@ function AccessFields({
         <span className="text-sm text-muted">Объект</span>
         <Select wrapClassName="mt-2" value={place} disabled={disabled || places.length <= 1} onChange={(event) => onPlace(event.target.value)}>
           {places.map((item) => (
-            <option key={item.id ?? noPlace} value={item.id ?? noPlace}>
+            <option key={item.key} value={item.key}>
               {item.label}
             </option>
           ))}
@@ -111,7 +117,7 @@ function AccessFields({
 }
 
 function firstPlace(board: TeamBoard, role: Role): string {
-  return placesFor(board, role)[0]?.id ?? noPlace;
+  return placesFor(board, role)[0]?.key ?? "";
 }
 
 function NewMember({ board, onDone }: { board: TeamBoard; onDone: () => void }) {
@@ -129,13 +135,13 @@ function NewMember({ board, onDone }: { board: TeamBoard; onDone: () => void }) 
   function pickRole(next: Role) {
     setRole(next);
     const allowed = placesFor(board, next);
-    if (!allowed.some((item) => (item.id ?? noPlace) === place)) setPlace(allowed[0]?.id ?? noPlace);
+    if (!allowed.some((item) => item.key === place)) setPlace(allowed[0]?.key ?? "");
   }
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
-    const message = await send("add", { name, login, password, email, phone, role, objectId: place === noPlace ? null : place });
+    const message = await send("add", { name, login, password, email, phone, role, ...placeInput(board, place) });
     setBusy(false);
     if (message) {
       setError(message);
@@ -174,7 +180,7 @@ function EditMember({ board, member, onDone }: { board: TeamBoard; member: TeamM
   const [email, setEmail] = useState(member.email);
   const [phone, setPhone] = useState(member.phone);
   const [role, setRole] = useState<Role>(member.role);
-  const [place, setPlace] = useState(member.objectId ?? noPlace);
+  const [place, setPlace] = useState(member.placeKey);
   const [error, setError] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -184,7 +190,7 @@ function EditMember({ board, member, onDone }: { board: TeamBoard; member: TeamM
   function pickRole(next: Role) {
     setRole(next);
     const allowed = placesFor(board, next);
-    if (!allowed.some((item) => (item.id ?? noPlace) === place)) setPlace(allowed[0]?.id ?? noPlace);
+    if (!allowed.some((item) => item.key === place)) setPlace(allowed[0]?.key ?? "");
   }
 
   async function run(op: string, body: Record<string, unknown> = {}) {
@@ -247,7 +253,7 @@ function EditMember({ board, member, onDone }: { board: TeamBoard; member: TeamM
               <button
                 type="button"
                 disabled={busy}
-                onClick={() => void run("access", { role, objectId: place === noPlace ? null : place })}
+                onClick={() => void run("access", { role, ...placeInput(board, place) })}
                 className="btn btn-secondary disabled:opacity-50"
               >
                 Применить доступ

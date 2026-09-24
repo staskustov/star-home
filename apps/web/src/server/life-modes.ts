@@ -6,7 +6,7 @@ import {
   setUnitMode,
   updateModeSetting,
 } from "@/server/life-mode-store";
-import { can, objectFor, objectsInScope, type StaffActor } from "@/server/rbac/decide";
+import { can, objectFor, objectsInScope, wholeObject, type StaffActor } from "@/server/rbac/decide";
 import { householdCan } from "@/server/rbac/policy";
 import type { LifeModeSetting } from "@/types/domain";
 
@@ -37,7 +37,7 @@ export function saveModeFor(
   input: { objectId: unknown; setting: Partial<LifeModeSetting> | null },
 ): Success<{ mode: string }> | Failure {
   if (!can(actor, "settings.edit")) return { ok: false, status: 403, message: "Нет доступа" };
-  const owned = objectFor(actor, input.objectId);
+  const owned = objectFor(actor, input.objectId, "whole");
   if (!owned.ok) return owned;
   const object = owned.value;
   if (!input.setting || !isLifeMode(input.setting.mode)) return { ok: false, status: 400, message: "Выберите режим" };
@@ -73,7 +73,7 @@ export function saveModeFor(
 
 export function settingsFor(actor: StaffActor) {
   return {
-    canEdit: can(actor, "settings.edit"),
+    canEdit: can(actor, "settings.edit") && wholeObject(actor),
     objects: objectsInScope(actor).map((object) => ({
       objectId: object.id,
       modes: modesForObject(object.id),

@@ -2,9 +2,10 @@ import { formatHumidity, formatTemperature } from "@/lib/format";
 import { findUnit } from "@/server/catalog-store";
 import { deviceLabel, isOpener } from "@/server/device-kinds";
 import { findUserById } from "@/server/directory";
-import { readOps } from "@/server/ops-store";
-import { can, objectsInScope, type StaffActor } from "@/server/rbac/decide";
+import { readOps, type AuditEntry } from "@/server/ops-store";
+import { can, reaches, type Scoped, type StaffActor } from "@/server/rbac/decide";
 import type { Permission } from "@/server/rbac/permissions";
+import { auditCategoriesOf, type AuditCategory } from "@/server/rbac/policy";
 
 export const auditActionLabels: Record<string, string> = {
   OPEN_GATE: "Открытие ворот",
@@ -22,6 +23,31 @@ export const auditActionLabels: Record<string, string> = {
   TEAM_REMOVE: "Отзыв доступа",
   ROLES_EDIT: "Права роли",
 };
+
+const auditActionCategories: Record<string, AuditCategory> = {
+  OPEN_GATE: "ACCESS",
+  CREATE_PASS: "ACCESS",
+  CREATE_REQUEST: "SERVICE",
+  UPDATE_REQUEST: "SERVICE",
+  PAY_INVOICE: "FINANCE",
+  RAISE_ALARM: "SECURITY",
+  TEAM_ADD: "RBAC",
+  TEAM_EDIT: "RBAC",
+  TEAM_ROLE: "RBAC",
+  TEAM_SCOPE: "RBAC",
+  TEAM_BLOCK: "RBAC",
+  TEAM_RESTORE: "RBAC",
+  TEAM_REMOVE: "RBAC",
+  ROLES_EDIT: "RBAC",
+};
+
+export function auditVisible(actor: StaffActor, entry: AuditEntry): boolean {
+  if (!can(actor, "audit.view") || !reaches(actor, entry)) return false;
+  const allowed = auditCategoriesOf(actor.role);
+  if (!allowed) return true;
+  const category = auditActionCategories[entry.action];
+  return Boolean(category) && allowed.has(category as AuditCategory);
+}
 
 function unitName(unitId: string | null): string {
   if (!unitId) return "Объект";
@@ -85,9 +111,7 @@ function deviceState(device: { id: string; work?: string }, readings: { deviceId
 
 export function deskFor(actor: StaffActor, section: DeskSection) {
   const file = readOps();
-  const scope = new Set(objectsInScope(actor).map((object) => object.id));
-  const mine = <T extends { companyId: string; objectId: string }>(rows: T[]): T[] =>
-    rows.filter((row) => row.companyId === actor.companyId && scope.has(row.objectId));
+  const mine = <T extends Scoped>(rows: T[]): T[] => rows.filter((row) => reaches(actor, row));
   if (section === "access") {
     return {
       passes: mine(file.passes).map((pass) => ({ id: pass.id, objectId: pass.objectId, guestName: pass.guestName, detail: pass.detail, unitName: unitName(pass.unitId) })),
@@ -137,7 +161,7 @@ export function deskFor(actor: StaffActor, section: DeskSection) {
             .map((device) => ({ objectId: device.objectId, name: device.name, state: deviceState(device, file.readings) }))
         : [],
       audit: can(actor, "audit.view")
-        ? mine(file.audit).map((entry) => ({
+        ? file.audit.filter((entry) => auditVisible(actor, entry)).map((entry) => ({
             id: entry.id,
             objectId: entry.objectId,
             actor: findUserById(entry.actorUserId)?.name ?? "Сотрудник",
@@ -151,11 +175,9 @@ export function deskFor(actor: StaffActor, section: DeskSection) {
     };
   }
   return {
-    turns: file.turns
-      .filter((turn) => turn.companyId === actor.companyId)
-      .flatMap((turn) => {
-        const objectId = findUnit(turn.unitId)?.objectId ?? "";
-        return scope.has(objectId) ? [{ id: turn.id, objectId, prompt: turn.prompt, reply: turn.reply }] : [];
-      }),
+    turns: file.turns.flatMap((turn) => {
+      const objectId = findUnit(turn.unitId)?.objectId ?? "";
+      return reaches(actor, { companyId: turn.companyId, objectId, unitId: turn.unitId }) ? [{ id: turn.id, objectId, prompt: turn.prompt, reply: turn.reply }] : [];
+    }),
   };
 }

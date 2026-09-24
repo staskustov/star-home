@@ -132,6 +132,7 @@ export function ObjectBuilder({ tree }: { tree: CatalogTree }) {
                 key={building.id}
                 building={building}
                 editable={tree.can.structure}
+                removable={tree.can.buildings}
                 unitLabel={unitLabel}
                 open={openBuildingId === building.id}
                 onToggle={() => setOpenBuildingId((current) => (current === building.id ? null : building.id))}
@@ -146,7 +147,7 @@ export function ObjectBuilder({ tree }: { tree: CatalogTree }) {
                 buildingLabel={buildingLabel}
               />
             ))}
-            {tree.can.structure ? (
+            {tree.can.buildings ? (
               <form onSubmit={addBuilding} className="panel p-5">
                 <label className="block">
                   <span className="text-sm text-muted">Название</span>
@@ -288,6 +289,7 @@ function UnitList({
 function BuildingBlock({
   building,
   editable,
+  removable,
   unitLabel,
   buildingLabel,
   countLabel,
@@ -303,6 +305,7 @@ function BuildingBlock({
 }: {
   building: CatalogBuildingNode;
   editable: boolean;
+  removable: boolean;
   unitLabel: string;
   buildingLabel: string;
   countLabel: string;
@@ -345,7 +348,7 @@ function BuildingBlock({
           ) : null}
         </div>
       ) : null}
-      {editable && !blocked ? (
+      {removable && !blocked ? (
         <button
           type="button"
           onClick={() => (pendingDelete === building.id ? onRemoveBuilding() : onAsk(building.id))}

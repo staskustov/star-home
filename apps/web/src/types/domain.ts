@@ -36,6 +36,7 @@ export type Membership = {
   companyId: string;
   role: Role;
   objectId: string | null;
+  buildingId?: string | null;
   unitId: string | null;
   expiresAt?: string | null;
   passId?: string | null;

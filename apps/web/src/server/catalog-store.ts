@@ -241,6 +241,10 @@ export function findBuilding(buildingId: string): CatalogBuilding | undefined {
   return load().buildings.find((building) => building.id === buildingId);
 }
 
+export function buildingsOf(objectId: string): CatalogBuilding[] {
+  return load().buildings.filter((building) => building.objectId === objectId);
+}
+
 export function findUnit(unitId: string): CatalogUnit | undefined {
   return load().units.find((unit) => unit.id === unitId);
 }

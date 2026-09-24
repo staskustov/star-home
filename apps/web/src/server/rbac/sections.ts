@@ -1,5 +1,5 @@
 import { objectPresentation } from "@/lib/object-presentation";
-import { structureCounts } from "@/server/catalog-store";
+import { structureCounts, unitIdsOfBuilding } from "@/server/catalog-store";
 import { can, objectsInScope, type StaffActor } from "@/server/rbac/decide";
 import type { Permission } from "@/server/rbac/permissions";
 import type { AdminObjectSnapshot, NavGroup, NavItem } from "@/types/domain";
@@ -50,7 +50,7 @@ export function firstSection(actor: StaffActor): string | null {
 
 export function adminObjectsFor(actor: StaffActor): AdminObjectSnapshot[] {
   return objectsInScope(actor).map((object) => {
-    const counts = structureCounts(object.id, object.type);
+    const counts = actor.scope.buildingId ? { buildings: 1, units: unitIdsOfBuilding(actor.scope.buildingId).length } : structureCounts(object.id, object.type);
     return { id: object.id, companyId: object.companyId, name: object.name, type: object.type, buildings: counts.buildings, units: counts.units };
   });
 }

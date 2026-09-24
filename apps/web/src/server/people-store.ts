@@ -24,7 +24,7 @@ type PeopleFile = {
   staffSeed?: number;
 };
 
-const staffSeedVersion = 2;
+const staffSeedVersion = 3;
 
 const demoStaff: { user: StoredUser; membership: Membership }[] = [
   {
@@ -72,6 +72,23 @@ const demoStaff: { user: StoredUser; membership: Membership }[] = [
     },
     membership: { id: "mem_accountant_star", userId: "usr_accountant", companyId: "cmp_star", role: "ACCOUNTANT", objectId: null, unitId: null },
   },
+  {
+    user: {
+      id: "usr_building",
+      login: "building",
+      name: "Олег Смирнов",
+      passwordHash: "5xIz9aWFDpB6noZqqu88rA.RTDQFDCIWTNtUz7E8Fp5J_0e8ShM1UOA17wtN1hK4bE",
+    },
+    membership: {
+      id: "mem_manager_park_2",
+      userId: "usr_building",
+      companyId: "cmp_star",
+      role: "MANAGER",
+      objectId: "obj_park",
+      buildingId: "bld_2",
+      unitId: null,
+    },
+  },
 ];
 
 function normalize(people: PeopleFile): PeopleFile {
@@ -82,7 +99,10 @@ function normalize(people: PeopleFile): PeopleFile {
     user.lastLoginAt ??= null;
     user.sessionVersion ??= 1;
   }
-  for (const membership of people.memberships) membership.status ??= "ACTIVE";
+  for (const membership of people.memberships) {
+    membership.status ??= "ACTIVE";
+    membership.buildingId ??= null;
+  }
   return people;
 }
 
@@ -262,6 +282,7 @@ export function createStaffMembership(input: {
   companyId: string;
   role: Membership["role"];
   objectId: string | null;
+  buildingId?: string | null;
   createdBy: string;
 }): Membership {
   const people = load();
@@ -271,6 +292,7 @@ export function createStaffMembership(input: {
     companyId: input.companyId,
     role: input.role,
     objectId: input.objectId,
+    buildingId: input.buildingId ?? null,
     unitId: null,
     status: "ACTIVE",
     createdAt: new Date().toISOString(),
@@ -283,7 +305,7 @@ export function createStaffMembership(input: {
 
 export function updateMembership(
   membershipId: string,
-  patch: Partial<Pick<Membership, "role" | "objectId" | "status" | "revokedAt" | "revokedBy">>,
+  patch: Partial<Pick<Membership, "role" | "objectId" | "buildingId" | "status" | "revokedAt" | "revokedBy">>,
 ): Membership | undefined {
   const people = load();
   const membership = people.memberships.find((item) => item.id === membershipId);

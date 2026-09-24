@@ -100,10 +100,17 @@ export function unitHasAssignment(unitId: string): boolean {
   return memberships().some((membership) => membership.unitId === unitId);
 }
 
-export function residentCount(objectId: string): number {
+export function buildingHasStaff(buildingId: string): boolean {
+  return memberships().some((membership) => membership.buildingId === buildingId);
+}
+
+export function residentCount(objectId: string, keep: (unitId: string | null) => boolean = () => true): number {
   return memberships().filter(
     (membership) =>
-      (membership.role === "RESIDENT" || membership.role === "FAMILY_MEMBER") && membership.objectId === objectId && stillActive(membership),
+      (membership.role === "RESIDENT" || membership.role === "FAMILY_MEMBER") &&
+      membership.objectId === objectId &&
+      stillActive(membership) &&
+      keep(membership.unitId),
   ).length;
 }
 

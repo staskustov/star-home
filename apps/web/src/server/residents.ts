@@ -3,7 +3,7 @@ import { findUserById, findUserByLogin, isLive, membershipsOf } from "@/server/d
 import { createPass } from "@/server/operations";
 import { createPerson, createResidentMembership, deleteMembership, listMemberships, listUsers } from "@/server/people-store";
 import { hashPassword } from "@/server/password";
-import { can, inScope, objectsInScope, type StaffActor } from "@/server/rbac/decide";
+import { can, objectsInScope, unitFor, unitInScope, type StaffActor } from "@/server/rbac/decide";
 import type { Role } from "@/types/domain";
 
 type Failure = { ok: false; status: number; message: string };
@@ -68,10 +68,10 @@ export function residentBoard(actor: StaffActor): { people: ResidentRow[]; objec
     .filter((membership) => householdRoles.has(membership.role) && membership.objectId && membership.unitId)
     .flatMap((membership) => {
       if (!membership.objectId || !membership.unitId) return [];
-      if (!objects.some((object) => object.id === membership.objectId)) return [];
+      if (membership.companyId !== actor.companyId) return [];
       const user = users.get(membership.userId);
       const unit = findUnit(membership.unitId);
-      if (!user || !unit) return [];
+      if (!user || !unit || unit.objectId !== membership.objectId || !unitInScope(actor, unit)) return [];
       const building = unit.buildingId ? findBuilding(unit.buildingId) : undefined;
       return [
         {
@@ -91,20 +91,22 @@ export function residentBoard(actor: StaffActor): { people: ResidentRow[]; objec
     people,
     objects: objects.map((object) => ({
       id: object.id,
-      groups: groupsFor(object.id),
+      groups: groupsFor(actor, object.id),
     })),
     can: { create: can(actor, "residents.create"), remove: can(actor, "residents.delete") },
   };
 }
 
-function groupsFor(objectId: string): ResidentGroup[] {
+function groupsFor(actor: StaffActor, objectId: string): ResidentGroup[] {
   const tree = readTree(objectId);
   if (!tree) return [];
   if (tree.units) return [{ label: null, units: tree.units.map((unit) => ({ id: unit.id, name: unit.name })) }];
-  return (tree.buildings ?? []).map((building) => ({
-    label: building.name,
-    units: building.units.map((unit) => ({ id: unit.id, name: unit.name })),
-  }));
+  return (tree.buildings ?? [])
+    .filter((building) => !actor.scope.buildingId || building.id === actor.scope.buildingId)
+    .map((building) => ({
+      label: building.name,
+      units: building.units.map((unit) => ({ id: unit.id, name: unit.name })),
+    }));
 }
 
 export function addResident(
@@ -115,11 +117,10 @@ export function addResident(
   if (typeof input.objectId !== "string" || typeof input.unitId !== "string") {
     return { ok: false, status: 400, message: "Выберите объект и единицу" };
   }
-  const unit = findUnit(input.unitId);
-  if (!unit || unit.objectId !== input.objectId) {
-    return { ok: false, status: 400, message: "Выберите единицу этого объекта" };
-  }
-  if (!inScope(actor, unit.objectId)) return denied;
+  const found = unitFor(actor, input.unitId);
+  if (!found.ok) return found;
+  const unit = found.value;
+  if (unit.objectId !== input.objectId) return { ok: false, status: 400, message: "Выберите единицу этого объекта" };
   const role = typeof input.role === "string" && householdRoles.has(input.role as Role) ? (input.role as Role) : "RESIDENT";
   let expiresAt: string | null = null;
   if (role === "GUEST") {
@@ -175,12 +176,11 @@ export function addResident(
 export function removeResident(actor: StaffActor, membershipId: string): Success<{ id: string }> | Failure {
   if (!can(actor, "residents.delete")) return denied;
   const membership = listMemberships().filter(isLive).find((item) => item.id === membershipId);
-  if (!membership || !householdRoles.has(membership.role) || !membership.objectId) {
+  if (!membership || !householdRoles.has(membership.role) || !membership.objectId || membership.companyId !== actor.companyId) {
     return { ok: false, status: 404, message: "Житель не найден" };
   }
-  const sameCompany = membership.companyId === actor.companyId;
-  if (!sameCompany) return { ok: false, status: 404, message: "Житель не найден" };
-  if (!inScope(actor, membership.objectId)) return denied;
+  const unit = unitFor(actor, membership.unitId);
+  if (!unit.ok) return unit.status === 404 ? { ok: false, status: 404, message: "Житель не найден" } : unit;
   const user = findUserById(membership.userId);
   if (!user) return { ok: false, status: 404, message: "Житель не найден" };
   deleteMembership(membershipId);

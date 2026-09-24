@@ -1,11 +1,12 @@
 import { plural } from "@/lib/format";
 import { objectPresentation } from "@/lib/object-presentation";
-import { findUnit, structureCounts, type CatalogObject } from "@/server/catalog-store";
+import { findBuilding, findUnit, structureCounts, unitIdsOfBuilding, type CatalogObject } from "@/server/catalog-store";
 import type { DeviceKind } from "@/server/device-kinds";
 import { findUserById, residentCount } from "@/server/directory";
 import { alarmsForObject, auditForObject, devicesForObject, eventsForObject, passesForObject, readOps, requestsForObject, type Device } from "@/server/ops-store";
-import { auditActionLabels } from "@/server/ops-view";
-import { can, objectsInScope, type StaffActor } from "@/server/rbac/decide";
+import { auditActionLabels, auditVisible } from "@/server/ops-view";
+import { can, objectsInScope, reaches, wholeObject, type Scoped, type StaffActor } from "@/server/rbac/decide";
+import { auditCategoriesOf } from "@/server/rbac/policy";
 import type { DashboardAttention, DashboardFeedItem, DashboardObject, DashboardPulse, DashboardSystem, DashboardView } from "@/types/dashboard";
 
 const systemGroups: { id: string; name: string; kinds: readonly DeviceKind[] }[] = [
@@ -18,6 +19,10 @@ const systemGroups: { id: string; name: string; kinds: readonly DeviceKind[] }[]
 ];
 
 const feedLimit = 8;
+
+function within<T extends Scoped>(actor: StaffActor, rows: T[]): T[] {
+  return rows.filter((row) => reaches(actor, row));
+}
 const attentionLimit = 5;
 
 function sortKey(at: string): string {
@@ -41,7 +46,7 @@ function attentionFor(actor: StaffActor, object: CatalogObject): DashboardAttent
   const items: DashboardAttention[] = [];
   if (can(actor, "security.view")) {
     const alarms = newestFirst(
-      alarmsForObject(object.id).filter((alarm) => alarm.status === "OPEN"),
+      within(actor, alarmsForObject(object.id)).filter((alarm) => alarm.status === "OPEN"),
       (alarm) => alarm.at,
     );
     const latest = alarms[0];
@@ -56,7 +61,7 @@ function attentionFor(actor: StaffActor, object: CatalogObject): DashboardAttent
     }
   }
   if (can(actor, "devices.view")) {
-    for (const device of devicesForObject(object.id)) {
+    for (const device of within(actor, devicesForObject(object.id))) {
       if (device.work !== "FAULT" && device.work !== "OFF") continue;
       items.push({
         id: `device-${device.id}`,
@@ -69,7 +74,7 @@ function attentionFor(actor: StaffActor, object: CatalogObject): DashboardAttent
   }
   if (can(actor, "access.view")) {
     const unconfirmed = newestFirst(
-      eventsForObject(object.id).filter((event) => event.result === "UNCONFIRMED"),
+      within(actor, eventsForObject(object.id)).filter((event) => event.result === "UNCONFIRMED"),
       (event) => event.time,
     );
     const latest = unconfirmed[0];
@@ -84,7 +89,7 @@ function attentionFor(actor: StaffActor, object: CatalogObject): DashboardAttent
     }
   }
   if (can(actor, "service.view")) {
-    const fresh = requestsForObject(object.id).filter((request) => request.status === "CREATED");
+    const fresh = within(actor, requestsForObject(object.id)).filter((request) => request.status === "CREATED");
     const latest = fresh[0];
     if (latest) {
       items.push({
@@ -118,33 +123,33 @@ function pulseFor(actor: StaffActor, object: CatalogObject): DashboardPulse[] {
   if (can(actor, "objects.view")) {
     pulse.push({
       id: "units",
-      value: structureCounts(object.id, object.type).units,
+      value: actor.scope.buildingId ? unitIdsOfBuilding(actor.scope.buildingId).length : structureCounts(object.id, object.type).units,
       label: objectPresentation[object.type].unitsLabel,
       href: `/admin/objects/${object.id}`,
       alert: false,
     });
   }
   if (can(actor, "residents.view")) {
-    pulse.push({ id: "residents", value: residentCount(object.id), label: "Жители", href: "/admin/residents", alert: false });
+    pulse.push({ id: "residents", value: residentCount(object.id, (unitId) => reaches(actor, { companyId: object.companyId, objectId: object.id, unitId })), label: "Жители", href: "/admin/residents", alert: false });
   }
   if (can(actor, "access.view")) {
-    pulse.push({ id: "guests", value: passesForObject(object.id).length, label: "Гостевые пропуска", href: "/admin/access", alert: false });
+    pulse.push({ id: "guests", value: within(actor, passesForObject(object.id)).length, label: "Гостевые пропуска", href: "/admin/access", alert: false });
   }
   if (can(actor, "service.view")) {
-    const open = requestsForObject(object.id).filter((request) => request.status !== "DONE" && request.status !== "CLOSED").length;
+    const open = within(actor, requestsForObject(object.id)).filter((request) => request.status !== "DONE" && request.status !== "CLOSED").length;
     pulse.push({ id: "requests", value: open, label: "Открытые заявки", href: "/admin/requests", alert: false });
   }
   if (can(actor, "security.view")) {
-    const open = alarmsForObject(object.id).filter((alarm) => alarm.status === "OPEN").length;
+    const open = within(actor, alarmsForObject(object.id)).filter((alarm) => alarm.status === "OPEN").length;
     pulse.push({ id: "alarms", value: open, label: "Тревоги", href: "/admin/security", alert: open > 0 });
   }
   if (can(actor, "payments.view")) {
-    const open = readOps().invoices.filter((invoice) => invoice.objectId === object.id && invoice.status === "OPEN").length;
+    const open = within(actor, readOps().invoices).filter((invoice) => invoice.objectId === object.id && invoice.status === "OPEN").length;
     pulse.push({ id: "invoices", value: open, label: "Открытые счета", href: "/admin/payments", alert: false });
   }
   if (can(actor, "access.view")) {
     const day = today();
-    const count = eventsForObject(object.id).filter((event) => event.time.startsWith(`${day} `)).length;
+    const count = within(actor, eventsForObject(object.id)).filter((event) => event.time.startsWith(`${day} `)).length;
     pulse.push({ id: "access", value: count, label: "Доступ сегодня", href: "/admin/access", alert: false });
   }
   return pulse;
@@ -161,7 +166,7 @@ function systemState(devices: Device[]): Pick<DashboardSystem, "state" | "tone">
 
 function systemsFor(actor: StaffActor, object: CatalogObject): DashboardSystem[] | null {
   if (!can(actor, "devices.view")) return null;
-  const devices = devicesForObject(object.id);
+  const devices = within(actor, devicesForObject(object.id));
   return systemGroups.flatMap((group) => {
     const members = devices.filter((device) => group.kinds.includes(device.kind));
     if (members.length === 0) return [];
@@ -170,8 +175,8 @@ function systemsFor(actor: StaffActor, object: CatalogObject): DashboardSystem[]
 }
 
 function feedFor(actor: StaffActor, object: CatalogObject): DashboardFeedItem[] | null {
-  if (can(actor, "audit.view")) {
-    return newestFirst(auditForObject(object.id), (entry) => entry.at)
+  if (can(actor, "audit.view") && wholeObject(actor) && !auditCategoriesOf(actor.role)) {
+    return newestFirst(auditForObject(object.id).filter((entry) => auditVisible(actor, entry)), (entry) => entry.at)
       .slice(0, feedLimit)
       .map((entry) => ({
         id: entry.id,
@@ -182,7 +187,7 @@ function feedFor(actor: StaffActor, object: CatalogObject): DashboardFeedItem[] 
       }));
   }
   if (can(actor, "access.view")) {
-    return newestFirst(eventsForObject(object.id), (event) => event.time)
+    return newestFirst(within(actor, eventsForObject(object.id)), (event) => event.time)
       .slice(0, feedLimit)
       .map((event) => ({
         id: event.id,
@@ -200,7 +205,7 @@ function objectDashboard(actor: StaffActor, object: CatalogObject): DashboardObj
   return {
     id: object.id,
     name: object.name,
-    typeLabel: objectPresentation[object.type].label,
+    typeLabel: [objectPresentation[object.type].label, actor.scope.buildingId ? findBuilding(actor.scope.buildingId)?.name : null].filter(Boolean).join(" · "),
     address: object.address,
     status: statusFor(actor, attention),
     attention: attention.slice(0, attentionLimit),

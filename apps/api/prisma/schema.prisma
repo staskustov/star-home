@@ -70,11 +70,12 @@ model Membership {
   userId    String
   companyId String
   role      String
-  objectId  String?
-  unitId    String?
-  expiresAt String?
-  passId    String?
-  status    String  @default("ACTIVE")
+  objectId   String?
+  buildingId String?
+  unitId     String?
+  expiresAt  String?
+  passId     String?
+  status     String  @default("ACTIVE")
   createdAt String?
   createdBy String?
 }
