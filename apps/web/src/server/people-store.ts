@@ -4,11 +4,18 @@ import path from "path";
 import { boundValue, remember } from "@/server/store-bind";
 import type { Membership } from "@/types/domain";
 
+export type UserStatus = "ACTIVE" | "BLOCKED";
+
 export type StoredUser = {
   id: string;
   login: string;
   name: string;
   passwordHash: string;
+  email?: string;
+  phone?: string;
+  status?: UserStatus;
+  lastLoginAt?: string | null;
+  sessionVersion?: number;
 };
 
 type PeopleFile = {
@@ -40,7 +47,20 @@ const demoStaff: { user: StoredUser; membership: Membership }[] = [
   },
 ];
 
+function normalize(people: PeopleFile): PeopleFile {
+  for (const user of people.users) {
+    user.email ??= "";
+    user.phone ??= "";
+    user.status ??= "ACTIVE";
+    user.lastLoginAt ??= null;
+    user.sessionVersion ??= 1;
+  }
+  for (const membership of people.memberships) membership.status ??= "ACTIVE";
+  return people;
+}
+
 function withStaff(people: PeopleFile): PeopleFile {
+  normalize(people);
   globalStore.__starHomePeople = people;
   if ((people.staffSeed ?? 0) >= staffSeedVersion) return people;
   for (const entry of demoStaff) {
@@ -50,7 +70,7 @@ function withStaff(people: PeopleFile): PeopleFile {
     people.memberships.push({ ...entry.membership });
   }
   people.staffSeed = staffSeedVersion;
-  persist(people);
+  persist(normalize(people));
   return people;
 }
 
@@ -139,13 +159,18 @@ export function listMemberships(): Membership[] {
   return load().memberships;
 }
 
-export function createPerson(input: { login: string; name: string; passwordHash: string }): StoredUser {
+export function createPerson(input: { login: string; name: string; passwordHash: string; email?: string; phone?: string }): StoredUser {
   const people = load();
   const user: StoredUser = {
     id: `usr_${randomBytes(8).toString("hex")}`,
     login: input.login,
     name: input.name,
     passwordHash: input.passwordHash,
+    email: input.email ?? "",
+    phone: input.phone ?? "",
+    status: "ACTIVE",
+    lastLoginAt: null,
+    sessionVersion: 1,
   };
   people.users.push(user);
   persist(people);
@@ -171,6 +196,7 @@ export function createResidentMembership(input: {
     unitId: input.unitId,
     expiresAt: input.expiresAt ?? null,
     passId: input.passId ?? null,
+    status: "ACTIVE",
   };
   people.memberships.push(membership);
   persist(people);
@@ -185,4 +211,57 @@ export function deleteMembership(membershipId: string): void {
     people.users = people.users.filter((user) => user.id !== membership.userId);
   }
   persist(people);
+}
+
+export function updateUser(userId: string, patch: Partial<Pick<StoredUser, "name" | "email" | "phone" | "status" | "lastLoginAt">>): StoredUser | undefined {
+  const people = load();
+  const user = people.users.find((item) => item.id === userId);
+  if (!user) return undefined;
+  Object.assign(user, patch);
+  persist(people);
+  return user;
+}
+
+export function endSessions(userId: string): void {
+  const people = load();
+  const user = people.users.find((item) => item.id === userId);
+  if (!user) return;
+  user.sessionVersion = (user.sessionVersion ?? 1) + 1;
+  persist(people);
+}
+
+export function createStaffMembership(input: {
+  userId: string;
+  companyId: string;
+  role: Membership["role"];
+  objectId: string | null;
+  createdBy: string;
+}): Membership {
+  const people = load();
+  const membership: Membership = {
+    id: `mem_${randomBytes(8).toString("hex")}`,
+    userId: input.userId,
+    companyId: input.companyId,
+    role: input.role,
+    objectId: input.objectId,
+    unitId: null,
+    status: "ACTIVE",
+    createdAt: new Date().toISOString(),
+    createdBy: input.createdBy,
+  };
+  people.memberships.push(membership);
+  persist(people);
+  return membership;
+}
+
+export function updateMembership(
+  membershipId: string,
+  patch: Partial<Pick<Membership, "role" | "objectId" | "status" | "revokedAt" | "revokedBy">>,
+): Membership | undefined {
+  const people = load();
+  const membership = people.memberships.find((item) => item.id === membershipId);
+  if (!membership) return undefined;
+  Object.assign(membership, patch);
+  persist(people);
+  return membership;
 }

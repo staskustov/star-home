@@ -129,6 +129,28 @@ export const roleScopes: Record<Role, readonly ScopeKind[]> = {
   GUEST: ["UNIT"],
 };
 
+export const roleLabels: Record<Role, string> = {
+  SUPER_ADMIN: "Администратор платформы",
+  COMPANY_ADMIN: "Администратор компании",
+  OBJECT_ADMIN: "Администратор объекта",
+  MANAGER: "Управляющий",
+  SECURITY: "Охрана",
+  SERVICE_OPERATOR: "Оператор сервиса",
+  ACCOUNTANT: "Бухгалтер",
+  RESIDENT: "Житель",
+  FAMILY_MEMBER: "Семья",
+  GUEST: "Гость",
+};
+
+export const staffRoles: readonly Role[] = ["SUPER_ADMIN", "COMPANY_ADMIN", "OBJECT_ADMIN", "MANAGER", "SECURITY", "SERVICE_OPERATOR", "ACCOUNTANT"];
+
+export function canManageRole(actorRole: Role, targetRole: Role): boolean {
+  if (actorRole === "SUPER_ADMIN") return true;
+  if (targetRole === "SUPER_ADMIN") return false;
+  if (actorRole === "COMPANY_ADMIN") return roleRank[targetRole] <= roleRank.COMPANY_ADMIN;
+  return roleRank[targetRole] < roleRank[actorRole];
+}
+
 export function permissionsOf(role: Role): ReadonlySet<Permission> {
   return new Set(grants[role]);
 }

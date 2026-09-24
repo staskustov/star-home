@@ -8,6 +8,7 @@ const maxAgeSeconds = 60 * 60 * 24 * 14;
 type SessionPayload = {
   userId: string;
   membershipId: string | null;
+  sv: number;
   exp: number;
 };
 
@@ -20,10 +21,11 @@ function secret(): string {
   return "star-home-dev-session";
 }
 
-export function signSession(userId: string, membershipId: string | null): string {
+export function signSession(userId: string, membershipId: string | null, sv = 1): string {
   const payload: SessionPayload = {
     userId,
     membershipId,
+    sv,
     exp: Date.now() + maxAgeSeconds * 1000,
   };
   const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
@@ -47,6 +49,7 @@ export function readSessionToken(token: string | undefined): SessionPayload | nu
     return {
       userId: payload.userId,
       membershipId: payload.membershipId ?? null,
+      sv: typeof payload.sv === "number" ? payload.sv : 1,
       exp: payload.exp,
     };
   } catch {

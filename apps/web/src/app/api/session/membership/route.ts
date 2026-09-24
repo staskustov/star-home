@@ -25,6 +25,6 @@ export async function POST(request: Request) {
   const response = acceptsJson
     ? NextResponse.json({ redirectTo: result.body.redirectTo })
     : NextResponse.redirect(new URL(result.body.redirectTo, request.url), 303);
-  response.cookies.set(sessionCookie, signSession(session.userId, result.body.membershipId), sessionCookieOptions());
+  response.cookies.set(sessionCookie, signSession(session.userId, result.body.membershipId, session.sv), sessionCookieOptions());
   return response;
 }

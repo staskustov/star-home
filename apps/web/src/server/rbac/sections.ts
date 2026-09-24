@@ -1,7 +1,8 @@
 import { objectPresentation } from "@/lib/object-presentation";
+import { structureCounts } from "@/server/catalog-store";
 import { can, objectsInScope, type StaffActor } from "@/server/rbac/decide";
 import type { Permission } from "@/server/rbac/permissions";
-import type { NavGroup, NavItem } from "@/types/domain";
+import type { AdminObjectSnapshot, NavGroup, NavItem } from "@/types/domain";
 
 const sections: { group: string; permission: Permission; item: NavItem }[] = [
   { group: "Объект", permission: "dashboard.view", item: { href: "/admin", label: "Обзор", icon: "overview" } },
@@ -13,6 +14,7 @@ const sections: { group: string; permission: Permission; item: NavItem }[] = [
   { group: "Операции", permission: "payments.view", item: { href: "/admin/payments", label: "Платежи", icon: "payments" } },
   { group: "Системы", permission: "devices.view", item: { href: "/admin/devices", label: "Устройства", icon: "devices" } },
   { group: "Системы", permission: "ai.view", item: { href: "/admin/ai", label: "AI", icon: "ai" } },
+  { group: "Управление", permission: "users.view", item: { href: "/admin/team", label: "Команда", icon: "team" } },
   { group: "Управление", permission: "settings.view", item: { href: "/admin/settings", label: "Настройки", icon: "settings" } },
 ];
 
@@ -33,4 +35,11 @@ export function sectionsFor(actor: StaffActor): NavGroup[] {
     else groups.push({ label: section.group, items: [item] });
   }
   return groups;
+}
+
+export function adminObjectsFor(actor: StaffActor): AdminObjectSnapshot[] {
+  return objectsInScope(actor).map((object) => {
+    const counts = structureCounts(object.id, object.type);
+    return { id: object.id, companyId: object.companyId, name: object.name, type: object.type, buildings: counts.buildings, units: counts.units };
+  });
 }

@@ -11,6 +11,13 @@ export const auditActionLabels: Record<string, string> = {
   UPDATE_REQUEST: "Статус заявки",
   PAY_INVOICE: "Оплата",
   RAISE_ALARM: "Вызов охраны",
+  TEAM_ADD: "Новый сотрудник",
+  TEAM_EDIT: "Данные сотрудника",
+  TEAM_ROLE: "Смена роли",
+  TEAM_SCOPE: "Смена объекта",
+  TEAM_BLOCK: "Блокировка",
+  TEAM_RESTORE: "Восстановление доступа",
+  TEAM_REMOVE: "Отзыв доступа",
 };
 
 function unitName(unitId: string | null): string {

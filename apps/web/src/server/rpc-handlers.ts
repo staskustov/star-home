@@ -14,7 +14,6 @@ import {
 } from "@/server/catalog";
 import {
   adminMemberships,
-  adminObjectsFor,
   companyName,
   findMembership,
   findUserById,
@@ -41,11 +40,13 @@ import {
 } from "@/server/operations";
 import { dashboardFor } from "@/server/dashboard";
 import { verifyPassword } from "@/server/password";
-import { staffActor, withPermission } from "@/server/rbac/decide";
-import { sectionsFor } from "@/server/rbac/sections";
+import { updateUser } from "@/server/people-store";
+import { staffActor, withPermission, type StaffActor } from "@/server/rbac/decide";
+import { adminObjectsFor, sectionsFor } from "@/server/rbac/sections";
 import { record, text } from "@/server/schema";
 import { addResident, removeResident, residentBoard } from "@/server/residents";
 import { destinationFor, guardPath, initialMembershipId } from "@/server/routing";
+import { addMember, changeAccess, editMember, removeMember, setMemberBlocked, teamBoard } from "@/server/team";
 import { keepFile, storesFlushed } from "@/server/store-bind";
 
 type Reply = { status: number; body: unknown };
@@ -73,8 +74,16 @@ function expired(expiresAt?: string | null): boolean {
   return Boolean(expiresAt) && Date.parse(expiresAt ?? "") <= Date.now();
 }
 
+function liveSession(session: SessionRef | null): SessionRef | null {
+  if (!session) return null;
+  const user = findUserById(session.userId);
+  if (!user || user.status === "BLOCKED") return null;
+  if ((user.sessionVersion ?? 1) !== (session.sv ?? 1)) return null;
+  return { userId: session.userId, membershipId: session.membershipId, sv: session.sv ?? 1 };
+}
+
 export async function handleRpc(method: string, input: unknown, session: SessionRef | null): Promise<Reply> {
-  const result = await dispatch(method, input, session);
+  const result = await dispatch(method, input, liveSession(session));
   await storesFlushed();
   return result;
 }
@@ -97,6 +106,8 @@ async function dispatch(method: string, input: unknown, session: SessionRef | nu
   if (method === "guest") return guest(session);
   if (method === "admin") return admin(session);
   if (method === "dashboard") return dashboard(session);
+  if (method === "team") return team(session);
+  if (Object.hasOwn(teamActions, method)) return teamAction(session, method, input);
   if (method === "ops") return ops(session);
   if (method === "access") return access(session);
   if (method === "requests") return requests(session);
@@ -152,9 +163,11 @@ async function login(input: unknown): Promise<Reply> {
     await noteLoginFailure(loginName);
     return fail(401, "Неверный логин или пароль");
   }
+  if (user.status === "BLOCKED") return fail(403, "Доступ приостановлен. Обратитесь к администратору.");
   await noteLoginSuccess(loginName);
+  updateUser(user.id, { lastLoginAt: new Date().toISOString() });
   const membershipId = initialMembershipId(user.id);
-  return ok({ userId: user.id, membershipId, redirectTo: destinationFor(user.id, membershipId) });
+  return ok({ userId: user.id, membershipId, sessionVersion: user.sessionVersion ?? 1, redirectTo: destinationFor(user.id, membershipId) });
 }
 
 function switched(session: SessionRef | null, input: unknown): Reply {
@@ -245,9 +258,32 @@ function admin(session: SessionRef | null): Reply {
   return ok({
     companyName: companyName(membership.companyId),
     actorLabel: user.name,
-    objects: adminObjectsFor(membership),
+    objects: adminObjectsFor(staff.value),
     sections: sectionsFor(staff.value),
   });
+}
+
+const teamActions: Record<string, (actor: StaffActor, input: Record<string, unknown>) => { ok: true; value: unknown } | { ok: false; status: number; message: string }> = {
+  teamAdd: (actor, input) => addMember(actor, input),
+  teamEdit: (actor, input) => editMember(actor, input),
+  teamAccess: (actor, input) => changeAccess(actor, input),
+  teamBlock: (actor, input) => setMemberBlocked(actor, input, true),
+  teamRestore: (actor, input) => setMemberBlocked(actor, input, false),
+  teamRemove: (actor, input) => removeMember(actor, input),
+};
+
+function team(session: SessionRef | null): Reply {
+  const actor = withPermission(staffActor(session), "users.view");
+  if (!actor.ok) return fail(actor.status, actor.message);
+  return ok(teamBoard(actor.value));
+}
+
+function teamAction(session: SessionRef | null, method: string, input: unknown): Reply {
+  const actor = withPermission(staffActor(session), "users.view");
+  if (!actor.ok) return fail(actor.status, actor.message);
+  const action = Object.hasOwn(teamActions, method) ? teamActions[method] : undefined;
+  if (!action) return fail(404, "Неизвестный метод");
+  return asReply(action(actor.value, record(input) ?? {}), method === "teamAdd" ? 201 : 200);
 }
 
 function dashboard(session: SessionRef | null): Reply {

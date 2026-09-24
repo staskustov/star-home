@@ -1,23 +1,21 @@
 import { residentHome } from "@/mocks/resident-home";
-import { findBuilding, findCompany, findObject, findUnit, objectsOf, structureCounts } from "@/server/catalog-store";
+import { findBuilding, findCompany, findObject, findUnit } from "@/server/catalog-store";
 import { modeForUnit, modesForObject } from "@/server/life-mode-store";
-import { alarmsForObject, auditForObject, devicesForObject, eventsForObject, passesForObject, readOps, requestsForObject } from "@/server/ops-store";
-import { listMemberships, listUsers } from "@/server/people-store";
-import type { AdminObjectSnapshot, Membership, ResidentHome, Role } from "@/types/domain";
+import { listMemberships, listUsers, type StoredUser } from "@/server/people-store";
+import type { Membership, ResidentHome, Role } from "@/types/domain";
 
-export type DirectoryUser = {
-  id: string;
-  login: string;
-  name: string;
-  passwordHash: string;
-};
+export type DirectoryUser = StoredUser;
 
 function users(): DirectoryUser[] {
   return listUsers();
 }
 
+export function isLive(membership: Membership): boolean {
+  return membership.status !== "REVOKED";
+}
+
 function memberships(): Membership[] {
-  return listMemberships();
+  return listMemberships().filter(isLive);
 }
 
 const parkHome: ResidentHome = {
@@ -50,15 +48,6 @@ const homesByUnit: Record<string, ResidentHome> = {
 };
 
 const adminRoles = new Set<Role>(["SUPER_ADMIN", "COMPANY_ADMIN", "OBJECT_ADMIN", "MANAGER"]);
-
-const auditLabels: Record<string, string> = {
-  OPEN_GATE: "Открытие ворот",
-  CREATE_PASS: "Пропуск",
-  CREATE_REQUEST: "Заявка",
-  UPDATE_REQUEST: "Статус заявки",
-  PAY_INVOICE: "Оплата",
-  RAISE_ALARM: "Вызов охраны",
-};
 
 export function findUserByLogin(login: string): DirectoryUser | undefined {
   const key = login.trim().toLowerCase();
@@ -165,57 +154,6 @@ export function placesFor(userId: string): { membershipId: string; title: string
     const building = home.unit.buildingId ? findBuilding(home.unit.buildingId) : undefined;
     const meta = building ? `${home.object.name} · ${building.name}` : home.object.name;
     return [{ membershipId: membership.id, title: home.unit.name, meta }];
-  });
-}
-
-export function adminObjectsFor(membership: Membership): AdminObjectSnapshot[] {
-  const limitedToObject = membership.role === "OBJECT_ADMIN" || membership.role === "MANAGER" ? membership.objectId : null;
-  return objectsOf(membership.companyId, limitedToObject).map((object) => {
-    const counts = structureCounts(object.id, object.type);
-    const openRequests = requestsForObject(object.id).filter((request) => request.status !== "DONE" && request.status !== "CLOSED");
-    const openAlarms = alarmsForObject(object.id).filter((alarm) => alarm.status === "OPEN");
-    const readings = readOps().readings;
-    return {
-      id: object.id,
-      companyId: object.companyId,
-      name: object.name,
-      type: object.type,
-      buildings: counts.buildings,
-      units: counts.units,
-      residents: residentCount(object.id),
-      visitors: passesForObject(object.id).length,
-      requests: openRequests.length,
-      alarms: openAlarms.length,
-      accessEvents: eventsForObject(object.id).slice(0, 6).map((event) => ({
-        id: event.id,
-        time: event.time,
-        title: event.title,
-        result: event.result,
-      })),
-      systems: devicesForObject(object.id).map((device) => {
-        const reading = readings.find((item) => item.deviceId === device.id);
-        return {
-          id: device.id,
-          name: device.name,
-          state:
-            device.work === "FAULT"
-              ? "Неисправно"
-              : device.work === "OFF"
-                ? "Отключено"
-                : reading
-                  ? `${String(reading.temperatureC).replace(".", ",")}° · ${reading.humidityPercent}%`
-                  : "На связи",
-          tone: device.work === "FAULT" ? ("danger" as const) : device.work === "OFF" ? ("warning" as const) : ("success" as const),
-        };
-      }),
-      openRequests: openRequests.slice(0, 4).map((request) => ({ id: request.id, title: request.category, detail: request.text })),
-      notices: [
-        ...openAlarms.slice(0, 3).map((alarm) => ({ id: alarm.id, title: alarm.title, detail: `${alarm.at}` })),
-        ...auditForObject(object.id)
-          .slice(0, 4)
-          .map((entry) => ({ id: entry.id, title: auditLabels[entry.action] ?? "Событие", detail: `${entry.target} · ${entry.at}` })),
-      ],
-    };
   });
 }
 

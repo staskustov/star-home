@@ -39,6 +39,11 @@ export type Membership = {
   unitId: string | null;
   expiresAt?: string | null;
   passId?: string | null;
+  status?: "ACTIVE" | "REVOKED";
+  createdAt?: string | null;
+  createdBy?: string | null;
+  revokedAt?: string | null;
+  revokedBy?: string | null;
 };
 
 export type Company = {
@@ -140,13 +145,6 @@ export type AccessEvent = {
   result: "SUCCESS" | "DENIED" | "UNCONFIRMED";
 };
 
-export type SystemState = {
-  id: string;
-  name: string;
-  state: string;
-  tone: Tone;
-};
-
 export type AdminObjectSnapshot = {
   id: string;
   companyId: string;
@@ -154,26 +152,12 @@ export type AdminObjectSnapshot = {
   type: ObjectType;
   buildings: number | null;
   units: number;
-  residents: number;
-  visitors: number;
-  requests: number;
-  alarms: number;
-  accessEvents: AccessEvent[];
-  systems: SystemState[];
-  openRequests: { id: string; title: string; detail: string }[];
-  notices: { id: string; title: string; detail: string }[];
-};
-
-export type AdminDashboard = {
-  company: Company;
-  actorLabel: string;
-  objects: AdminObjectSnapshot[];
 };
 
 export type NavItem = {
   href: string;
   label: string;
-  icon: "home" | "access" | "ai" | "service" | "profile" | "overview" | "objects" | "residents" | "security" | "requests" | "payments" | "devices" | "settings" | "rooms";
+  icon: "home" | "access" | "ai" | "service" | "profile" | "overview" | "objects" | "residents" | "security" | "requests" | "payments" | "devices" | "settings" | "rooms" | "team";
 };
 
 export type NavGroup = {

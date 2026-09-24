@@ -3,7 +3,7 @@ import { findObject } from "@/server/catalog-store";
 import { findMembership } from "@/server/directory";
 import type { Role } from "@/types/domain";
 
-export type SessionRef = { userId: string; membershipId: string | null };
+export type SessionRef = { userId: string; membershipId: string | null; sv?: number };
 
 export type Place = {
   userId: string;

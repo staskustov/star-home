@@ -48,13 +48,27 @@ async function projectPeople(prisma: PrismaClient, body: Record<string, unknown>
   for (const name of roles) {
     await prisma.role.upsert({ where: { name }, create: { name }, update: {} });
   }
-  const users = list<{ id: string; login: string; name: string; passwordHash: string }>(body.users);
+  const users = list<{
+    id: string;
+    login: string;
+    name: string;
+    passwordHash: string;
+    email?: string;
+    phone?: string;
+    status?: string;
+    lastLoginAt?: string | null;
+  }>(body.users);
   for (const user of users) {
-    await prisma.user.upsert({
-      where: { id: user.id },
-      create: user,
-      update: { login: user.login, name: user.name, passwordHash: user.passwordHash },
-    });
+    const row = {
+      login: user.login,
+      name: user.name,
+      passwordHash: user.passwordHash,
+      email: user.email ?? "",
+      phone: user.phone ?? "",
+      status: user.status ?? "ACTIVE",
+      lastLoginAt: user.lastLoginAt ?? null,
+    };
+    await prisma.user.upsert({ where: { id: user.id }, create: { id: user.id, ...row }, update: row });
   }
   for (const membership of list<{
     id: string;
@@ -65,6 +79,9 @@ async function projectPeople(prisma: PrismaClient, body: Record<string, unknown>
     unitId: string | null;
     expiresAt?: string | null;
     passId?: string | null;
+    status?: string;
+    createdAt?: string | null;
+    createdBy?: string | null;
   }>(body.memberships)) {
     const row = {
       userId: membership.userId,
@@ -74,6 +91,9 @@ async function projectPeople(prisma: PrismaClient, body: Record<string, unknown>
       unitId: membership.unitId,
       expiresAt: membership.expiresAt ?? null,
       passId: membership.passId ?? null,
+      status: membership.status ?? "ACTIVE",
+      createdAt: membership.createdAt ?? null,
+      createdBy: membership.createdBy ?? null,
     };
     await prisma.membership.upsert({ where: { id: membership.id }, create: { id: membership.id, ...row }, update: row });
     const person = users.find((item) => item.id === membership.userId);

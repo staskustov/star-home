@@ -1,6 +1,6 @@
 import { findBuilding, findUnit, objectsOf, readTree } from "@/server/catalog-store";
 import { catalogActor } from "@/server/catalog";
-import { findUserById, findUserByLogin, membershipsOf } from "@/server/directory";
+import { findUserById, findUserByLogin, isLive, membershipsOf } from "@/server/directory";
 import { createPass } from "@/server/operations";
 import { createPerson, createResidentMembership, deleteMembership, listMemberships, listUsers } from "@/server/people-store";
 import { hashPassword } from "@/server/password";
@@ -82,6 +82,7 @@ export function residentBoard(actor: Actor): { people: ResidentRow[]; objects: R
   const objects = objectsOf(actor.companyId, limit);
   const users = new Map(listUsers().map((user) => [user.id, user]));
   const people = listMemberships()
+    .filter(isLive)
     .filter((membership) => householdRoles.has(membership.role) && membership.objectId && membership.unitId)
     .flatMap((membership) => {
       if (!membership.objectId || !membership.unitId) return [];
@@ -153,7 +154,7 @@ export function addResident(
   if (typeof name !== "string") return name;
   if (
     existing &&
-    listMemberships().some(
+    listMemberships().filter(isLive).some(
       (membership) =>
         membership.userId === existing.id && householdRoles.has(membership.role) && membership.unitId === unit.id,
     )
@@ -191,7 +192,7 @@ export function addResident(
 }
 
 export function removeResident(actor: Actor, membershipId: string): Success<{ id: string }> | Failure {
-  const membership = listMemberships().find((item) => item.id === membershipId);
+  const membership = listMemberships().filter(isLive).find((item) => item.id === membershipId);
   if (!membership || !householdRoles.has(membership.role) || !membership.objectId) {
     return { ok: false, status: 404, message: "Житель не найден" };
   }

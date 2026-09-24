@@ -55,10 +55,14 @@ model Role {
 }
 
 model User {
-  id           String @id
+  id           String  @id
   login        String
   name         String
   passwordHash String
+  email        String  @default("")
+  phone        String  @default("")
+  status       String  @default("ACTIVE")
+  lastLoginAt  String?
 }
 
 model Membership {
@@ -70,6 +74,9 @@ model Membership {
   unitId    String?
   expiresAt String?
   passId    String?
+  status    String  @default("ACTIVE")
+  createdAt String?
+  createdBy String?
 }
 
 model Resident {

@@ -73,6 +73,14 @@ const paths: Record<IconName, ReactNode> = {
       <path d="M16 10h4v10h-4" />
     </>
   ),
+  team: (
+    <>
+      <rect x="3.5" y="5.5" width="17" height="13" rx="2.5" />
+      <circle cx="9" cy="10.6" r="2" />
+      <path d="M5.9 15.5c.6-1.3 1.7-2 3.1-2s2.5.7 3.1 2" />
+      <path d="M14.5 10h3M14.5 13h3" />
+    </>
+  ),
   residents: (
     <>
       <circle cx="9" cy="9" r="2.6" />
