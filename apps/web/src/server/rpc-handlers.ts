@@ -37,6 +37,7 @@ import {
   cameraFrameFor,
   openGateFor,
   openObjectGateFor,
+  openObjectPointFor,
   openPointFor,
   payFor,
   recordAudit,
@@ -50,6 +51,8 @@ import type { Permission } from "@/server/rbac/permissions";
 import { householdCan, selfOnlyOf } from "@/server/rbac/policy";
 import { internalSecret } from "@/server/internal-secret";
 import { rolesBoard, saveRole } from "@/server/roles";
+import { checkPassFor, handleAlarmFor, securityPost } from "@/server/security-post";
+import { engineeringBoard, pollDeviceFor, setDeviceWorkFor } from "@/server/engineering";
 import { auditBoard, auditExport } from "@/server/audit-view";
 import { adminObjectsFor, sectionsFor } from "@/server/rbac/sections";
 import { record, text } from "@/server/schema";
@@ -177,6 +180,13 @@ const methodPolicy: Record<string, Route> = {
 
   openObjectGate: staff("access.gate.open", (actor, input) => openObjectGateFor(actor, input.objectId)),
   cameraFrame: staff("security.camera.view", (actor, input) => cameraFrameFor(actor, input.objectId, input.name)),
+  securityPost: staff("security.view", (actor, input) => securityPost(actor, input.objectId)),
+  handleAlarm: staff("security.alarm.handle", (actor, input) => handleAlarmFor(actor, input.alarmId, input.step)),
+  openObjectPoint: staff("access.gate.open", (actor, input) => openObjectPointFor(actor, input.objectId, input.pointId)),
+  checkPass: staff("access.view", (actor, input) => checkPassFor(actor, input.objectId, input.code)),
+  engineering: staff("engineering.view", (actor) => engineeringBoard(actor)),
+  pollDevice: staff("engineering.command", (actor, input) => pollDeviceFor(actor, input.objectId, input.deviceId)),
+  setDeviceWork: staff("engineering.edit", (actor, input) => setDeviceWorkFor(actor, input.objectId, input.deviceId, input.work)),
   setRequestStatus: staff("service.edit", (actor, input) => setRequestStatusFor(actor, input.id, input.status, input.objectId)),
 };
 
@@ -209,6 +219,10 @@ const guardedMethods: Partial<Record<string, AuditAction>> = {
   openGate: "OPEN_GATE",
   openPoint: "OPEN_GATE",
   cameraFrame: "CAMERA_VIEW",
+  handleAlarm: "ALARM_CLOSE",
+  openObjectPoint: "OPEN_GATE",
+  pollDevice: "DEVICE_POLL",
+  setDeviceWork: "DEVICE_STATUS",
   setRequestStatus: "UPDATE_REQUEST",
   addPass: "CREATE_PASS",
   pay: "PAY_INVOICE",

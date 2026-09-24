@@ -23,10 +23,10 @@ Resident app в этом этапе не меняется.
 | 2 | Посёлок* | `/admin/objects`, `/admin/objects/[id]` | `objects.view` | есть |
 | 3 | Жители | `/admin/residents` | `residents.view` | есть |
 | 4 | Доступ | `/admin/access` | `access.view` | есть |
-| 5 | Охрана | `/admin/security` | `security.view` | есть |
+| 5 | Пост охраны | `/security` (отдельный экран; `/admin/security` перенаправляет туда) | `security.view` | есть |
 | 6 | Заявки | `/admin/requests` | `service.view` | есть |
 | 7 | Платежи | `/admin/payments` | `payments.view` | есть |
-| 8 | Инженерия | `/admin/engineering` | `engineering.view` | **новый** |
+| 8 | Инженерия | `/admin/engineering` | `engineering.view` | есть |
 | 9 | Устройства | `/admin/devices` | `devices.view` | есть |
 | 10 | AI | `/admin/ai` | `ai.view` | есть |
 | 11 | Команда | `/admin/team` | `users.view` | **новый** (Phase B) |
@@ -39,7 +39,7 @@ Resident app в этом этапе не меняется.
 Группы в сайдбаре, чтобы 14 пунктов читались:
 
 - **Объект:** Обзор, Посёлок, Жители.
-- **Операции:** Доступ, Охрана, Заявки, Платежи.
+- **Операции:** Доступ, Пост охраны, Заявки, Платежи.
 - **Системы:** Инженерия, Устройства, AI.
 - **Управление:** Команда, Роли и права, Журнал действий, Настройки.
 
@@ -110,8 +110,13 @@ Resident app в этом этапе не меняется.
 | `rolesSave` | `roles.edit` | company, потолок ранга | C |
 | `audit` | `audit.view` | scope, фильтр категорий | E |
 | `auditExport` | `audit.export` | scope | E |
-| `engineering` | `engineering.view` | scope | A/D |
-| `alarmHandle` | `security.alarm.handle` | alarm → object | D |
+| `securityPost` | `security.view` | объект ⊂ scope; камеры — `camera.view`, гости и события — `access.view`, журнал — `audit.view` | пост |
+| `handleAlarm` | `security.alarm.handle` | alarm → object, досягаемость корпуса; OPEN → ACCEPTED → CLOSED | пост |
+| `openObjectPoint` | `access.gate.open` | только общие точки объекта, без квартирных замков | пост |
+| `checkPass` | `access.view` | пропуска объекта в досягаемости | пост |
+| `engineering` | `engineering.view` | scope | инженерия |
+| `pollDevice` | `engineering.command` | устройство объекта в досягаемости, не выведено из работы | инженерия |
+| `setDeviceWork` | `engineering.edit` | устройство объекта в досягаемости | инженерия |
 | `passRevoke` | `access.pass.revoke` | pass → unit/object | D |
 
 Неизвестный метод → 404. Метод без записи в `methodPolicy` → 403 и запись `DENIED`. Так новый метод не откроется случайно.
@@ -128,7 +133,11 @@ Resident app в этом этапе не меняется.
 | `DELETE /api/admin/team/[membershipId]` | `teamRemove` |
 | `PUT /api/admin/roles` | `rolesSave` |
 | `POST /api/admin/audit/export` | `auditExport` |
-| `POST /api/admin/security/alarm/[id]` | `alarmHandle` |
+| `POST /api/security/alarms/[id]` | `handleAlarm` |
+| `POST /api/security/points` | `openObjectPoint` |
+| `POST /api/security/passes` | `checkPass` |
+| `POST /api/engineering/devices/[id]` | `pollDevice` |
+| `PATCH /api/engineering/devices/[id]` | `setDeviceWork` |
 | `DELETE /api/access/passes/[id]` | `passRevoke` |
 
 Обёртки передают в RPC `client: { ip, device }` из заголовков запроса (см. `ADMIN_SECURITY_MODEL.md`).

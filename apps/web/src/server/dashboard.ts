@@ -58,7 +58,7 @@ function attentionFor(actor: StaffActor, object: CatalogObject): DashboardAttent
         tone: "danger",
         title: plural(alarms.length, ["вызов охраны ждёт ответа", "вызова охраны ждут ответа", "вызовов охраны ждут ответа"]),
         detail: `Последний: ${placeOf(latest.unitId)} · ${latest.at}`,
-        href: "/admin/security",
+        href: "/security",
       });
     }
   }
@@ -143,7 +143,7 @@ function pulseFor(actor: StaffActor, object: CatalogObject): DashboardPulse[] {
   }
   if (can(actor, "security.view")) {
     const open = within(actor, alarmsForObject(object.id)).filter((alarm) => alarm.status === "OPEN").length;
-    pulse.push({ id: "alarms", value: open, label: "Тревоги", href: "/admin/security", alert: open > 0 });
+    pulse.push({ id: "alarms", value: open, label: "Тревоги", href: "/security", alert: open > 0 });
   }
   if (can(actor, "payments.view")) {
     const open = within(actor, readOps().invoices).filter((invoice) => invoice.objectId === object.id && invoice.status === "OPEN").length;

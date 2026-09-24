@@ -202,6 +202,8 @@ model SecurityEvent {
   title     String
   status    String
   at        String
+  handledBy String?
+  handledAt String?
 }
 
 model Invoice {

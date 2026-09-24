@@ -200,18 +200,20 @@ async function projectOps(prisma: PrismaClient, body: Record<string, unknown>): 
     await prisma.meterReading.upsert({ where: { id: reading.id }, create: reading, update: { value: reading.value, at: reading.at, meterId: reading.meterId } });
   }
   const readings = list<{ deviceId: string; temperatureC: number; humidityPercent: number }>(body.readings);
-  for (const device of list<{ id: string; companyId: string; objectId: string; unitId: string | null; kind: string; name: string; adapter: string }>(body.devices)) {
+  for (const device of list<{ id: string; companyId: string; objectId: string; unitId: string | null; kind: string; name: string; adapter: string; work?: string }>(body.devices)) {
     const row = { companyId: device.companyId, objectId: device.objectId, unitId: device.unitId, kind: device.kind, name: device.name, adapter: device.adapter };
     await prisma.device.upsert({ where: { id: device.id }, create: { id: device.id, ...row }, update: row });
     const reading = readings.find((item) => item.deviceId === device.id);
+    const state = device.work === "FAULT" ? "Неисправно" : device.work === "OFF" ? "Выведено из работы" : reading ? "Показание" : "На связи";
     await prisma.deviceState.upsert({
       where: { deviceId: device.id },
-      create: { deviceId: device.id, state: reading ? "Показание" : "На связи", temperatureC: reading?.temperatureC ?? null, humidityPercent: reading?.humidityPercent ?? null },
-      update: { state: reading ? "Показание" : "На связи", temperatureC: reading?.temperatureC ?? null, humidityPercent: reading?.humidityPercent ?? null },
+      create: { deviceId: device.id, state, temperatureC: reading?.temperatureC ?? null, humidityPercent: reading?.humidityPercent ?? null },
+      update: { state, temperatureC: reading?.temperatureC ?? null, humidityPercent: reading?.humidityPercent ?? null },
     });
   }
-  for (const alarm of list<{ id: string; companyId: string; objectId: string; unitId: string; title: string; status: string; at: string }>(body.alarms)) {
-    await prisma.securityEvent.upsert({ where: { id: alarm.id }, create: alarm, update: { status: alarm.status, title: alarm.title, at: alarm.at } });
+  for (const alarm of list<{ id: string; companyId: string; objectId: string; unitId: string; title: string; status: string; at: string; handledBy?: string; handledAt?: string }>(body.alarms)) {
+    const row = { status: alarm.status, title: alarm.title, at: alarm.at, handledBy: alarm.handledBy ?? null, handledAt: alarm.handledAt ?? null };
+    await prisma.securityEvent.upsert({ where: { id: alarm.id }, create: { id: alarm.id, companyId: alarm.companyId, objectId: alarm.objectId, unitId: alarm.unitId, ...row }, update: row });
   }
   for (const notice of list<{ id: string; companyId: string; userId: string; title: string; body: string; at: string }>(body.notices)) {
     await prisma.notification.upsert({ where: { id: notice.id }, create: notice, update: { title: notice.title, body: notice.body, at: notice.at } });

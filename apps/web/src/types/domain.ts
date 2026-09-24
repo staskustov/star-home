@@ -158,7 +158,7 @@ export type AdminObjectSnapshot = {
 export type NavItem = {
   href: string;
   label: string;
-  icon: "home" | "access" | "ai" | "service" | "profile" | "overview" | "objects" | "residents" | "security" | "requests" | "payments" | "devices" | "settings" | "rooms" | "team" | "roles" | "audit";
+  icon: "home" | "access" | "ai" | "service" | "profile" | "overview" | "objects" | "residents" | "security" | "requests" | "payments" | "devices" | "settings" | "rooms" | "team" | "roles" | "audit" | "engineering";
 };
 
 export type NavGroup = {

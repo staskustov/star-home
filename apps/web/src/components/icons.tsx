@@ -131,6 +131,12 @@ const paths: Record<IconName, ReactNode> = {
       <path d="M11 17.5h2" />
     </>
   ),
+  engineering: (
+    <>
+      <path d="M4.5 17a7.5 7.5 0 1 1 15 0" />
+      <path d="m12 17 3.5-4.5M4.5 17h3M16.5 17h3" />
+    </>
+  ),
   settings: (
     <>
       <circle cx="12" cy="12" r="3" />

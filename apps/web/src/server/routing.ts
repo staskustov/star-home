@@ -15,14 +15,15 @@ export function destinationFor(userId: string, membershipId: string | null): str
   const admins = adminMemberships(userId);
   if (selected?.role === "GUEST") return guestOpen(userId, membershipId) ? "/guest" : "/no-access";
   if (selected && (selected.role === "RESIDENT" || selected.role === "FAMILY_MEMBER") && selected.unitId) return "/home";
-  if (selected && isAdminRole(selected.role)) return "/admin";
+  if (selected && isAdminRole(selected.role)) return selected.role === "SECURITY" ? securityPath : "/admin";
   if (homes.length > 1) return "/my-objects";
   if (homes.length === 1) return "/home";
   if (guests.length === 1) return "/guest";
-  if (admins.length > 0) return "/admin";
+  if (admins.length > 0) return admins[0]?.role === "SECURITY" ? securityPath : "/admin";
   return "/no-access";
 }
 
+const securityPath = "/security";
 const residentPaths = ["/home", "/access", "/rooms", "/devices", "/service", "/profile", "/my-objects"];
 const adminPrefix = "/admin";
 
@@ -33,6 +34,12 @@ export function guardPath(userId: string, membershipId: string | null, pathname:
   if (pathname === "/guest") {
     if (destination !== "/guest") return { redirect: destination };
     return {};
+  }
+  if (pathname === securityPath || pathname.startsWith(`${securityPath}/`)) {
+    const actor = staffActor({ userId, membershipId });
+    if (!actor.ok) return { redirect: destination === securityPath ? "/no-access" : destination };
+    if (can(actor.value, "security.view")) return {};
+    return { redirect: firstSection(actor.value) ?? "/no-access" };
   }
   if (pathname === adminPrefix || pathname.startsWith(`${adminPrefix}/`)) {
     const actor = staffActor({ userId, membershipId });

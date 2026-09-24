@@ -85,9 +85,13 @@ export type Alarm = {
   objectId: string;
   unitId: string;
   title: string;
-  status: "OPEN" | "CLOSED";
+  status: AlarmStatus;
   at: string;
+  handledBy?: string;
+  handledAt?: string;
 };
+
+export type AlarmStatus = "OPEN" | "ACCEPTED" | "CLOSED";
 
 export type Notice = {
   id: string;

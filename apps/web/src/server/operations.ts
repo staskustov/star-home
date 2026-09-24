@@ -241,6 +241,21 @@ export async function openObjectGateFor(actor: StaffActor, objectId: unknown) {
   };
 }
 
+export async function openObjectPointFor(actor: StaffActor, objectId: unknown, pointId: unknown) {
+  if (!can(actor, "access.gate.open")) return denied;
+  const object = objectFor(actor, objectId);
+  if (!object.ok) return object;
+  if (typeof pointId !== "string" || !pointId) return { ok: false as const, status: 400, message: "Точка доступа не найдена" };
+  const device = accessPoint(object.value.id, "", pointId);
+  if (!device || device.companyId !== object.value.companyId) return { ok: false as const, status: 404, message: "Точка доступа не найдена" };
+  if (!reaches(actor, device)) return denied;
+  if (device.work === "FAULT" || device.work === "OFF") return { ok: false as const, status: 409, message: "Точка доступа не в работе" };
+  return {
+    ok: true as const,
+    value: await openDevice({ userId: actor.userId, companyId: object.value.companyId, objectId: object.value.id, unitId: "", role: actor.role }, device),
+  };
+}
+
 export async function cameraFrameFor(actor: StaffActor, objectId: unknown, name: unknown) {
   if (!can(actor, "security.camera.view")) return denied;
   if (typeof name !== "string" || !name.trim()) return { ok: false as const, status: 400, message: "Камера не найдена" };

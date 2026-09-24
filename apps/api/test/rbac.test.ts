@@ -309,8 +309,8 @@ describe("console sections", () => {
   it("gives each staff role its own console", async () => {
     const guard = hrefs((await rpc("admin", null, security)).body as Admin);
     const books = hrefs((await rpc("admin", null, accountant)).body as Admin);
-    assert.ok(guard.includes("/admin/security") && !guard.includes("/admin/payments"));
-    assert.ok(books.includes("/admin/payments") && !books.includes("/admin/security"));
+    assert.ok(guard.includes("/security") && !guard.includes("/admin/payments"));
+    assert.ok(books.includes("/admin/payments") && !books.includes("/security"));
     assert.ok(!guard.includes("/admin/roles") && !books.includes("/admin/team"));
   });
 });
@@ -749,5 +749,114 @@ describe("self scope", () => {
     assert.equal(card.pass?.code, mine.code);
     const access = (await rpc("access", null, guestSession)).body as { passes?: unknown[]; redirect?: string };
     assert.equal(access.passes, undefined, "a guest never sees the unit's other passes");
+  });
+});
+
+describe("security post", () => {
+  type Post = {
+    objectId: string;
+    can: Record<string, boolean>;
+    alarms: { id: string; status: string; handledBy: string | null }[];
+    points: { id: string }[];
+    cameras: unknown[];
+    passes: unknown[];
+  };
+  const auditRows = async (action: string) => (await import("../../web/src/server/audit-store")).listAudit().filter((row) => row.action === action);
+
+  it("sends the guard straight to the post and keeps residents out", async () => {
+    const { destinationFor, guardPath } = await import("../../web/src/server/routing");
+    assert.equal(destinationFor(security.userId, security.membershipId), "/security");
+    assert.equal(guardPath(security.userId, security.membershipId, "/security").redirect, undefined);
+    assert.equal(guardPath(resident.userId, resident.membershipId, "/security").redirect, "/home");
+    assert.equal((await rpc("securityPost", {}, resident)).status, 403);
+    assert.equal((await rpc("securityPost", {}, accountant)).status, 403);
+  });
+
+  it("shows only shared access points and the object in scope", async () => {
+    const reply = await rpc("securityPost", { objectId: "obj_park" }, security);
+    assert.equal(reply.status, 403, "a guard of another object in the company gets 403");
+    const body = (await rpc("securityPost", {}, security)).body as Post;
+    assert.equal(body.objectId, "obj_siyanie");
+    const ops = await import("../../web/src/server/ops-store");
+    const shared = new Set(ops.devicesForObject("obj_siyanie").filter((device) => !device.unitId).map((device) => device.id));
+    assert.ok(body.points.length > 0 && body.points.every((point) => shared.has(point.id)));
+  });
+
+  it("accepts and closes an alarm once, with audit", async () => {
+    assert.equal((await rpc("alarm", null, resident)).status, 200);
+    const open = ((await rpc("securityPost", {}, security)).body as Post).alarms.find((alarm) => alarm.status === "OPEN");
+    assert.ok(open);
+    assert.equal((await rpc("handleAlarm", { alarmId: open.id, step: "ACCEPT" }, resident)).status, 403);
+    assert.equal((await rpc("handleAlarm", { alarmId: open.id, step: "ACCEPT" }, security)).status, 200);
+    assert.equal((await rpc("handleAlarm", { alarmId: open.id, step: "ACCEPT" }, security)).status, 409);
+    assert.equal((await rpc("handleAlarm", { alarmId: open.id, step: "CLOSE" }, security)).status, 200);
+    assert.equal((await rpc("handleAlarm", { alarmId: open.id, step: "CLOSE" }, security)).status, 409);
+    const closed = ((await rpc("securityPost", {}, security)).body as Post).alarms.find((alarm) => alarm.id === open.id);
+    assert.equal(closed?.status, "CLOSED");
+    assert.ok(closed?.handledBy);
+    assert.ok((await auditRows("ALARM_ACCEPT")).some((row) => row.targetId === open.id));
+    assert.ok((await auditRows("ALARM_CLOSE")).some((row) => row.targetId === open.id && row.result === "SUCCESS"));
+  });
+
+  it("opens shared points only and respects building reach", async () => {
+    const opened = await rpc("openObjectPoint", { objectId: "obj_siyanie", pointId: "dev_wicket_siyanie" }, security);
+    assert.equal(opened.status, 200);
+    assert.equal((await rpc("openObjectPoint", { objectId: "obj_park", pointId: "dev_lock_84" }, admin)).status, 404, "unit locks are not guard points");
+    assert.equal((await rpc("openObjectPoint", { objectId: "obj_park", pointId: "dev_gate_park" }, security)).status, 403);
+    const people = await import("../../web/src/server/people-store");
+    const guard = people.createStaffMembership({ userId: "usr_security", companyId: "cmp_star", role: "SECURITY", objectId: "obj_park", buildingId: "bld_2", createdBy: "test" });
+    const session = { userId: "usr_security", membershipId: guard.id };
+    assert.equal((await rpc("openObjectPoint", { objectId: "obj_park", pointId: "dev_gate_park" }, session)).status, 200);
+    people.updateMembership(guard.id, { status: "REVOKED" });
+  });
+
+  it("checks a pass code and records the result", async () => {
+    const ops = await import("../../web/src/server/ops-store");
+    const pass = ops.passesForObject("obj_siyanie")[0];
+    assert.ok(pass);
+    const found = await rpc("checkPass", { objectId: "obj_siyanie", code: pass.code.toLowerCase() }, security);
+    assert.equal(found.status, 200);
+    assert.equal((found.body as { guestName: string }).guestName, pass.guestName);
+    assert.equal((await rpc("checkPass", { objectId: "obj_siyanie", code: "ZZZZ9999" }, security)).status, 404);
+    const rows = await auditRows("PASS_CHECK");
+    assert.ok(rows.some((row) => row.result === "SUCCESS") && rows.some((row) => row.result === "DENIED"));
+  });
+});
+
+describe("engineering", () => {
+  type Board = { objects: { objectId: string; systems: { id: string; state: string; devices: { id: string; reading: string | null }[] }[] }[]; can: { poll: boolean; edit: boolean } };
+
+  it("shows all four systems and never invents readings", async () => {
+    const reply = await rpc("engineering", null, objectAdmin);
+    assert.equal(reply.status, 200);
+    const board = reply.body as Board;
+    assert.deepEqual(board.objects.map((object) => object.objectId), ["obj_siyanie"]);
+    const systems = board.objects[0]?.systems ?? [];
+    assert.deepEqual(systems.map((system) => system.id), ["heat", "water", "power", "fire"]);
+    const fire = systems.find((system) => system.id === "fire");
+    assert.equal(fire?.devices.length === 0 ? fire.state : "Не подключено", "Не подключено");
+    const leak = systems.flatMap((system) => system.devices).find((device) => device.id === "dev_leak_24");
+    assert.equal(leak?.reading ?? null, null);
+    assert.equal((await rpc("engineering", null, resident)).status, 403);
+    assert.equal((await rpc("engineering", null, security)).status, 403);
+  });
+
+  it("polls through the adapter and records an honest result", async () => {
+    const leak = await rpc("pollDevice", { objectId: "obj_siyanie", deviceId: "dev_leak_24" }, manager);
+    assert.equal(leak.status, 200);
+    assert.equal((leak.body as { confirmed: boolean }).confirmed, false);
+    const audit = (await import("../../web/src/server/audit-store")).listAudit();
+    assert.ok(audit.some((row) => row.action === "DEVICE_POLL" && row.targetId === "dev_leak_24" && row.result === "ERROR"));
+    assert.equal((await rpc("pollDevice", { objectId: "obj_park", deviceId: "dev_climate_84" }, manager)).status, 403);
+  });
+
+  it("lets only engineering.edit take a device out of work", async () => {
+    const input = { objectId: "obj_siyanie", deviceId: "dev_climate_24", work: "OFF" };
+    assert.equal((await rpc("setDeviceWork", input, manager)).status, 403);
+    assert.equal((await rpc("setDeviceWork", input, objectAdmin)).status, 200);
+    assert.equal((await rpc("pollDevice", { objectId: "obj_siyanie", deviceId: "dev_climate_24" }, objectAdmin)).status, 409);
+    const audit = (await import("../../web/src/server/audit-store")).listAudit();
+    assert.ok(audit.some((row) => row.action === "DEVICE_STATUS" && row.targetId === "dev_climate_24" && row.changes?.some((change) => change.to === "Выведено из работы")));
+    assert.equal((await rpc("setDeviceWork", { ...input, work: "ON" }, objectAdmin)).status, 200);
   });
 });
