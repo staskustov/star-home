@@ -1,8 +1,8 @@
 import { createHmac } from "crypto";
 import type { SessionRef } from "@/server/actor";
 import type { ClientInfo } from "@/server/audit-context";
+import { internalSecret } from "@/server/internal-secret";
 
-const secret = () => process.env.STAR_HOME_INTERNAL_SECRET ?? "star-home-dev-internal";
 const endpoint = () => process.env.STAR_HOME_API_URL ?? "http://127.0.0.1:3457";
 
 const browsers: [RegExp, string][] = [
@@ -41,8 +41,8 @@ export async function rpcWith<T = unknown>(
   input?: unknown,
   client?: ClientInfo,
 ): Promise<{ status: number; body: T }> {
-  const payload = JSON.stringify({ method, input: input ?? null, session, client: client ?? null });
-  const signature = createHmac("sha256", secret()).update(payload).digest("hex");
+  const payload = JSON.stringify({ method, input: input ?? null, session, client: client ?? null, at: Date.now() });
+  const signature = createHmac("sha256", internalSecret()).update(payload).digest("hex");
   const response = await fetch(`${endpoint()}/rpc`, {
     method: "POST",
     headers: { "content-type": "application/json", "x-star-home-signature": signature },

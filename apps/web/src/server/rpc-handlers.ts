@@ -23,7 +23,6 @@ import {
   findUserByLogin,
   homeFor,
   homeMemberships,
-  isAdminRole,
   membershipsOf,
   placesFor,
 } from "@/server/directory";
@@ -49,6 +48,7 @@ import { updateUser } from "@/server/people-store";
 import { can, staffActor, withPermission, type StaffActor } from "@/server/rbac/decide";
 import type { Permission } from "@/server/rbac/permissions";
 import { householdCan, selfOnlyOf } from "@/server/rbac/policy";
+import { internalSecret } from "@/server/internal-secret";
 import { rolesBoard, saveRole } from "@/server/roles";
 import { auditBoard, auditExport } from "@/server/audit-view";
 import { adminObjectsFor, sectionsFor } from "@/server/rbac/sections";
@@ -182,6 +182,10 @@ const methodPolicy: Record<string, Route> = {
 
 export const rpcMethods: readonly string[] = Object.keys(methodPolicy);
 
+export const rpcAccess: Readonly<Record<string, { access: Route["access"]; permission: Permission | null }>> = Object.fromEntries(
+  Object.entries(methodPolicy).map(([method, route]) => [method, { access: route.access, permission: route.access === "staff" ? route.permission : null }]),
+);
+
 const guardedMethods: Partial<Record<string, AuditAction>> = {
   teamAdd: "TEAM_ADD",
   teamEdit: "TEAM_EDIT",
@@ -212,18 +216,35 @@ const guardedMethods: Partial<Record<string, AuditAction>> = {
   auditExport: "AUDIT_EXPORT",
 };
 
+const denialWindowMs = 60_000;
+const denialsPerWindow = 10;
+const denials = new Map<string, { count: number; resetAt: number }>();
+
+function denialAllowed(userId: string, method: string, now = Date.now()): boolean {
+  const key = `${userId}:${method}`;
+  const current = denials.get(key);
+  if (!current || current.resetAt <= now) {
+    if (denials.size > 10_000) denials.clear();
+    denials.set(key, { count: 1, resetAt: now + denialWindowMs });
+    return true;
+  }
+  current.count += 1;
+  return current.count <= denialsPerWindow;
+}
+
 function noteDenial(method: string, input: unknown, current: SessionRef, companyId: string | null, membership: Membership | undefined, reply: Reply): Reply {
   const action = guardedMethods[method];
-  if (reply.status !== 403 || !action || !companyId) return reply;
+  if (reply.status !== 403 || !action || !companyId || !denialAllowed(current.userId, method)) return reply;
   const body = record(input);
   const asked = typeof body?.objectId === "string" ? findObject(body.objectId) : undefined;
   const object = asked?.companyId === companyId ? asked : undefined;
-  const household = membership && !isAdminRole(membership.role) ? membership : undefined;
+  const own = membership?.companyId === companyId ? membership : undefined;
   recordAudit({
     actorUserId: current.userId,
     companyId,
-    objectId: object?.id ?? household?.objectId ?? null,
-    unitId: household?.unitId ?? null,
+    objectId: object?.id ?? own?.objectId ?? null,
+    buildingId: object ? null : (own?.buildingId ?? null),
+    unitId: object ? null : (own?.unitId ?? null),
     action,
     targetType: "method",
     targetId: method,
@@ -259,7 +280,9 @@ function noteLogin(user: { id: string }, result: "SUCCESS" | "DENIED", reason = 
     actorUserId: user.id,
     actorRole: chosen.role,
     companyId: chosen.companyId,
-    objectId: isAdminRole(chosen.role) ? chosen.objectId : null,
+    objectId: chosen.objectId,
+    buildingId: chosen.buildingId ?? null,
+    unitId: chosen.unitId,
     action: result === "SUCCESS" ? "LOGIN" : "LOGIN_FAILED",
     targetType: "user",
     targetId: user.id,
@@ -444,11 +467,10 @@ async function subscribe(session: SessionRef, input: Input): Promise<Reply> {
 
 function liveToken(session: SessionRef): Reply {
   const membership = session.membershipId ? findMembership(session.userId, session.membershipId) : undefined;
-  const objectId = membership?.objectId ?? "";
+  const objectId = membership && !expired(membership.expiresAt) ? membership.objectId : "";
   if (!objectId) return fail(403, "Нет доступа");
   const exp = Date.now() + 60_000;
   const body = Buffer.from(JSON.stringify({ userId: session.userId, objectId, exp })).toString("base64url");
-  const secret = process.env.STAR_HOME_INTERNAL_SECRET ?? "star-home-dev-internal";
-  const signature = createHmac("sha256", secret).update(body).digest("base64url");
+  const signature = createHmac("sha256", internalSecret()).update(body).digest("base64url");
   return ok({ token: `${body}.${signature}`, objectId });
 }

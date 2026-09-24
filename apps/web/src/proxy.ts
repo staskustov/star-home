@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { rpcWith } from "@/server/rpc-wire";
+import { crossSiteWrite } from "@/server/same-origin";
 import { readSessionToken, sessionCookie } from "@/server/session";
 
 function signedOut(response: NextResponse): NextResponse {
@@ -10,6 +11,9 @@ function signedOut(response: NextResponse): NextResponse {
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  if (pathname.startsWith("/api/") && crossSiteWrite(request.method, request.headers)) {
+    return NextResponse.json({ message: "Запрос отклонён" }, { status: 403 });
+  }
   const session = readSessionToken(request.cookies.get(sessionCookie)?.value);
   const isPublic = pathname === "/" || pathname === "/forgot-password" || pathname === "/api/auth/login" || pathname === "/offline.html";
 

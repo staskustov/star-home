@@ -63,7 +63,7 @@ export function membershipsOf(userId: string): Membership[] {
 }
 
 export function findMembership(userId: string, membershipId: string): Membership | undefined {
-  return membershipsOf(userId).find((membership) => membership.id === membershipId);
+  return membershipsOf(userId).find((membership) => membership.id === membershipId && stillActive(membership));
 }
 
 export function isAdminRole(role: Role): boolean {

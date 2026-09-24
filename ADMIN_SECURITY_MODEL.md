@@ -52,7 +52,9 @@
 
 - Cookie `httpOnly`, `sameSite=lax`, `secure` в production. Уже так.
 - Мутации только `POST/PUT/PATCH/DELETE` с JSON-телом.
-- Добавить в `proxy.ts` проверку `Origin` / `Sec-Fetch-Site` для `/api/*` с мутирующими методами: чужой origin → 403.
+- `proxy.ts` проверяет `Origin` / `Sec-Fetch-Site` для `/api/*` с мутирующими методами (`server/same-origin.ts`): чужой origin → 403. Сделано в Phase F.
+- Вызов Next → API подписан и содержит метку времени: старше 60 секунд — отказ. В production без `STAR_HOME_INTERNAL_SECRET` сервер не стартует.
+- Заголовки против встраивания и подмены типа — `next.config.ts`.
 
 ## 5. IP и устройство
 
@@ -116,7 +118,7 @@ Server components без запроса пользователя передаю�
 
 Ручная проверка на живом API: `curl` с подписанным payload для каждой роли демо-аккаунтов, прямой вызов с чужим `objectId`.
 
-Отчёт: таблица проверок, результат, найденные и закрытые проблемы.
+Отчёт: `ADMIN_SECURITY_QA.md`.
 
 ## 9. Открытые вопросы
 

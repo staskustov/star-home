@@ -16,12 +16,13 @@ import { WebSocketServer, type WebSocket } from "ws";
 import { projectSnapshot } from "./project";
 import { intentFromPrompt } from "../../web/src/server/ai-intent";
 import { bindFiles, bindLive, bindPush, bindStore, storesFlushed } from "../../web/src/server/store-bind";
+import { freshRpc, internalSecret } from "../../web/src/server/internal-secret";
 import { bindLoginLimit } from "../../web/src/server/login-limit";
 
 const port = 3457;
 const pgPort = 54329;
 const dataDir = path.join(process.cwd(), ".data");
-const secret = () => process.env.STAR_HOME_INTERNAL_SECRET ?? "star-home-dev-internal";
+const secret = internalSecret;
 
 type LiveClient = WebSocket & { objectId?: string };
 
@@ -157,7 +158,12 @@ async function signed(method: string | null, req: RawBodyRequest<Request>, res: 
     input?: unknown;
     session?: { userId: string; membershipId: string | null } | null;
     client?: unknown;
+    at?: unknown;
   };
+  if (!freshRpc(payload.at)) {
+    res.status(401).json({ message: "Нужно войти" });
+    return;
+  }
   const input = fixed ? { ...(typeof payload.input === "object" && payload.input ? payload.input : {}), ...fixed } : payload.input;
   const result = await handle(method ?? payload.method ?? "", input, payload.session ?? null, payload.client);
   res.status(result.status).json(result.body);

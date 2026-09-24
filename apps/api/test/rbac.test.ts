@@ -607,6 +607,7 @@ describe("audit log", () => {
     assert.equal(denied?.result, "DENIED");
     assert.equal(denied?.actorUserId, "usr_manager");
     assert.equal(denied?.companyId, "cmp_star");
+    assert.equal(denied?.objectId, "obj_siyanie", "a refusal lands on the actor's own object");
     assert.equal(denied?.ip, office.ip);
     assert.equal((await rpc("removeObject", { objectId: "obj_park" }, objectAdmin, office)).status, 403);
     assert.equal((await latest("OBJECT_DELETE"))?.result, "DENIED");
@@ -626,6 +627,7 @@ describe("audit log", () => {
     const signed = await latest("LOGIN");
     assert.equal(signed?.actorUserId, "usr_manager");
     assert.equal(signed?.device, office.device);
+    assert.equal(signed?.objectId, "obj_siyanie");
   });
 
   it("serves the log only with audit.view and by scope", async () => {
