@@ -3,11 +3,12 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
 import { boundValue, remember } from "@/server/store-bind";
 import { objectPresentation, unitTypeFor } from "@/lib/object-presentation";
-import type { ObjectType, Unit } from "@/types/domain";
+import type { ObjectType, Role, Unit } from "@/types/domain";
 
 export type CatalogCompany = {
   id: string;
   name: string;
+  roles?: Partial<Record<Role, string[]>>;
 };
 
 export type CatalogObject = {
@@ -215,6 +216,21 @@ function persist(catalog: Catalog): void {
 
 export function findCompany(companyId: string): CatalogCompany | undefined {
   return load().companies.find((company) => company.id === companyId);
+}
+
+export function companyGrants(companyId: string, role: Role): string[] | null {
+  return findCompany(companyId)?.roles?.[role] ?? null;
+}
+
+export function setCompanyGrants(companyId: string, role: Role, granted: string[] | null): void {
+  const catalog = load();
+  const company = catalog.companies.find((item) => item.id === companyId);
+  if (!company) return;
+  const roles = { ...company.roles };
+  if (granted) roles[role] = granted;
+  else delete roles[role];
+  company.roles = roles;
+  persist(catalog);
 }
 
 export function findObject(objectId: string): CatalogObject | undefined {

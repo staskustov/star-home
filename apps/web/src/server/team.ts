@@ -1,5 +1,5 @@
 import { findObject } from "@/server/catalog-store";
-import { findUserByLogin, isAdminRole, isLive } from "@/server/directory";
+import { findUserByLogin, isLive } from "@/server/directory";
 import { recordAudit } from "@/server/operations";
 import { hashPassword } from "@/server/password";
 import {
@@ -12,7 +12,7 @@ import {
   updateUser,
   type StoredUser,
 } from "@/server/people-store";
-import { can, objectsInScope, type StaffActor } from "@/server/rbac/decide";
+import { can, companyWide, objectsInScope, type StaffActor } from "@/server/rbac/decide";
 import { canManageRole, roleLabels, roleScopes, staffRoles } from "@/server/rbac/policy";
 import type { Membership, Role } from "@/types/domain";
 import type { TeamBoard } from "@/types/team";
@@ -28,10 +28,6 @@ function fail(status: number, message: string): Failure {
   return { ok: false, status, message };
 }
 
-function companyWide(actor: StaffActor): boolean {
-  return actor.scope.kind === "COMPANY" || actor.scope.kind === "PLATFORM";
-}
-
 function isStaff(membership: Membership): boolean {
   return staffRoles.includes(membership.role) && !membership.unitId;
 }
@@ -42,7 +38,7 @@ function placeLabel(objectId: string | null): string {
 }
 
 function assignableRoles(actor: StaffActor): Role[] {
-  return staffRoles.filter((role) => isAdminRole(role) && canManageRole(actor.role, role));
+  return staffRoles.filter((role) => canManageRole(actor.role, role));
 }
 
 function visible(actor: StaffActor, membership: Membership): boolean {

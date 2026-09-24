@@ -24,7 +24,7 @@ type PeopleFile = {
   staffSeed?: number;
 };
 
-const staffSeedVersion = 1;
+const staffSeedVersion = 2;
 
 const demoStaff: { user: StoredUser; membership: Membership }[] = [
   {
@@ -44,6 +44,33 @@ const demoStaff: { user: StoredUser; membership: Membership }[] = [
       passwordHash: "x2UF9UugV-KjhHFLS3CSqA.SBymB-gaSzviH_fI5jHRqtfZ1Ar7i79jyc2XTm7DAFU",
     },
     membership: { id: "mem_manager_siyanie", userId: "usr_manager", companyId: "cmp_star", role: "MANAGER", objectId: "obj_siyanie", unitId: null },
+  },
+  {
+    user: {
+      id: "usr_security",
+      login: "security",
+      name: "Игорь Волков",
+      passwordHash: "ZJJ7ELQuVTts1SS4fXtJog.Wz3cro80NqvCQL5opbLatmRyWHiC_QfyVYvPitRL2OA",
+    },
+    membership: { id: "mem_security_siyanie", userId: "usr_security", companyId: "cmp_star", role: "SECURITY", objectId: "obj_siyanie", unitId: null },
+  },
+  {
+    user: {
+      id: "usr_service",
+      login: "service",
+      name: "Елена Морозова",
+      passwordHash: "VbtTIojGRCD-vT2pFNpEAg.0l6x7Kvwtlk9OPgaSDffR12_7nIvgH5-URY2P3DKnTE",
+    },
+    membership: { id: "mem_service_siyanie", userId: "usr_service", companyId: "cmp_star", role: "SERVICE_OPERATOR", objectId: "obj_siyanie", unitId: null },
+  },
+  {
+    user: {
+      id: "usr_accountant",
+      login: "accountant",
+      name: "Наталья Белова",
+      passwordHash: "Q8OmgkWpLXmHIiedhw0Eag.oGT2whjitwYIzbDGtF53lpnybsWXu9Xo0J5AY_X7GIw",
+    },
+    membership: { id: "mem_accountant_star", userId: "usr_accountant", companyId: "cmp_star", role: "ACCOUNTANT", objectId: null, unitId: null },
   },
 ];
 

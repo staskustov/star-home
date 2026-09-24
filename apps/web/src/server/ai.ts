@@ -1,9 +1,10 @@
 import { formatHumidity, formatMoney, formatTemperature } from "@/lib/format";
 import { intentFromPrompt, type AiQuery, type AiToolName } from "@/server/ai-intent";
-import { placeFromSession, residentPlace, type Place, type SessionRef } from "@/server/actor";
+import { placeFromSession, type Place, type SessionRef } from "@/server/actor";
 import { modeForUnit, modesForObject, setUnitMode } from "@/server/life-mode-store";
 import { createPass, createRequest, openGate, payOldest } from "@/server/operations";
 import { homeSignals, newId, passesForUnit, readOps, writeOps, type PendingTool } from "@/server/ops-store";
+import { householdCan } from "@/server/rbac/policy";
 
 export type AiReply = {
   reply: string;
@@ -46,10 +47,10 @@ async function propose(prompt: string, role: Place["role"]): Promise<Proposal> {
       reply: payload.reply || "",
     };
   }
-  if ((suggestion.tool === "pay" || suggestion.query === "balance") && role !== "RESIDENT") {
+  if ((suggestion.tool === "pay" || suggestion.query === "balance") && !householdCan(role, "payments.pay")) {
     return { reply: "Оплата доступна только жителю.", pending: null, query: null };
   }
-  if (suggestion.tool === "create_pass" && role !== "RESIDENT") return { reply: "Пропуск оформляет житель.", pending: null, query: null };
+  if (suggestion.tool === "create_pass" && !householdCan(role, "access.pass.create")) return { reply: "Пропуск оформляет житель.", pending: null, query: null };
   if (suggestion.query) return { reply: "", pending: null, query: suggestion.query };
   if (!suggestion.tool) return { reply: "", pending: null, query: null };
   const pending: PendingTool = { name: suggestion.tool, token: newId("confirm") };
@@ -121,21 +122,21 @@ export async function confirmAssistant(place: Place, token: string): Promise<AiR
   turn.pending = null;
   writeOps(file);
   let reply = "Не удалось подтвердить выполнение.";
-  if (tool === "open_gate") reply = (await openGate(place)).message;
-  if (tool === "switch_mode" && mode && (place.role === "RESIDENT" || place.role === "FAMILY_MEMBER")) {
+  if (tool === "open_gate" && householdCan(place.role, "access.gate.open")) reply = (await openGate(place)).message;
+  if (tool === "switch_mode" && mode && householdCan(place.role, "home.mode.switch")) {
     setUnitMode(place.unitId, mode);
     const label = modesForObject(place.objectId).find((item) => item.mode === mode)?.label ?? mode;
     reply = `Режим «${label}» включён.`;
   }
-  if (tool === "create_pass" && place.role === "RESIDENT") {
+  if (tool === "create_pass" && householdCan(place.role, "access.pass.create")) {
     createPass(place, "Гость", "По запросу в чате");
     reply = "Пропуск оформлен.";
   }
-  if (tool === "create_request") {
+  if (tool === "create_request" && householdCan(place.role, "service.create")) {
     createRequest(place, "Другое", turn.prompt);
     reply = "Заявка создана.";
   }
-  if (tool === "pay" && place.role === "RESIDENT") reply = (await payOldest(place)).message;
+  if (tool === "pay" && householdCan(place.role, "payments.pay")) reply = (await payOldest(place)).message;
   const next = readOps();
   const saved = next.turns.find((item) => item.id === turn.id);
   if (saved) saved.reply = reply;
@@ -144,7 +145,7 @@ export async function confirmAssistant(place: Place, token: string): Promise<AiR
 }
 
 export async function askFor(session: SessionRef | null, prompt: unknown) {
-  const place = placeFromSession(session);
+  const place = placeFromSession(session, "ai.use");
   if (!place.ok) return place;
   const text = typeof prompt === "string" ? prompt.trim().replace(/\s+/g, " ") : "";
   if (!text) return { ok: false as const, status: 400, message: "Напишите запрос" };
@@ -153,23 +154,7 @@ export async function askFor(session: SessionRef | null, prompt: unknown) {
 }
 
 export async function confirmFor(session: SessionRef | null, token: unknown) {
-  const place = placeFromSession(session);
-  if (!place.ok) return place;
-  if (typeof token !== "string" || !token) return { ok: false as const, status: 400, message: "Подтверждение не найдено." };
-  return { ok: true as const, value: await confirmAssistant(place.value, token) };
-}
-
-export async function askOwnAssistant(prompt: unknown) {
-  const place = await residentPlace();
-  if (!place.ok) return place;
-  const text = typeof prompt === "string" ? prompt.trim().replace(/\s+/g, " ") : "";
-  if (!text) return { ok: false as const, status: 400, message: "Напишите запрос" };
-  if (text.length > 400) return { ok: false as const, status: 400, message: "Слишком длинный запрос" };
-  return { ok: true as const, value: await askAssistant(place.value, text) };
-}
-
-export async function confirmOwnAssistant(token: unknown) {
-  const place = await residentPlace();
+  const place = placeFromSession(session, "ai.use");
   if (!place.ok) return place;
   if (typeof token !== "string" || !token) return { ok: false as const, status: 400, message: "Подтверждение не найдено." };
   return { ok: true as const, value: await confirmAssistant(place.value, token) };

@@ -14,27 +14,14 @@ import {
   unitIdsOfBuilding,
   updateCatalogObject,
 } from "@/server/catalog-store";
-import {
-  adminMemberships,
-  findMembership,
-  isAdminRole,
-  objectHasAssignments,
-  unitHasAssignment,
-} from "@/server/directory";
+import { objectHasAssignments, unitHasAssignment } from "@/server/directory";
+import { can, companyWide, objectFor, type StaffActor } from "@/server/rbac/decide";
+import type { Permission } from "@/server/rbac/permissions";
 import type { CatalogTree, CatalogUnitNode } from "@/types/catalog";
-import { objectTypes, type ObjectType, type Role } from "@/types/domain";
-
-type Actor = {
-  companyId: string;
-  role: Role;
-  objectId: string | null;
-};
+import { objectTypes, type ObjectType } from "@/types/domain";
 
 type Failure = { ok: false; status: number; message: string };
 type Success<T> = { ok: true; value: T };
-
-const companyRoles = new Set<Role>(["SUPER_ADMIN", "COMPANY_ADMIN"]);
-const structureRoles = new Set<Role>(["SUPER_ADMIN", "COMPANY_ADMIN", "OBJECT_ADMIN", "MANAGER"]);
 
 function cleanText(value: unknown, emptyMessage: string): string | Failure {
   if (typeof value !== "string") return { ok: false, status: 400, message: emptyMessage };
@@ -52,42 +39,19 @@ function cleanAddress(value: unknown): string | Failure {
   return text;
 }
 
-export function actorFromSession(session: { userId: string; membershipId: string | null } | null): Success<Actor & { userId: string }> | Failure {
-  if (!session) return { ok: false, status: 401, message: "Нужно войти" };
-  const admins = adminMemberships(session.userId);
-  const selected = session.membershipId ? findMembership(session.userId, session.membershipId) : undefined;
-  const membership = selected && isAdminRole(selected.role) ? selected : admins[0];
-  if (!membership || !structureRoles.has(membership.role)) {
-    return { ok: false, status: 403, message: "Нет доступа" };
-  }
-  return {
-    ok: true,
-    value: { companyId: membership.companyId, role: membership.role, objectId: membership.objectId, userId: session.userId },
-  };
-}
+const denied: Failure = { ok: false, status: 403, message: "Нет доступа" };
 
-export async function catalogActor(): Promise<Success<Actor> | Failure> {
-  const { readSession } = await import("@/server/session");
-  return actorFromSession(await readSession());
-}
-
-function ownObject(actor: Actor, objectId: string): Success<NonNullable<ReturnType<typeof findObject>>> | Failure {
-  const object = findObject(objectId);
-  if (!object || object.companyId !== actor.companyId) {
-    return { ok: false, status: 404, message: "Объект не найден" };
-  }
-  if (!companyRoles.has(actor.role) && actor.objectId !== object.id) {
-    return { ok: false, status: 403, message: "Нет доступа" };
-  }
-  return { ok: true, value: object };
+function ownObject(actor: StaffActor, objectId: string, permission: Permission): Success<NonNullable<ReturnType<typeof findObject>>> | Failure {
+  if (!can(actor, permission)) return denied;
+  return objectFor(actor, objectId);
 }
 
 function unitNode(unit: { id: string; name: string; number: string }): CatalogUnitNode {
   return { id: unit.id, name: unit.name, number: unit.number, canDelete: !unitHasAssignment(unit.id) };
 }
 
-export function treeFor(actor: Actor, objectId: string): CatalogTree | null {
-  const owned = ownObject(actor, objectId);
+export function treeFor(actor: StaffActor, objectId: string): CatalogTree | null {
+  const owned = ownObject(actor, objectId, "objects.view");
   if (!owned.ok) return null;
   const tree = readTree(objectId);
   if (!tree) return null;
@@ -97,7 +61,7 @@ export function treeFor(actor: Actor, objectId: string): CatalogTree | null {
       name: tree.object.name,
       type: tree.object.type,
       address: tree.object.address,
-      canDelete: companyRoles.has(actor.role) && !objectHasAssignments(objectId, unitIdsOf(objectId)),
+      canDelete: can(actor, "objects.delete") && !objectHasAssignments(objectId, unitIdsOf(objectId)),
     },
     buildings: tree.buildings
       ? tree.buildings.map((building) => ({
@@ -108,14 +72,15 @@ export function treeFor(actor: Actor, objectId: string): CatalogTree | null {
         }))
       : null,
     units: tree.units ? tree.units.map(unitNode) : null,
+    can: { edit: can(actor, "objects.edit"), structure: can(actor, "objects.structure.edit"), remove: can(actor, "objects.delete") },
   };
 }
 
 export function createObject(
-  actor: Actor,
+  actor: StaffActor,
   input: { name: unknown; type: unknown; address: unknown },
 ): Success<{ id: string }> | Failure {
-  if (!companyRoles.has(actor.role)) return { ok: false, status: 403, message: "Нет доступа" };
+  if (!can(actor, "objects.create") || !companyWide(actor)) return denied;
   const name = cleanText(input.name, "Введите название");
   if (typeof name !== "string") return name;
   if (typeof input.type !== "string" || !objectTypes.includes(input.type as ObjectType)) {
@@ -133,11 +98,11 @@ export function createObject(
 }
 
 export function updateObject(
-  actor: Actor,
+  actor: StaffActor,
   objectId: string,
   input: { name: unknown; address: unknown },
 ): Success<{ id: string }> | Failure {
-  const owned = ownObject(actor, objectId);
+  const owned = ownObject(actor, objectId, "objects.edit");
   if (!owned.ok) return owned;
   const name = cleanText(input.name, "Введите название");
   if (typeof name !== "string") return name;
@@ -147,9 +112,8 @@ export function updateObject(
   return { ok: true, value: { id: objectId } };
 }
 
-export function removeObject(actor: Actor, objectId: string): Success<{ id: string }> | Failure {
-  if (!companyRoles.has(actor.role)) return { ok: false, status: 403, message: "Нет доступа" };
-  const owned = ownObject(actor, objectId);
+export function removeObject(actor: StaffActor, objectId: string): Success<{ id: string }> | Failure {
+  const owned = ownObject(actor, objectId, "objects.delete");
   if (!owned.ok) return owned;
   if (objectHasAssignments(objectId, unitIdsOf(objectId))) {
     return { ok: false, status: 409, message: "Сначала уберите доступ людей к этому объекту." };
@@ -158,8 +122,8 @@ export function removeObject(actor: Actor, objectId: string): Success<{ id: stri
   return { ok: true, value: { id: objectId } };
 }
 
-export function createBuilding(actor: Actor, objectId: string, name: unknown): Success<{ id: string }> | Failure {
-  const owned = ownObject(actor, objectId);
+export function createBuilding(actor: StaffActor, objectId: string, name: unknown): Success<{ id: string }> | Failure {
+  const owned = ownObject(actor, objectId, "objects.structure.edit");
   if (!owned.ok) return owned;
   if (!objectPresentation[owned.value.type].usesBuildings) {
     return { ok: false, status: 400, message: "У этого типа нет корпусов" };
@@ -170,10 +134,10 @@ export function createBuilding(actor: Actor, objectId: string, name: unknown): S
   return { ok: true, value: { id: building.id } };
 }
 
-export function removeBuilding(actor: Actor, buildingId: string): Success<{ id: string }> | Failure {
+export function removeBuilding(actor: StaffActor, buildingId: string): Success<{ id: string }> | Failure {
   const building = locateBuilding(buildingId);
   if (!building) return { ok: false, status: 404, message: "Корпус не найден" };
-  const owned = ownObject(actor, building.objectId);
+  const owned = ownObject(actor, building.objectId, "objects.structure.edit");
   if (!owned.ok) return owned;
   if (unitIdsOfBuilding(buildingId).some((unitId) => unitHasAssignment(unitId))) {
     return { ok: false, status: 409, message: "В корпусе есть занятые единицы." };
@@ -183,11 +147,11 @@ export function removeBuilding(actor: Actor, buildingId: string): Success<{ id: 
 }
 
 export function createUnit(
-  actor: Actor,
+  actor: StaffActor,
   objectId: string,
   input: { name: unknown; buildingId: unknown },
 ): Success<{ id: string }> | Failure {
-  const owned = ownObject(actor, objectId);
+  const owned = ownObject(actor, objectId, "objects.structure.edit");
   if (!owned.ok) return owned;
   const title = cleanText(input.name, "Введите название");
   if (typeof title !== "string") return title;
@@ -210,10 +174,10 @@ export function createUnit(
   return { ok: true, value: { id: unit.id } };
 }
 
-export function removeUnit(actor: Actor, unitId: string): Success<{ id: string }> | Failure {
+export function removeUnit(actor: StaffActor, unitId: string): Success<{ id: string }> | Failure {
   const unit = findUnit(unitId);
   if (!unit) return { ok: false, status: 404, message: "Единица не найдена" };
-  const owned = ownObject(actor, unit.objectId);
+  const owned = ownObject(actor, unit.objectId, "objects.structure.edit");
   if (!owned.ok) return owned;
   if (unitHasAssignment(unitId)) {
     return { ok: false, status: 409, message: "Эта единица уже закреплена за человеком." };

@@ -2,7 +2,6 @@ import { createHmac } from "crypto";
 import { askFor, confirmFor } from "@/server/ai";
 import type { SessionRef } from "@/server/actor";
 import {
-  actorFromSession,
   createBuilding,
   createObject,
   createUnit,
@@ -20,13 +19,12 @@ import {
   findUserByLogin,
   homeFor,
   homeMemberships,
-  isAdminRole,
   placesFor,
 } from "@/server/directory";
 import { saveModeFor, settingsFor, switchModeFor } from "@/server/life-modes";
 import { loginLimited, noteLoginFailure, noteLoginSuccess } from "@/server/login-limit";
 import { homeSignals, readOps } from "@/server/ops-store";
-import { companyOps, residentAccess, residentNotices } from "@/server/ops-view";
+import { deskFor, deskSections, isDeskSection, residentAccess, residentNotices } from "@/server/ops-view";
 import {
   addPassFor,
   addRequestFor,
@@ -41,7 +39,10 @@ import {
 import { dashboardFor } from "@/server/dashboard";
 import { verifyPassword } from "@/server/password";
 import { updateUser } from "@/server/people-store";
-import { staffActor, withPermission, type StaffActor } from "@/server/rbac/decide";
+import { can, staffActor, withPermission, type StaffActor } from "@/server/rbac/decide";
+import type { Permission } from "@/server/rbac/permissions";
+import { householdCan, selfOnlyOf } from "@/server/rbac/policy";
+import { rolesBoard, saveRole } from "@/server/roles";
 import { adminObjectsFor, sectionsFor } from "@/server/rbac/sections";
 import { record, text } from "@/server/schema";
 import { addResident, removeResident, residentBoard } from "@/server/residents";
@@ -88,67 +89,96 @@ export async function handleRpc(method: string, input: unknown, session: Session
   return result;
 }
 
-async function dispatch(method: string, input: unknown, session: SessionRef | null): Promise<Reply> {
-  if (method === "login") return login(input);
-  if (method === "destination") {
-    if (!session) return fail(401, "Нужно войти");
-    return ok({ redirectTo: destinationFor(session.userId, session.membershipId) });
-  }
-  if (method === "guard") {
-    if (!session) return fail(401, "Нужно войти");
-    const pathname = typeof (input as { pathname?: unknown } | null)?.pathname === "string" ? (input as { pathname: string }).pathname : "/";
-    return ok(guardPath(session.userId, session.membershipId, pathname));
-  }
-  if (method === "switch") return switched(session, input);
-  if (method === "home") return home(session);
-  if (method === "places") return places(session);
-  if (method === "profile") return profile(session);
-  if (method === "guest") return guest(session);
-  if (method === "admin") return admin(session);
-  if (method === "dashboard") return dashboard(session);
-  if (method === "team") return team(session);
-  if (Object.hasOwn(teamActions, method)) return teamAction(session, method, input);
-  if (method === "ops") return ops(session);
-  if (method === "access") return access(session);
-  if (method === "requests") return requests(session);
-  if (method === "tree") return tree(session, input);
-  if (method === "residents") return residents(session);
-  if (method === "settings") return settings(session);
-  if (method === "pushKey") return ok({ publicKey: process.env.STAR_HOME_VAPID_PUBLIC ?? "" });
-  if (method === "subscribe") return subscribe(session, input);
-  if (method === "liveToken") return liveToken(session);
-  if (method === "openGate") return asReply(await openGateFor(session));
-  if (method === "openPoint") return asReply(await openPointFor(session, (input as { pointId?: unknown } | null)?.pointId));
-  if (method === "openObjectGate") return asReply(await openObjectGateFor(session, (input as { objectId?: unknown } | null)?.objectId));
-  if (method === "addPass") {
-    const body = input as { guestName?: unknown; detail?: unknown; vehicle?: unknown } | null;
-    return asReply(await addPassFor(session, body?.guestName, body?.detail, body?.vehicle));
-  }
-  if (method === "addRequest") return addRequest(session, input);
-  if (method === "setRequestStatus") {
-    const body = input as { id?: string; status?: unknown; objectId?: unknown } | null;
-    return asReply(await setRequestStatusFor(session, body?.id ?? "", body?.status, body?.objectId));
-  }
-  if (method === "pay") return asReply(await payFor(session));
-  if (method === "alarm") return asReply(await alarmFor(session));
-  if (method === "cameraFrame") {
-    const body = input as { objectId?: unknown; name?: unknown } | null;
-    return asReply(await cameraFrameFor(session, body?.objectId, body?.name));
-  }
-  if (method === "ask") return asReply(await askFor(session, (input as { prompt?: unknown } | null)?.prompt));
-  if (method === "confirm") return asReply(await confirmFor(session, (input as { token?: unknown } | null)?.token));
-  if (method === "switchMode") return asReply(switchModeFor(session, (input as { mode?: unknown } | null)?.mode));
-  if (method === "saveMode") return asReply(saveModeFor(session, input as { objectId: unknown; setting: null }));
-  if (method === "createObject") return mutate(session, input, "createObject");
-  if (method === "updateObject") return mutate(session, input, "updateObject");
-  if (method === "removeObject") return mutate(session, input, "removeObject");
-  if (method === "createBuilding") return mutate(session, input, "createBuilding");
-  if (method === "removeBuilding") return mutate(session, input, "removeBuilding");
-  if (method === "createUnit") return mutate(session, input, "createUnit");
-  if (method === "removeUnit") return mutate(session, input, "removeUnit");
-  if (method === "addResident") return person(session, input, "add");
-  if (method === "removeResident") return person(session, input, "remove");
-  return fail(404, "Неизвестный метод");
+type Result = { ok: true; value: unknown } | { ok: false; status: number; message: string };
+type Input = Record<string, unknown>;
+type Route =
+  | { access: "public"; run: (input: unknown) => Reply | Promise<Reply> }
+  | { access: "session"; run: (session: SessionRef, input: unknown) => Reply | Promise<Reply> }
+  | { access: "staff"; permission: Permission; run: (actor: StaffActor, input: Input) => Reply | Promise<Reply> };
+
+function staff(permission: Permission, run: (actor: StaffActor, input: Input) => Result | Promise<Result>, status = 200): Route {
+  return { access: "staff", permission, run: async (actor, input) => asReply(await run(actor, input), status) };
+}
+
+function session(run: (session: SessionRef, input: Input) => Reply | Promise<Reply>): Route {
+  return { access: "session", run: (current, input) => run(current, record(input) ?? {}) };
+}
+
+function household(run: (session: SessionRef, input: Input) => Result | Promise<Result>): Route {
+  return session(async (current, input) => asReply(await run(current, input)));
+}
+
+const methodPolicy: Record<string, Route> = {
+  login: { access: "public", run: login },
+  pushKey: { access: "public", run: () => ok({ publicKey: process.env.STAR_HOME_VAPID_PUBLIC ?? "" }) },
+
+  destination: session((current) => ok({ redirectTo: destinationFor(current.userId, current.membershipId) })),
+  guard: session((current, input) => ok(guardPath(current.userId, current.membershipId, typeof input.pathname === "string" ? input.pathname : "/"))),
+  switch: session(switched),
+  places: session(places),
+  profile: session(profile),
+  admin: session(admin),
+  subscribe: session(subscribe),
+  liveToken: session(liveToken),
+
+  home: session(home),
+  guest: session(guest),
+  access: session(access),
+  requests: session(requests),
+  addRequest: session(addRequest),
+  openGate: household((current) => openGateFor(current)),
+  openPoint: household((current, input) => openPointFor(current, input.pointId)),
+  addPass: household((current, input) => addPassFor(current, input.guestName, input.detail, input.vehicle)),
+  pay: household((current) => payFor(current)),
+  alarm: household((current) => alarmFor(current)),
+  ask: household((current, input) => askFor(current, input.prompt)),
+  confirm: household((current, input) => confirmFor(current, input.token)),
+  switchMode: household((current, input) => switchModeFor(current, input.mode)),
+
+  dashboard: staff("dashboard.view", (actor) => ({ ok: true, value: dashboardFor(actor) })),
+  desk: staff("dashboard.view", desk),
+  team: staff("users.view", (actor) => ({ ok: true, value: teamBoard(actor) })),
+  teamAdd: staff("users.create", addMember, 201),
+  teamEdit: staff("users.edit", editMember),
+  teamAccess: staff("users.view", changeAccess),
+  teamBlock: staff("users.block", (actor, input) => setMemberBlocked(actor, input, true)),
+  teamRestore: staff("users.block", (actor, input) => setMemberBlocked(actor, input, false)),
+  teamRemove: staff("users.delete", removeMember),
+  roles: staff("roles.view", (actor) => ({ ok: true, value: rolesBoard(actor) })),
+  rolesSave: staff("roles.edit", saveRole),
+
+  tree: staff("objects.view", tree),
+  createObject: staff("objects.create", (actor, input) => createObject(actor, { name: input.name, type: input.type, address: input.address }), 201),
+  updateObject: staff("objects.edit", (actor, input) => updateObject(actor, text(input.objectId, 1, 80) ?? "", { name: input.name, address: input.address })),
+  removeObject: staff("objects.delete", (actor, input) => removeObject(actor, text(input.objectId, 1, 80) ?? "")),
+  createBuilding: staff("objects.structure.edit", (actor, input) => createBuilding(actor, text(input.objectId, 1, 80) ?? "", input.name), 201),
+  removeBuilding: staff("objects.structure.edit", (actor, input) => removeBuilding(actor, text(input.buildingId, 1, 80) ?? "")),
+  createUnit: staff("objects.structure.edit", (actor, input) => createUnit(actor, text(input.objectId, 1, 80) ?? "", { name: input.name, buildingId: input.buildingId }), 201),
+  removeUnit: staff("objects.structure.edit", (actor, input) => removeUnit(actor, text(input.unitId, 1, 80) ?? "")),
+
+  residents: staff("residents.view", (actor) => ({ ok: true, value: residentBoard(actor) })),
+  addResident: staff("residents.create", (actor, input) => addResident(actor, input as never), 201),
+  removeResident: staff("residents.delete", (actor, input) => removeResident(actor, text(input.membershipId, 1, 80) ?? "")),
+
+  settings: staff("settings.view", (actor) => ({ ok: true, value: settingsFor(actor) })),
+  saveMode: staff("settings.edit", (actor, input) => saveModeFor(actor, { objectId: input.objectId, setting: record(input.setting) ?? null })),
+
+  openObjectGate: staff("access.gate.open", (actor, input) => openObjectGateFor(actor, input.objectId)),
+  cameraFrame: staff("security.camera.view", (actor, input) => cameraFrameFor(actor, input.objectId, input.name)),
+  setRequestStatus: staff("service.edit", (actor, input) => setRequestStatusFor(actor, input.id, input.status, input.objectId)),
+};
+
+export const rpcMethods: readonly string[] = Object.keys(methodPolicy);
+
+async function dispatch(method: string, input: unknown, current: SessionRef | null): Promise<Reply> {
+  const route = Object.hasOwn(methodPolicy, method) ? methodPolicy[method] : undefined;
+  if (!route) return fail(404, "Неизвестный метод");
+  if (route.access === "public") return route.run(input);
+  if (!current) return fail(401, "Нужно войти");
+  if (route.access === "session") return route.run(current, input);
+  const actor = withPermission(staffActor(current), route.permission);
+  if (!actor.ok) return fail(actor.status, actor.message);
+  return route.run(actor.value, record(input) ?? {});
 }
 
 async function login(input: unknown): Promise<Reply> {
@@ -170,37 +200,39 @@ async function login(input: unknown): Promise<Reply> {
   return ok({ userId: user.id, membershipId, sessionVersion: user.sessionVersion ?? 1, redirectTo: destinationFor(user.id, membershipId) });
 }
 
-function switched(session: SessionRef | null, input: unknown): Reply {
-  if (!session) return fail(401, "Нужно войти");
-  const membershipId = (input as { membershipId?: unknown } | null)?.membershipId;
+function switched(session: SessionRef, input: Input): Reply {
+  const membershipId = input.membershipId;
   if (typeof membershipId !== "string" || !membershipId) return fail(400, "Нет доступа");
   const membership = findMembership(session.userId, membershipId);
   if (!membership || expired(membership.expiresAt)) return fail(403, "Нет доступа");
   return ok({ membershipId: membership.id, redirectTo: destinationFor(session.userId, membership.id) });
 }
 
-function home(session: SessionRef | null): Reply {
-  if (!session) return fail(401, "Нужно войти");
+function home(session: SessionRef): Reply {
   const user = findUserById(session.userId);
   const membership = session.membershipId ? findMembership(session.userId, session.membershipId) : undefined;
-  if (!user || !membership || expired(membership.expiresAt)) return ok({ redirect: destinationFor(session.userId, null) });
+  if (!user || !membership || expired(membership.expiresAt) || !householdCan(membership.role, "home.view")) {
+    return ok({ redirect: destinationFor(session.userId, null) });
+  }
   const base = homeFor(user, membership);
   if (!base) return ok({ redirect: destinationFor(session.userId, null) });
   const signals = homeSignals(base.unit.id, base.object.id);
-  const quickActions = base.quickActions.filter((action) => membership.role === "RESIDENT" || action.id !== "pay");
+  const pays = householdCan(membership.role, "payments.pay");
+  const bills = householdCan(membership.role, "payments.view");
+  const ownRequestsOnly = selfOnlyOf(membership.role).has("service.view");
   return ok({
     home: {
       ...base,
-      quickActions,
-      balance: membership.role === "RESIDENT" ? signals.balance : null,
+      quickActions: base.quickActions.filter((action) => pays || action.id !== "pay"),
+      balance: bills ? signals.balance : null,
       climate: signals.climate,
       visitor: signals.visitor,
       todayEvent: signals.today,
       todayRequest:
-        signals.request && (membership.role !== "FAMILY_MEMBER" || signals.request.authorUserId === session.userId)
+        signals.request && (!ownRequestsOnly || signals.request.authorUserId === session.userId)
           ? { title: signals.request.title, detail: signals.request.detail }
           : null,
-      paymentHistory: membership.role === "RESIDENT" ? signals.payments : [],
+      paymentHistory: bills ? signals.payments : [],
       categories: signals.categories,
       rooms: base.unit.type === "HOUSE" ? [{ name: "Гостиная" }, { name: "Спальня" }, { name: "Детская" }, { name: "Кабинет" }, { name: "Котельная" }] : [],
       cameras: signals.cameras,
@@ -210,8 +242,7 @@ function home(session: SessionRef | null): Reply {
   });
 }
 
-function places(session: SessionRef | null): Reply {
-  if (!session) return fail(401, "Нужно войти");
+function places(session: SessionRef): Reply {
   const user = findUserById(session.userId);
   if (!user) return fail(401, "Нужно войти");
   const list = placesFor(session.userId);
@@ -219,8 +250,7 @@ function places(session: SessionRef | null): Reply {
   return ok({ name: user.name, places: list });
 }
 
-function profile(session: SessionRef | null): Reply {
-  if (!session) return fail(401, "Нужно войти");
+function profile(session: SessionRef): Reply {
   const user = findUserById(session.userId);
   if (!user) return fail(401, "Нужно войти");
   const membership = session.membershipId ? findMembership(session.userId, session.membershipId) : undefined;
@@ -235,173 +265,91 @@ function profile(session: SessionRef | null): Reply {
   });
 }
 
-function guest(session: SessionRef | null): Reply {
-  if (!session) return fail(401, "Нужно войти");
+function guest(session: SessionRef): Reply {
   const user = findUserById(session.userId);
   const membership = session.membershipId ? findMembership(session.userId, session.membershipId) : undefined;
-  if (!user || membership?.role !== "GUEST" || expired(membership.expiresAt) || !membership.passId) {
+  if (!user || !membership || !householdCan(membership.role, "guest.pass.view") || expired(membership.expiresAt) || !membership.passId) {
     return ok({ redirect: destinationFor(session.userId, session.membershipId) });
   }
   const pass = readOps().passes.find((item) => item.id === membership.passId);
   return ok({ name: user.name, pass: pass ? { guestName: pass.guestName, detail: pass.detail, code: pass.code } : null });
 }
 
-function admin(session: SessionRef | null): Reply {
-  if (!session) return fail(401, "Нужно войти");
-  const actor = actorFromSession(session);
+function admin(session: SessionRef): Reply {
   const user = findUserById(session.userId);
-  const admins = adminMemberships(session.userId);
-  const selected = session.membershipId ? findMembership(session.userId, session.membershipId) : undefined;
-  const membership = selected && isAdminRole(selected.role) ? selected : admins[0];
-  const staff = staffActor(session);
-  if (!actor.ok || !staff.ok || !user || !membership) return ok({ redirect: destinationFor(session.userId, session.membershipId) });
+  const actor = staffActor(session);
+  if (!actor.ok || !user) return ok({ redirect: destinationFor(session.userId, session.membershipId) });
   return ok({
-    companyName: companyName(membership.companyId),
+    companyName: companyName(actor.value.companyId),
     actorLabel: user.name,
-    objects: adminObjectsFor(staff.value),
-    sections: sectionsFor(staff.value),
+    objects: adminObjectsFor(actor.value),
+    sections: sectionsFor(actor.value),
+    permissions: [...actor.value.permissions],
   });
 }
 
-const teamActions: Record<string, (actor: StaffActor, input: Record<string, unknown>) => { ok: true; value: unknown } | { ok: false; status: number; message: string }> = {
-  teamAdd: (actor, input) => addMember(actor, input),
-  teamEdit: (actor, input) => editMember(actor, input),
-  teamAccess: (actor, input) => changeAccess(actor, input),
-  teamBlock: (actor, input) => setMemberBlocked(actor, input, true),
-  teamRestore: (actor, input) => setMemberBlocked(actor, input, false),
-  teamRemove: (actor, input) => removeMember(actor, input),
-};
-
-function team(session: SessionRef | null): Reply {
-  const actor = withPermission(staffActor(session), "users.view");
-  if (!actor.ok) return fail(actor.status, actor.message);
-  return ok(teamBoard(actor.value));
+function desk(actor: StaffActor, input: Input): Result {
+  if (!isDeskSection(input.section)) return { ok: false, status: 404, message: "Раздел не найден" };
+  if (!can(actor, deskSections[input.section])) return { ok: false, status: 403, message: "Нет доступа" };
+  return { ok: true, value: deskFor(actor, input.section) };
 }
 
-function teamAction(session: SessionRef | null, method: string, input: unknown): Reply {
-  const actor = withPermission(staffActor(session), "users.view");
-  if (!actor.ok) return fail(actor.status, actor.message);
-  const action = Object.hasOwn(teamActions, method) ? teamActions[method] : undefined;
-  if (!action) return fail(404, "Неизвестный метод");
-  return asReply(action(actor.value, record(input) ?? {}), method === "teamAdd" ? 201 : 200);
-}
-
-function dashboard(session: SessionRef | null): Reply {
-  const actor = withPermission(staffActor(session), "dashboard.view");
-  if (!actor.ok) return fail(actor.status, actor.message);
-  return ok(dashboardFor(actor.value));
-}
-
-function ops(session: SessionRef | null): Reply {
-  const actor = actorFromSession(session);
-  if (!actor.ok) return fail(actor.status, actor.message);
-  return ok(companyOps(actor.value.companyId));
-}
-
-function access(session: SessionRef | null): Reply {
+function access(session: SessionRef): Reply {
   const view = home(session);
   const body = view.body as { redirect?: string; home?: { unit: { id: string; name: string }; object: { id: string; name: string } } };
-  if (!body.home || !session?.membershipId) return view;
+  if (!body.home || !session.membershipId) return view;
   const membership = findMembership(session.userId, session.membershipId);
   return ok({
     place: `${body.home.object.name} · ${body.home.unit.name}`,
-    canCreate: membership?.role === "RESIDENT",
+    canCreate: Boolean(membership && householdCan(membership.role, "access.pass.create")),
     ...residentAccess(body.home.unit.id, body.home.object.id),
   });
 }
 
-function requests(session: SessionRef | null): Reply {
+function requests(session: SessionRef): Reply {
   const view = home(session);
   const body = view.body as { home?: { unit: { id: string }; serviceCategories: string[] } };
-  if (!body.home || !session) return view;
+  if (!body.home) return view;
   const membership = session.membershipId ? findMembership(session.userId, session.membershipId) : undefined;
+  const ownOnly = !membership || selfOnlyOf(membership.role).has("service.view");
   const rows = readOps()
     .requests.filter((request) => request.unitId === body.home?.unit.id)
-    .filter((request) => membership?.role !== "FAMILY_MEMBER" || request.authorUserId === session.userId)
+    .filter((request) => !ownOnly || request.authorUserId === session.userId)
     .map((request) => ({ id: request.id, category: request.category, text: request.text, status: request.status }));
   return ok({ categories: body.home.serviceCategories, requests: rows });
 }
 
-function tree(session: SessionRef | null, input: unknown): Reply {
-  const actor = actorFromSession(session);
-  if (!actor.ok) return fail(actor.status, actor.message);
-  const objectId = (input as { objectId?: unknown } | null)?.objectId;
-  if (typeof objectId !== "string") return fail(400, "Объект не найден");
-  const value = treeFor(actor.value, objectId);
-  if (!value) return fail(404, "Объект не найден");
-  return ok(value);
+function tree(actor: StaffActor, input: Input): Result {
+  if (typeof input.objectId !== "string") return { ok: false, status: 400, message: "Объект не найден" };
+  const value = treeFor(actor, input.objectId);
+  if (!value) return { ok: false, status: 404, message: "Объект не найден" };
+  return { ok: true, value };
 }
 
-function residents(session: SessionRef | null): Reply {
-  const actor = actorFromSession(session);
-  if (!actor.ok) return fail(actor.status, actor.message);
-  return ok(residentBoard(actor.value));
-}
-
-function settings(session: SessionRef | null): Reply {
-  const actor = actorFromSession(session);
-  if (!actor.ok) return fail(actor.status, actor.message);
-  return ok(settingsFor(actor.value));
-}
-
-async function addRequest(session: SessionRef | null, input: unknown): Promise<Reply> {
-  const body = input as { category?: unknown; text?: unknown; fileName?: unknown; fileBase64?: unknown } | null;
+async function addRequest(session: SessionRef, input: Input): Promise<Reply> {
   let fileName: string | undefined;
-  if (typeof body?.fileName === "string" && body.fileName && typeof body.fileBase64 === "string" && body.fileBase64) {
-    const membership = session?.membershipId ? findMembership(session.userId, session.membershipId) : undefined;
-    if (!membership) return fail(403, "Нет доступа");
-    const bytes = Buffer.from(body.fileBase64, "base64");
+  if (typeof input.fileName === "string" && input.fileName && typeof input.fileBase64 === "string" && input.fileBase64) {
+    const membership = session.membershipId ? findMembership(session.userId, session.membershipId) : undefined;
+    if (!membership || !householdCan(membership.role, "service.create")) return fail(403, "Нет доступа");
+    const bytes = Buffer.from(input.fileBase64, "base64");
     if (bytes.length > 1_000_000) return fail(400, "Файл слишком большой");
-    const stored = await keepFile({ companyId: membership.companyId, name: body.fileName, bytes });
+    const stored = await keepFile({ companyId: membership.companyId, name: input.fileName, bytes });
     fileName = stored ?? undefined;
   }
-  const result = await addRequestFor(session, body?.category, body?.text, fileName);
+  const result = await addRequestFor(session, input.category, input.text, fileName);
   if (!result.ok) return fail(result.status, result.message);
   return ok({ id: result.value.id, status: result.value.status });
 }
 
-function mutate(session: SessionRef | null, input: unknown, kind: string): Reply {
-  const actor = actorFromSession(session);
-  if (!actor.ok) return fail(actor.status, actor.message);
-  const body = (input ?? {}) as {
-    objectId?: string;
-    buildingId?: string;
-    unitId?: string;
-    name?: unknown;
-    type?: unknown;
-    address?: unknown;
-  };
-  if (kind === "createObject") return asReply(createObject(actor.value, { name: body.name, type: body.type, address: body.address }), 201);
-  if (kind === "updateObject") return asReply(updateObject(actor.value, body.objectId ?? "", { name: body.name, address: body.address }));
-  if (kind === "removeObject") return asReply(removeObject(actor.value, body.objectId ?? ""));
-  if (kind === "createBuilding") return asReply(createBuilding(actor.value, body.objectId ?? "", body.name), 201);
-  if (kind === "removeBuilding") return asReply(removeBuilding(actor.value, body.buildingId ?? ""));
-  if (kind === "createUnit") return asReply(createUnit(actor.value, body.objectId ?? "", { name: body.name, buildingId: body.buildingId }), 201);
-  return asReply(removeUnit(actor.value, body.unitId ?? ""));
-}
-
-function person(session: SessionRef | null, input: unknown, kind: "add" | "remove"): Reply {
-  const actor = actorFromSession(session);
-  if (!actor.ok) return fail(actor.status, actor.message);
-  if (kind === "remove") {
-    const id = (input as { membershipId?: string } | null)?.membershipId ?? "";
-    return asReply(removeResident(actor.value, id));
-  }
-  return asReply(addResident({ ...actor.value }, input as never), 201);
-}
-
-async function subscribe(session: SessionRef | null, input: unknown): Promise<Reply> {
-  if (!session) return fail(401, "Нужно войти");
-  const body = input as { endpoint?: unknown; p256dh?: unknown; auth?: unknown } | null;
-  if (typeof body?.endpoint !== "string" || typeof body.p256dh !== "string" || typeof body.auth !== "string") {
+async function subscribe(session: SessionRef, input: Input): Promise<Reply> {
+  if (typeof input.endpoint !== "string" || typeof input.p256dh !== "string" || typeof input.auth !== "string") {
     return fail(400, "Не удалось сохранить уведомление");
   }
-  await runtime.__starSavePush?.({ userId: session.userId, endpoint: body.endpoint, p256dh: body.p256dh, auth: body.auth });
+  await runtime.__starSavePush?.({ userId: session.userId, endpoint: input.endpoint, p256dh: input.p256dh, auth: input.auth });
   return ok({ saved: true });
 }
 
-function liveToken(session: SessionRef | null): Reply {
-  if (!session) return fail(401, "Нужно войти");
+function liveToken(session: SessionRef): Reply {
   const membership = session.membershipId ? findMembership(session.userId, session.membershipId) : undefined;
   const objectId = membership?.objectId ?? "";
   if (!objectId) return fail(403, "Нет доступа");

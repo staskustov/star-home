@@ -6,7 +6,15 @@ import { useAdminPreview } from "@/components/admin/AdminPreview";
 import { Select } from "@/components/ui/Select";
 import type { ResidentObjectChoices, ResidentRow } from "@/server/residents";
 
-export function ResidentsPanel({ people, objects }: { people: ResidentRow[]; objects: ResidentObjectChoices[] }) {
+export function ResidentsPanel({
+  people,
+  objects,
+  can,
+}: {
+  people: ResidentRow[];
+  objects: ResidentObjectChoices[];
+  can: { create: boolean; remove: boolean };
+}) {
   const { selected } = useAdminPreview();
   const router = useRouter();
   const [name, setName] = useState("");
@@ -70,6 +78,7 @@ export function ResidentsPanel({ people, objects }: { people: ResidentRow[]; obj
       <h1 className="text-[36px] leading-none tracking-[-0.04em] text-ink">Жители</h1>
       <p className="mt-3 text-[15px] text-muted">{selected.name}</p>
 
+      {can.create ? (
       <form onSubmit={add} className="mt-8 panel p-5">
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Имя" value={name} onChange={setName} />
@@ -116,6 +125,7 @@ export function ResidentsPanel({ people, objects }: { people: ResidentRow[]; obj
           Добавить жителя
         </button>
       </form>
+      ) : null}
 
       {error ? (
         <p role="alert" className="mt-4 text-sm text-danger">
@@ -136,15 +146,17 @@ export function ResidentsPanel({ people, objects }: { people: ResidentRow[]; obj
                   {person.login} · {person.roleLabel} · {person.place}
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() =>
-                  pendingDelete === person.membershipId ? remove(person.membershipId) : setPendingDelete(person.membershipId)
-                }
-                className={`btn btn-compact shrink-0 ${pendingDelete === person.membershipId ? "btn-danger" : "btn-secondary"}`}
-              >
-                {pendingDelete === person.membershipId ? "Подтвердить" : "Убрать"}
-              </button>
+              {can.remove ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    pendingDelete === person.membershipId ? remove(person.membershipId) : setPendingDelete(person.membershipId)
+                  }
+                  className={`btn btn-compact shrink-0 ${pendingDelete === person.membershipId ? "btn-danger" : "btn-secondary"}`}
+                >
+                  {pendingDelete === person.membershipId ? "Подтвердить" : "Убрать"}
+                </button>
+              ) : null}
             </li>
           ))}
         </ul>

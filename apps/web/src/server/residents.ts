@@ -1,22 +1,14 @@
-import { findBuilding, findUnit, objectsOf, readTree } from "@/server/catalog-store";
-import { catalogActor } from "@/server/catalog";
+import { findBuilding, findUnit, readTree } from "@/server/catalog-store";
 import { findUserById, findUserByLogin, isLive, membershipsOf } from "@/server/directory";
 import { createPass } from "@/server/operations";
 import { createPerson, createResidentMembership, deleteMembership, listMemberships, listUsers } from "@/server/people-store";
 import { hashPassword } from "@/server/password";
+import { can, inScope, objectsInScope, type StaffActor } from "@/server/rbac/decide";
 import type { Role } from "@/types/domain";
-
-type Actor = {
-  companyId: string;
-  role: Role;
-  objectId: string | null;
-  userId?: string;
-};
 
 type Failure = { ok: false; status: number; message: string };
 type Success<T> = { ok: true; value: T };
 
-const companyRoles = new Set<Role>(["SUPER_ADMIN", "COMPANY_ADMIN"]);
 const householdRoles = new Set<Role>(["RESIDENT", "FAMILY_MEMBER", "GUEST"]);
 const roleLabel: Record<string, string> = { RESIDENT: "Житель", FAMILY_MEMBER: "Семья", GUEST: "Гость" };
 
@@ -66,20 +58,10 @@ function cleanLogin(value: unknown): string | Failure {
   return login;
 }
 
-function canTouch(actor: Actor, objectId: string): boolean {
-  if (companyRoles.has(actor.role)) return true;
-  return actor.objectId === objectId;
-}
+const denied: Failure = { ok: false, status: 403, message: "Нет доступа" };
 
-export async function residentsActor(): Promise<Success<Actor> | Failure> {
-  const actor = await catalogActor();
-  if (!actor.ok) return actor;
-  return { ok: true, value: actor.value };
-}
-
-export function residentBoard(actor: Actor): { people: ResidentRow[]; objects: ResidentObjectChoices[] } {
-  const limit = companyRoles.has(actor.role) ? null : actor.objectId;
-  const objects = objectsOf(actor.companyId, limit);
+export function residentBoard(actor: StaffActor): { people: ResidentRow[]; objects: ResidentObjectChoices[]; can: { create: boolean; remove: boolean } } {
+  const objects = objectsInScope(actor);
   const users = new Map(listUsers().map((user) => [user.id, user]));
   const people = listMemberships()
     .filter(isLive)
@@ -111,6 +93,7 @@ export function residentBoard(actor: Actor): { people: ResidentRow[]; objects: R
       id: object.id,
       groups: groupsFor(object.id),
     })),
+    can: { create: can(actor, "residents.create"), remove: can(actor, "residents.delete") },
   };
 }
 
@@ -125,9 +108,10 @@ function groupsFor(objectId: string): ResidentGroup[] {
 }
 
 export function addResident(
-  actor: Actor,
+  actor: StaffActor,
   input: { objectId: unknown; unitId: unknown; name: unknown; login: unknown; password: unknown; role?: unknown; expiresAt?: unknown },
 ): Success<{ membershipId: string; existed: boolean }> | Failure {
+  if (!can(actor, "residents.create")) return denied;
   if (typeof input.objectId !== "string" || typeof input.unitId !== "string") {
     return { ok: false, status: 400, message: "Выберите объект и единицу" };
   }
@@ -135,10 +119,7 @@ export function addResident(
   if (!unit || unit.objectId !== input.objectId) {
     return { ok: false, status: 400, message: "Выберите единицу этого объекта" };
   }
-  const objectOk = objectsOf(actor.companyId, null).some((object) => object.id === unit.objectId);
-  if (!objectOk || !canTouch(actor, unit.objectId)) {
-    return { ok: false, status: 403, message: "Нет доступа" };
-  }
+  if (!inScope(actor, unit.objectId)) return denied;
   const role = typeof input.role === "string" && householdRoles.has(input.role as Role) ? (input.role as Role) : "RESIDENT";
   let expiresAt: string | null = null;
   if (role === "GUEST") {
@@ -174,7 +155,7 @@ export function addResident(
   const pass =
     role === "GUEST"
       ? createPass(
-          { userId: actor.userId ?? "usr_admin", companyId: actor.companyId, objectId: unit.objectId, unitId: unit.id, role: actor.role },
+          { userId: actor.userId, companyId: actor.companyId, objectId: unit.objectId, unitId: unit.id, role: actor.role },
           name,
           `До ${input.expiresAt}`,
         )
@@ -191,14 +172,15 @@ export function addResident(
   return { ok: true, value: { membershipId: membership.id, existed: Boolean(existing) } };
 }
 
-export function removeResident(actor: Actor, membershipId: string): Success<{ id: string }> | Failure {
+export function removeResident(actor: StaffActor, membershipId: string): Success<{ id: string }> | Failure {
+  if (!can(actor, "residents.delete")) return denied;
   const membership = listMemberships().filter(isLive).find((item) => item.id === membershipId);
   if (!membership || !householdRoles.has(membership.role) || !membership.objectId) {
     return { ok: false, status: 404, message: "Житель не найден" };
   }
   const sameCompany = membership.companyId === actor.companyId;
   if (!sameCompany) return { ok: false, status: 404, message: "Житель не найден" };
-  if (!canTouch(actor, membership.objectId)) return { ok: false, status: 403, message: "Нет доступа" };
+  if (!inScope(actor, membership.objectId)) return denied;
   const user = findUserById(membership.userId);
   if (!user) return { ok: false, status: 404, message: "Житель не найден" };
   deleteMembership(membershipId);

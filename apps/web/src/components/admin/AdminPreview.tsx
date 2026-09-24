@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState } from "react";
 import { usePathname } from "next/navigation";
+import type { Permission } from "@/server/rbac/permissions";
 import type { AdminObjectSnapshot, NavGroup } from "@/types/domain";
 
 type AdminPreviewValue = {
@@ -9,6 +10,7 @@ type AdminPreviewValue = {
   actorLabel: string;
   objects: AdminObjectSnapshot[];
   sections: NavGroup[];
+  can: (permission: Permission) => boolean;
   selectedId: string;
   selected: AdminObjectSnapshot | null;
   select: (id: string) => void;
@@ -21,12 +23,14 @@ export function AdminPreviewProvider({
   actorLabel,
   initialObjects,
   sections,
+  permissions,
   children,
 }: {
   companyName: string;
   actorLabel: string;
   initialObjects: AdminObjectSnapshot[];
   sections: NavGroup[];
+  permissions: Permission[];
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -43,6 +47,7 @@ export function AdminPreviewProvider({
         actorLabel,
         objects: initialObjects,
         sections,
+        can: (permission) => permissions.includes(permission),
         selectedId: selected?.id ?? "",
         selected,
         select: setSelectedId,

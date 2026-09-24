@@ -61,3 +61,153 @@ export const permissions = [
 ] as const;
 
 export type Permission = (typeof permissions)[number];
+
+export function isPermission(value: unknown): value is Permission {
+  return typeof value === "string" && (permissions as readonly string[]).includes(value);
+}
+
+export const permissionGroups: { id: string; label: string; items: { id: Permission; label: string }[] }[] = [
+  { id: "dashboard", label: "Обзор", items: [{ id: "dashboard.view", label: "Открывать обзор" }] },
+  {
+    id: "objects",
+    label: "Объекты",
+    items: [
+      { id: "objects.view", label: "Смотреть" },
+      { id: "objects.create", label: "Создавать" },
+      { id: "objects.edit", label: "Менять название и адрес" },
+      { id: "objects.structure.edit", label: "Менять корпуса и единицы" },
+      { id: "objects.delete", label: "Удалять" },
+    ],
+  },
+  {
+    id: "residents",
+    label: "Жители",
+    items: [
+      { id: "residents.view", label: "Смотреть" },
+      { id: "residents.create", label: "Добавлять" },
+      { id: "residents.edit", label: "Менять" },
+      { id: "residents.delete", label: "Отзывать доступ" },
+    ],
+  },
+  {
+    id: "access",
+    label: "Доступ",
+    items: [
+      { id: "access.view", label: "Смотреть пропуска и события" },
+      { id: "access.pass.create", label: "Оформлять пропуска" },
+      { id: "access.pass.revoke", label: "Отзывать пропуска" },
+      { id: "access.gate.open", label: "Открывать ворота" },
+      { id: "access.points.manage", label: "Настраивать точки доступа" },
+    ],
+  },
+  {
+    id: "security",
+    label: "Охрана",
+    items: [
+      { id: "security.view", label: "Смотреть тревоги" },
+      { id: "security.alarm.raise", label: "Вызывать охрану" },
+      { id: "security.alarm.handle", label: "Обрабатывать тревоги" },
+      { id: "security.camera.view", label: "Смотреть камеры" },
+      { id: "security.manage", label: "Настраивать охрану" },
+    ],
+  },
+  {
+    id: "service",
+    label: "Заявки",
+    items: [
+      { id: "service.view", label: "Смотреть" },
+      { id: "service.create", label: "Создавать" },
+      { id: "service.edit", label: "Менять статус" },
+      { id: "service.delete", label: "Удалять" },
+    ],
+  },
+  {
+    id: "payments",
+    label: "Платежи",
+    items: [
+      { id: "payments.view", label: "Смотреть счета" },
+      { id: "payments.pay", label: "Оплачивать" },
+      { id: "payments.invoice.create", label: "Выставлять счета" },
+      { id: "payments.invoice.edit", label: "Менять счета" },
+      { id: "payments.refund", label: "Возвращать деньги" },
+      { id: "payments.export", label: "Выгружать" },
+    ],
+  },
+  {
+    id: "devices",
+    label: "Устройства",
+    items: [
+      { id: "devices.view", label: "Смотреть" },
+      { id: "devices.command", label: "Отправлять команды" },
+      { id: "devices.create", label: "Подключать" },
+      { id: "devices.edit", label: "Настраивать" },
+      { id: "devices.delete", label: "Отключать" },
+    ],
+  },
+  {
+    id: "engineering",
+    label: "Инженерия",
+    items: [
+      { id: "engineering.view", label: "Смотреть" },
+      { id: "engineering.command", label: "Управлять" },
+      { id: "engineering.edit", label: "Настраивать" },
+    ],
+  },
+  {
+    id: "ai",
+    label: "AI",
+    items: [
+      { id: "ai.view", label: "Смотреть диалоги" },
+      { id: "ai.use", label: "Пользоваться" },
+      { id: "ai.manage", label: "Настраивать" },
+    ],
+  },
+  {
+    id: "users",
+    label: "Команда",
+    items: [
+      { id: "users.view", label: "Смотреть" },
+      { id: "users.create", label: "Добавлять" },
+      { id: "users.edit", label: "Менять данные" },
+      { id: "users.role.assign", label: "Назначать роль" },
+      { id: "users.scope.assign", label: "Назначать объект" },
+      { id: "users.block", label: "Блокировать" },
+      { id: "users.delete", label: "Отзывать доступ" },
+    ],
+  },
+  {
+    id: "roles",
+    label: "Роли и права",
+    items: [
+      { id: "roles.view", label: "Смотреть" },
+      { id: "roles.edit", label: "Менять" },
+    ],
+  },
+  {
+    id: "audit",
+    label: "Журнал действий",
+    items: [
+      { id: "audit.view", label: "Смотреть" },
+      { id: "audit.export", label: "Выгружать" },
+    ],
+  },
+  {
+    id: "settings",
+    label: "Настройки",
+    items: [
+      { id: "settings.view", label: "Смотреть" },
+      { id: "settings.edit", label: "Менять режимы объекта" },
+      { id: "settings.company.edit", label: "Менять настройки компании" },
+    ],
+  },
+  {
+    id: "home",
+    label: "Дом",
+    items: [
+      { id: "home.view", label: "Открывать приложение дома" },
+      { id: "home.mode.switch", label: "Переключать режим жизни" },
+      { id: "home.family.manage", label: "Управлять семьёй" },
+      { id: "guest.pass.view", label: "Видеть свой гостевой пропуск" },
+    ],
+  },
+];

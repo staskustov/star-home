@@ -11,7 +11,7 @@ export type DashboardAttention = {
 };
 
 export type DashboardPulse = {
-  id: "units" | "residents" | "guests" | "requests" | "alarms" | "access";
+  id: "units" | "residents" | "guests" | "requests" | "alarms" | "access" | "invoices";
   value: number;
   label: string;
   href: string;

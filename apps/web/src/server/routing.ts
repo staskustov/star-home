@@ -1,4 +1,6 @@
 import { adminMemberships, findMembership, guestMemberships, homeMemberships, isAdminRole } from "@/server/directory";
+import { can, staffActor } from "@/server/rbac/decide";
+import { firstSection, sectionPermission } from "@/server/rbac/sections";
 
 function guestOpen(userId: string, membershipId: string | null): boolean {
   const selected = membershipId ? findMembership(userId, membershipId) : undefined;
@@ -32,9 +34,13 @@ export function guardPath(userId: string, membershipId: string | null, pathname:
     if (destination !== "/guest") return { redirect: destination };
     return {};
   }
-  if (pathname.startsWith(adminPrefix)) {
-    if (adminMemberships(userId).length === 0) return { redirect: destination };
-    return {};
+  if (pathname === adminPrefix || pathname.startsWith(`${adminPrefix}/`)) {
+    const actor = staffActor({ userId, membershipId });
+    if (!actor.ok) return { redirect: destination === adminPrefix ? "/no-access" : destination };
+    const permission = sectionPermission(pathname);
+    if (!permission || can(actor.value, permission)) return {};
+    const fallback = firstSection(actor.value);
+    return { redirect: fallback && fallback !== pathname ? fallback : "/no-access" };
   }
   if (pathname === "/profile") {
     if (guest) return { redirect: destination };

@@ -81,6 +81,12 @@ const paths: Record<IconName, ReactNode> = {
       <path d="M14.5 10h3M14.5 13h3" />
     </>
   ),
+  roles: (
+    <>
+      <circle cx="8" cy="12" r="3.5" />
+      <path d="M11.5 12h9M17.5 12v3M20.5 12v2" />
+    </>
+  ),
   residents: (
     <>
       <circle cx="9" cy="9" r="2.6" />

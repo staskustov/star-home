@@ -93,17 +93,17 @@ class GatewayController {
 
   @Post("security")
   security(@Req() req: RawBodyRequest<Request>, @Res() res: Response): Promise<void> {
-    return signed("ops", req, res);
+    return signed("desk", req, res, { section: "security" });
   }
 
   @Post("devices")
   devices(@Req() req: RawBodyRequest<Request>, @Res() res: Response): Promise<void> {
-    return signed("ops", req, res);
+    return signed("desk", req, res, { section: "devices" });
   }
 
   @Post("payments")
   payments(@Req() req: RawBodyRequest<Request>, @Res() res: Response): Promise<void> {
-    return signed("ops", req, res);
+    return signed("desk", req, res, { section: "payments" });
   }
 
   @Post("service-requests")
@@ -140,7 +140,7 @@ class GatewayController {
 @Module({ controllers: [GatewayController] })
 class AppModule {}
 
-async function signed(method: string | null, req: RawBodyRequest<Request>, res: Response): Promise<void> {
+async function signed(method: string | null, req: RawBodyRequest<Request>, res: Response, fixed?: Record<string, unknown>): Promise<void> {
   const raw = req.rawBody;
   const header = req.header("x-star-home-signature") ?? "";
   if (!raw || !handle) {
@@ -157,7 +157,8 @@ async function signed(method: string | null, req: RawBodyRequest<Request>, res: 
     input?: unknown;
     session?: { userId: string; membershipId: string | null } | null;
   };
-  const result = await handle(method ?? payload.method ?? "", payload.input, payload.session ?? null);
+  const input = fixed ? { ...(typeof payload.input === "object" && payload.input ? payload.input : {}), ...fixed } : payload.input;
+  const result = await handle(method ?? payload.method ?? "", input, payload.session ?? null);
   res.status(result.status).json(result.body);
 }
 

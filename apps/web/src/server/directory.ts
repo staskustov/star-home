@@ -2,6 +2,7 @@ import { residentHome } from "@/mocks/resident-home";
 import { findBuilding, findCompany, findObject, findUnit } from "@/server/catalog-store";
 import { modeForUnit, modesForObject } from "@/server/life-mode-store";
 import { listMemberships, listUsers, type StoredUser } from "@/server/people-store";
+import { staffRoles } from "@/server/rbac/policy";
 import type { Membership, ResidentHome, Role } from "@/types/domain";
 
 export type DirectoryUser = StoredUser;
@@ -47,7 +48,6 @@ const homesByUnit: Record<string, ResidentHome> = {
   unit_84: parkHome,
 };
 
-const adminRoles = new Set<Role>(["SUPER_ADMIN", "COMPANY_ADMIN", "OBJECT_ADMIN", "MANAGER"]);
 
 export function findUserByLogin(login: string): DirectoryUser | undefined {
   const key = login.trim().toLowerCase();
@@ -67,7 +67,7 @@ export function findMembership(userId: string, membershipId: string): Membership
 }
 
 export function isAdminRole(role: Role): boolean {
-  return adminRoles.has(role);
+  return staffRoles.includes(role);
 }
 
 function stillActive(membership: Membership): boolean {

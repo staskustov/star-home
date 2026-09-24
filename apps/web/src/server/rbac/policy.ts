@@ -155,6 +155,20 @@ export function permissionsOf(role: Role): ReadonlySet<Permission> {
   return new Set(grants[role]);
 }
 
+export function householdCan(role: Role, permission: Permission): boolean {
+  return !staffRoles.includes(role) && grants[role].includes(permission);
+}
+
+export function lockedOf(role: Role): ReadonlySet<Permission> {
+  return new Set<Permission>(staffRoles.includes(role) ? ["dashboard.view"] : []);
+}
+
+export function canEditRole(actorRole: Role, targetRole: Role): boolean {
+  if (!staffRoles.includes(targetRole) || targetRole === "SUPER_ADMIN") return false;
+  if (actorRole === "SUPER_ADMIN") return true;
+  return roleRank[targetRole] < roleRank[actorRole];
+}
+
 export function selfOnlyOf(role: Role): ReadonlySet<Permission> {
   return new Set(selfOnly[role] ?? []);
 }

@@ -1,8 +1,7 @@
 import { DeviceDesk } from "@/components/admin/OpsDesk";
-import { requireAdminContext, requireOps } from "@/server/access";
+import { requireDesk } from "@/server/access";
 
 export default async function DevicesPage() {
-  await requireAdminContext();
-  const ops = await requireOps<Parameters<typeof DeviceDesk>[0]>();
+  const ops = await requireDesk<Parameters<typeof DeviceDesk>[0]>("devices");
   return <DeviceDesk devices={ops.devices} meters={ops.meters} />;
 }

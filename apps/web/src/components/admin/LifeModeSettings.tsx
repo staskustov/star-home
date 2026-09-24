@@ -6,7 +6,7 @@ import { useAdminPreview } from "@/components/admin/AdminPreview";
 import { ThemePalette } from "@/components/shell/ThemePalette";
 import { lifeModeChecks, type LifeModeCheck, type LifeModeSetting } from "@/types/domain";
 
-export function LifeModeSettings({ objects }: { objects: { objectId: string; modes: LifeModeSetting[] }[] }) {
+export function LifeModeSettings({ objects, canEdit }: { objects: { objectId: string; modes: LifeModeSetting[] }[]; canEdit: boolean }) {
   const { selected } = useAdminPreview();
   const modes = objects.find((object) => object.objectId === selected?.id)?.modes;
   if (!selected || !modes) {
@@ -17,17 +17,19 @@ export function LifeModeSettings({ objects }: { objects: { objectId: string; mod
       </div>
     );
   }
-  return <ModeEditor key={selected.id} objectId={selected.id} objectName={selected.name} modes={modes} />;
+  return <ModeEditor key={selected.id} objectId={selected.id} objectName={selected.name} modes={modes} canEdit={canEdit} />;
 }
 
 function ModeEditor({
   objectId,
   objectName,
   modes,
+  canEdit,
 }: {
   objectId: string;
   objectName: string;
   modes: LifeModeSetting[];
+  canEdit: boolean;
 }) {
   const router = useRouter();
   const [drafts, setDrafts] = useState(modes);
@@ -80,6 +82,7 @@ function ModeEditor({
             }}
             className="panel p-5"
           >
+            <fieldset disabled={!canEdit} className="min-w-0">
             <h2 className="text-[20px] tracking-[-0.03em] text-ink">{mode.label}</h2>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               <Field label="Название" value={mode.label} onChange={(label) => patch(mode.mode, { label })} />
@@ -118,9 +121,12 @@ function ModeEditor({
                 );
               })}
             </div>
-            <button type="submit" className="mt-5 btn btn-primary">
-              Сохранить
-            </button>
+            </fieldset>
+            {canEdit ? (
+              <button type="submit" className="mt-5 btn btn-primary">
+                Сохранить
+              </button>
+            ) : null}
           </form>
         ))}
       </div>

@@ -3,7 +3,7 @@ import { objectPresentation } from "@/lib/object-presentation";
 import { findUnit, structureCounts, type CatalogObject } from "@/server/catalog-store";
 import type { DeviceKind } from "@/server/device-kinds";
 import { findUserById, residentCount } from "@/server/directory";
-import { alarmsForObject, auditForObject, devicesForObject, eventsForObject, passesForObject, requestsForObject, type Device } from "@/server/ops-store";
+import { alarmsForObject, auditForObject, devicesForObject, eventsForObject, passesForObject, readOps, requestsForObject, type Device } from "@/server/ops-store";
 import { auditActionLabels } from "@/server/ops-view";
 import { can, objectsInScope, type StaffActor } from "@/server/rbac/decide";
 import type { DashboardAttention, DashboardFeedItem, DashboardObject, DashboardPulse, DashboardSystem, DashboardView } from "@/types/dashboard";
@@ -137,6 +137,10 @@ function pulseFor(actor: StaffActor, object: CatalogObject): DashboardPulse[] {
   if (can(actor, "security.view")) {
     const open = alarmsForObject(object.id).filter((alarm) => alarm.status === "OPEN").length;
     pulse.push({ id: "alarms", value: open, label: "Тревоги", href: "/admin/security", alert: open > 0 });
+  }
+  if (can(actor, "payments.view")) {
+    const open = readOps().invoices.filter((invoice) => invoice.objectId === object.id && invoice.status === "OPEN").length;
+    pulse.push({ id: "invoices", value: open, label: "Открытые счета", href: "/admin/payments", alert: false });
   }
   if (can(actor, "access.view")) {
     const day = today();

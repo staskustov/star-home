@@ -17,6 +17,8 @@ const admin = { userId: "usr_admin", membershipId: "mem_admin" };
 const objectAdmin = { userId: "usr_object", membershipId: "mem_object_siyanie" };
 const manager = { userId: "usr_manager", membershipId: "mem_manager_siyanie" };
 const resident = { userId: "usr_stanislav", membershipId: "mem_stanislav_24" };
+const security = { userId: "usr_security", membershipId: "mem_security_siyanie" };
+const accountant = { userId: "usr_accountant", membershipId: "mem_accountant_star" };
 
 type Dashboard = { scope: string; canCreateObject: boolean; objects: { id: string; feed: { id: string }[] | null }[] };
 type Admin = { sections?: { label: string; items: { href: string; label: string }[] }[]; redirect?: string };
@@ -161,7 +163,7 @@ describe("team", () => {
     assert.ok(!object.places.some((place) => place.id === null || place.id === "obj_park"));
     assert.deepEqual(
       object.roles.map((role) => role.value),
-      ["MANAGER"],
+      ["MANAGER", "SECURITY", "SERVICE_OPERATOR", "ACCOUNTANT"],
     );
   });
 
@@ -228,5 +230,147 @@ describe("team", () => {
     assert.equal((await rpc("teamBlock", { membershipId: "mem_admin" }, platform)).status, 409);
     assert.equal((await rpc("teamRemove", { membershipId: "mem_admin" }, platform)).status, 409);
     assert.equal((await rpc("teamAccess", { membershipId: "mem_admin", role: "OBJECT_ADMIN", objectId: "obj_siyanie" }, platform)).status, 409);
+  });
+});
+
+type Desk = Record<string, { objectId: string }[]>;
+type Column = { value: string; editable: boolean; customized: boolean; ceiling: string[]; granted: string[]; locked: string[] };
+type Roles = { canEdit: boolean; roles: Column[] };
+
+describe("method policy", () => {
+  it("refuses unknown methods and anonymous callers", async () => {
+    assert.equal((await rpc("ops", null, admin)).status, 404);
+    assert.equal((await rpc("__proto__", null, admin)).status, 404);
+    assert.equal((await rpc("desk", { section: "access" }, null)).status, 401);
+    assert.equal((await rpc("roles", null, null)).status, 401);
+  });
+
+  it("keeps staff methods away from residents and household methods away from staff", async () => {
+    assert.equal((await rpc("desk", { section: "access" }, resident)).status, 403);
+    assert.equal((await rpc("openObjectGate", { objectId: "obj_siyanie" }, resident)).status, 403);
+    assert.equal((await rpc("pay", null, admin)).status, 403);
+    assert.equal((await rpc("switchMode", { mode: "WORK" }, security)).status, 403);
+  });
+
+  it("checks the right of the method before the handler runs", async () => {
+    assert.equal((await rpc("openObjectGate", { objectId: "obj_siyanie" }, accountant)).status, 403);
+    assert.equal((await rpc("openObjectGate", { objectId: "obj_park" }, security)).status, 403);
+    assert.equal((await rpc("removeObject", { objectId: "obj_siyanie" }, objectAdmin)).status, 403);
+    assert.equal((await rpc("setRequestStatus", { id: "x", status: "DONE", objectId: "obj_siyanie" }, accountant)).status, 403);
+    assert.equal((await rpc("cameraFrame", { objectId: "obj_siyanie", name: "x" }, accountant)).status, 403);
+  });
+});
+
+describe("console sections", () => {
+  it("opens a section only with its right", async () => {
+    assert.equal((await rpc("desk", { section: "payments" }, security)).status, 403);
+    assert.equal((await rpc("desk", { section: "security" }, accountant)).status, 403);
+    assert.equal((await rpc("desk", { section: "payments" }, accountant)).status, 200);
+    assert.equal((await rpc("desk", { section: "security" }, security)).status, 200);
+    assert.equal((await rpc("desk", { section: "ai" }, manager)).status, 403);
+    assert.equal((await rpc("desk", { section: "nothing" }, admin)).status, 404);
+  });
+
+  it("serves only rows of objects in scope", async () => {
+    const ops = await import("../../web/src/server/ops-store");
+    const file = ops.readOps();
+    const invoice = file.invoices[0];
+    assert.ok(invoice);
+    ops.writeOps({ ...file, invoices: [...file.invoices, { ...invoice, id: "inv_park_test", objectId: "obj_park" }] });
+    const company = (await rpc("desk", { section: "payments" }, admin)).body as Desk;
+    const object = (await rpc("desk", { section: "payments" }, objectAdmin)).body as Desk;
+    assert.ok(company.invoices?.some((row) => row.objectId === "obj_park"));
+    assert.ok(object.invoices?.every((row) => row.objectId === "obj_siyanie"));
+    ops.writeOps(file);
+  });
+
+  it("hides cameras and the audit trail inside a section without their rights", async () => {
+    const body = (await rpc("desk", { section: "security" }, manager)).body as Desk;
+    const own = (await rpc("desk", { section: "security" }, security)).body as Desk;
+    assert.deepEqual(body.audit, []);
+    assert.ok(Array.isArray(own.cameras));
+  });
+
+  it("sends a member to a section they may open", async () => {
+    const { guardPath } = await import("../../web/src/server/routing");
+    assert.deepEqual(guardPath(security.userId, security.membershipId, "/admin/security"), {});
+    assert.equal(guardPath(security.userId, security.membershipId, "/admin/payments").redirect, "/admin");
+    assert.equal(guardPath(accountant.userId, accountant.membershipId, "/admin/team").redirect, "/admin");
+    assert.equal(guardPath(manager.userId, manager.membershipId, "/admin/roles").redirect, "/admin");
+    assert.deepEqual(guardPath(admin.userId, admin.membershipId, "/admin/roles"), {});
+    assert.equal(guardPath(resident.userId, resident.membershipId, "/admin").redirect, "/home");
+  });
+
+  it("gives each staff role its own console", async () => {
+    const guard = hrefs((await rpc("admin", null, security)).body as Admin);
+    const books = hrefs((await rpc("admin", null, accountant)).body as Admin);
+    assert.ok(guard.includes("/admin/security") && !guard.includes("/admin/payments"));
+    assert.ok(books.includes("/admin/payments") && !books.includes("/admin/security"));
+    assert.ok(!guard.includes("/admin/roles") && !books.includes("/admin/team"));
+  });
+});
+
+describe("roles", () => {
+  it("shows the matrix only with roles.view", async () => {
+    assert.equal((await rpc("roles", null, manager)).status, 403);
+    assert.equal((await rpc("roles", null, resident)).status, 403);
+    const body = (await rpc("roles", null, admin)).body as Roles;
+    assert.equal(body.canEdit, true);
+    assert.ok(!body.roles.some((role) => role.value === "SUPER_ADMIN"));
+    assert.equal(body.roles.find((role) => role.value === "COMPANY_ADMIN")?.editable, false);
+    assert.equal(body.roles.find((role) => role.value === "RESIDENT")?.editable, false);
+    assert.equal(body.roles.find((role) => role.value === "MANAGER")?.editable, true);
+  });
+
+  it("refuses edits outside the actor's reach", async () => {
+    const ceiling = (await import("../../web/src/server/rbac/policy")).permissionsOf("MANAGER");
+    const all = [...ceiling];
+    assert.equal((await rpc("rolesSave", { role: "MANAGER", permissions: all }, objectAdmin)).status, 403);
+    assert.equal((await rpc("rolesSave", { role: "COMPANY_ADMIN", permissions: [] }, admin)).status, 403);
+    assert.equal((await rpc("rolesSave", { role: "SUPER_ADMIN", permissions: [] }, admin)).status, 403);
+    assert.equal((await rpc("rolesSave", { role: "RESIDENT", permissions: [] }, admin)).status, 403);
+    assert.equal((await rpc("rolesSave", { role: "MANAGER", permissions: [...all, "roles.edit"] }, admin)).status, 400);
+    assert.equal((await rpc("rolesSave", { role: "MANAGER", permissions: [...all, "made.up"] }, admin)).status, 400);
+    assert.equal((await rpc("rolesSave", { role: "MANAGER", permissions: "all" }, admin)).status, 400);
+    assert.equal((await rpc("rolesSave", { role: "NOBODY", permissions: [] }, admin)).status, 400);
+  });
+
+  it("removes a right at once and brings it back with the standard set", async () => {
+    const ceiling = [...(await import("../../web/src/server/rbac/policy")).permissionsOf("MANAGER")];
+    assert.equal((await rpc("desk", { section: "devices" }, manager)).status, 200);
+    const trimmed = ceiling.filter((permission) => permission !== "devices.view" && permission !== "dashboard.view");
+    assert.equal((await rpc("rolesSave", { role: "MANAGER", permissions: trimmed }, admin)).status, 200);
+    assert.equal((await rpc("desk", { section: "devices" }, manager)).status, 403);
+    assert.equal((await rpc("dashboard", null, manager)).status, 200, "dashboard.view stays locked");
+    const column = ((await rpc("roles", null, admin)).body as Roles).roles.find((role) => role.value === "MANAGER");
+    assert.equal(column?.customized, true);
+    assert.ok(!column?.granted.includes("devices.view"));
+    assert.equal((await rpc("rolesSave", { role: "MANAGER", permissions: ceiling }, admin)).status, 200);
+    assert.equal((await rpc("desk", { section: "devices" }, manager)).status, 200);
+    const restored = ((await rpc("roles", null, admin)).body as Roles).roles.find((role) => role.value === "MANAGER");
+    assert.equal(restored?.customized, false);
+  });
+
+  it("never lets an actor grant a right they do not hold", async () => {
+    const policy = await import("../../web/src/server/rbac/policy");
+    const catalog = await import("../../web/src/server/catalog-store");
+    const adminCeiling = [...policy.permissionsOf("COMPANY_ADMIN")].filter((permission) => permission !== "devices.view");
+    catalog.setCompanyGrants("cmp_star", "COMPANY_ADMIN", adminCeiling);
+    const managerCeiling = [...policy.permissionsOf("MANAGER")];
+    const without = managerCeiling.filter((permission) => permission !== "devices.view");
+    catalog.setCompanyGrants("cmp_star", "MANAGER", without);
+    const reply = await rpc("rolesSave", { role: "MANAGER", permissions: managerCeiling }, admin);
+    assert.equal(reply.status, 403);
+    assert.equal((await rpc("rolesSave", { role: "MANAGER", permissions: without.filter((item) => item !== "service.edit") }, admin)).status, 200);
+    catalog.setCompanyGrants("cmp_star", "COMPANY_ADMIN", null);
+    catalog.setCompanyGrants("cmp_star", "MANAGER", null);
+  });
+
+  it("keeps household rights as they were", async () => {
+    const reply = await rpc("home", null, resident);
+    assert.equal(reply.status, 200);
+    assert.equal((await rpc("roles", null, admin)).status, 200);
+    const column = ((await rpc("roles", null, admin)).body as Roles).roles.find((role) => role.value === "RESIDENT");
+    assert.deepEqual(column?.granted, column?.ceiling);
   });
 });

@@ -75,41 +75,48 @@ export function ObjectBuilder({ tree }: { tree: CatalogTree }) {
       <h1 className="mt-3 text-[36px] leading-none tracking-[-0.04em] text-ink">{tree.object.name}</h1>
       <p className="mt-3 text-[15px] text-muted">{presentation.label}</p>
 
-      <form onSubmit={saveObject} className="mt-8 panel p-5">
-        <label className="block">
-          <span className="text-sm text-muted">Название</span>
-          <input
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            className="control mt-2"
-          />
-        </label>
-        <label className="mt-4 block">
-          <span className="text-sm text-muted">Адрес</span>
-          <input
-            value={address}
-            onChange={(event) => setAddress(event.target.value)}
-            className="control mt-2"
-          />
-        </label>
-        <button type="submit" className="mt-5 btn btn-primary">
-          Сохранить
-        </button>
-      </form>
+      {tree.can.edit ? (
+        <form onSubmit={saveObject} className="mt-8 panel p-5">
+          <label className="block">
+            <span className="text-sm text-muted">Название</span>
+            <input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              className="control mt-2"
+            />
+          </label>
+          <label className="mt-4 block">
+            <span className="text-sm text-muted">Адрес</span>
+            <input
+              value={address}
+              onChange={(event) => setAddress(event.target.value)}
+              className="control mt-2"
+            />
+          </label>
+          <button type="submit" className="mt-5 btn btn-primary">
+            Сохранить
+          </button>
+        </form>
+      ) : tree.object.address ? (
+        <p className="mt-2 text-[15px] text-muted">{tree.object.address}</p>
+      ) : null}
 
       <section className="mt-8">
         <h2 className="text-[24px] tracking-[-0.03em] text-ink">{presentation.structureHint}</h2>
         {tree.units ? (
           <div className="mt-4">
-            <UnitForm
-              label={`Добавить ${unitLabel}`}
-              value={unitName}
-              onChange={setUnitName}
-              onSubmit={(event) => addUnit(event)}
-            />
+            {tree.can.structure ? (
+              <UnitForm
+                label={`Добавить ${unitLabel}`}
+                value={unitName}
+                onChange={setUnitName}
+                onSubmit={(event) => addUnit(event)}
+              />
+            ) : null}
             <UnitFilter count={tree.units.length} query={query} onQuery={setQuery} />
             <UnitList
               units={visibleUnits(tree.units, query)}
+              editable={tree.can.structure}
               pendingDelete={pendingDelete}
               onAsk={setPendingDelete}
               onRemove={(id) => remove(`/api/catalog/units/${id}`)}
@@ -124,6 +131,7 @@ export function ObjectBuilder({ tree }: { tree: CatalogTree }) {
               <BuildingBlock
                 key={building.id}
                 building={building}
+                editable={tree.can.structure}
                 unitLabel={unitLabel}
                 open={openBuildingId === building.id}
                 onToggle={() => setOpenBuildingId((current) => (current === building.id ? null : building.id))}
@@ -138,19 +146,21 @@ export function ObjectBuilder({ tree }: { tree: CatalogTree }) {
                 buildingLabel={buildingLabel}
               />
             ))}
-            <form onSubmit={addBuilding} className="panel p-5">
-              <label className="block">
-                <span className="text-sm text-muted">Название</span>
-                <input
-                  value={buildingName}
-                  onChange={(event) => setBuildingName(event.target.value)}
-                  className="control mt-2"
-                />
-              </label>
-              <button type="submit" className="mt-4 btn btn-primary">
-                Добавить {buildingLabel}
-              </button>
-            </form>
+            {tree.can.structure ? (
+              <form onSubmit={addBuilding} className="panel p-5">
+                <label className="block">
+                  <span className="text-sm text-muted">Название</span>
+                  <input
+                    value={buildingName}
+                    onChange={(event) => setBuildingName(event.target.value)}
+                    className="control mt-2"
+                  />
+                </label>
+                <button type="submit" className="mt-4 btn btn-primary">
+                  Добавить {buildingLabel}
+                </button>
+              </form>
+            ) : null}
           </div>
         )}
       </section>
@@ -161,6 +171,7 @@ export function ObjectBuilder({ tree }: { tree: CatalogTree }) {
         </p>
       ) : null}
 
+      {tree.can.remove ? (
       <div className="mt-10">
         {tree.object.canDelete ? (
           <button
@@ -178,6 +189,7 @@ export function ObjectBuilder({ tree }: { tree: CatalogTree }) {
           <p className="text-sm text-muted">Объект с людьми удалить нельзя.</p>
         )}
       </div>
+      ) : null}
     </div>
   );
 }
@@ -241,11 +253,13 @@ function UnitForm({
 
 function UnitList({
   units,
+  editable,
   pendingDelete,
   onAsk,
   onRemove,
 }: {
   units: CatalogUnitNode[];
+  editable: boolean;
   pendingDelete: string | null;
   onAsk: (id: string | null) => void;
   onRemove: (id: string) => void;
@@ -256,7 +270,7 @@ function UnitList({
       {units.map((unit) => (
         <li key={unit.id} className="flex items-center justify-between gap-3 px-5 py-3">
           <span className="min-w-0 truncate text-[15px] text-ink">{unit.name}</span>
-          {unit.canDelete ? (
+          {editable && unit.canDelete ? (
             <button
               type="button"
               onClick={() => (pendingDelete === unit.id ? onRemove(unit.id) : onAsk(unit.id))}
@@ -273,6 +287,7 @@ function UnitList({
 
 function BuildingBlock({
   building,
+  editable,
   unitLabel,
   buildingLabel,
   countLabel,
@@ -287,6 +302,7 @@ function BuildingBlock({
   onRemoveBuilding,
 }: {
   building: CatalogBuildingNode;
+  editable: boolean;
   unitLabel: string;
   buildingLabel: string;
   countLabel: string;
@@ -315,10 +331,11 @@ function BuildingBlock({
       </div>
       {open ? (
         <div className="mt-4">
-          <UnitForm label={`Добавить ${unitLabel}`} value={unitName} onChange={onUnitName} onSubmit={onAddUnit} />
+          {editable ? <UnitForm label={`Добавить ${unitLabel}`} value={unitName} onChange={onUnitName} onSubmit={onAddUnit} /> : null}
           <UnitFilter count={building.units.length} query={query} onQuery={setQuery} />
           <UnitList
             units={visibleUnits(building.units, query)}
+            editable={editable}
             pendingDelete={pendingDelete}
             onAsk={onAsk}
             onRemove={onRemoveUnit}
@@ -328,7 +345,7 @@ function BuildingBlock({
           ) : null}
         </div>
       ) : null}
-      {!blocked ? (
+      {editable && !blocked ? (
         <button
           type="button"
           onClick={() => (pendingDelete === building.id ? onRemoveBuilding() : onAsk(building.id))}

@@ -1,4 +1,5 @@
-import { adminObjectFrom, placeFromSession, residentPlace, type Place, type SessionRef } from "@/server/actor";
+import { placeFromSession, type Place, type SessionRef } from "@/server/actor";
+import { can, objectFor, type StaffActor } from "@/server/rbac/decide";
 import { publishLive, pushNotice } from "@/server/store-bind";
 import { accessPoint, gateFor, runDevice } from "@/server/devices";
 import { paymentProvider } from "@/server/payments";
@@ -15,11 +16,6 @@ import {
 } from "@/server/ops-store";
 
 export type { Place };
-
-async function currentSession(): Promise<SessionRef | null> {
-  const { readSession } = await import("@/server/session");
-  return readSession();
-}
 
 function audit(entry: Omit<AuditEntry, "id" | "at">): void {
   const file = readOps();
@@ -217,46 +213,31 @@ function clean(value: unknown, empty: string, limit: number): string | { ok: fal
   return text;
 }
 
+const denied = { ok: false as const, status: 403, message: "Нет доступа" };
+
 export async function openGateFor(session: SessionRef | null) {
-  const place = placeFromSession(session);
+  const place = placeFromSession(session, "access.gate.open");
   if (!place.ok) return place;
   return { ok: true as const, value: await openGate(place.value) };
 }
 
-export async function openOwnGate(): Promise<{ ok: true; value: { confirmed: boolean; message: string } } | { ok: false; status: number; message: string }> {
-  const place = await residentPlace();
-  if (!place.ok) return place;
-  return { ok: true, value: await openGate(place.value) };
-}
-
-export async function openObjectGateFor(session: SessionRef | null, objectId: unknown) {
-  if (typeof objectId !== "string") return { ok: false as const, status: 400, message: "Выберите объект" };
-  const admin = adminObjectFrom(session, objectId);
-  if (!admin.ok) return admin;
+export async function openObjectGateFor(actor: StaffActor, objectId: unknown) {
+  if (!can(actor, "access.gate.open")) return denied;
+  const object = objectFor(actor, objectId);
+  if (!object.ok) return object;
   return {
     ok: true as const,
-    value: await openGate({
-      userId: admin.value.userId,
-      companyId: admin.value.companyId,
-      objectId: admin.value.objectId,
-      unitId: "",
-      role: "COMPANY_ADMIN",
-    }),
+    value: await openGate({ userId: actor.userId, companyId: object.value.companyId, objectId: object.value.id, unitId: "", role: actor.role }),
   };
 }
 
-export async function openObjectGate(objectId: unknown) {
-  return openObjectGateFor(await currentSession(), objectId);
-}
-
-export async function cameraFrameFor(session: SessionRef | null, objectId: unknown, name: unknown) {
-  if (typeof objectId !== "string" || typeof name !== "string" || !name.trim()) {
-    return { ok: false as const, status: 400, message: "Камера не найдена" };
-  }
-  const admin = adminObjectFrom(session, objectId);
-  if (!admin.ok) return admin;
+export async function cameraFrameFor(actor: StaffActor, objectId: unknown, name: unknown) {
+  if (!can(actor, "security.camera.view")) return denied;
+  if (typeof name !== "string" || !name.trim()) return { ok: false as const, status: 400, message: "Камера не найдена" };
+  const object = objectFor(actor, objectId);
+  if (!object.ok) return object;
   const device = readOps().devices.find(
-    (item) => item.objectId === admin.value.objectId && item.companyId === admin.value.companyId && item.kind === "CAMERA" && item.name === name.trim(),
+    (item) => item.objectId === object.value.id && item.companyId === object.value.companyId && item.kind === "CAMERA" && item.name === name.trim(),
   );
   if (!device) return { ok: false as const, status: 404, message: "Камера не найдена" };
   const result = await runDevice(device, "READ");
@@ -267,14 +248,14 @@ export async function cameraFrameFor(session: SessionRef | null, objectId: unkno
 }
 
 export async function openPointFor(session: SessionRef | null, pointId: unknown) {
-  const place = placeFromSession(session);
+  const place = placeFromSession(session, "access.gate.open");
   if (!place.ok) return place;
   if (typeof pointId !== "string" || !pointId) return { ok: false as const, status: 400, message: "Точка доступа не найдена" };
   return { ok: true as const, value: await openAccessPoint(place.value, pointId) };
 }
 
 export async function addPassFor(session: SessionRef | null, guestName: unknown, detail: unknown, vehicle?: unknown) {
-  const place = placeFromSession(session, new Set(["RESIDENT"]));
+  const place = placeFromSession(session, "access.pass.create");
   if (!place.ok) return place;
   const name = clean(guestName, "Введите имя гостя", 80);
   if (typeof name !== "string") return name;
@@ -284,18 +265,8 @@ export async function addPassFor(session: SessionRef | null, guestName: unknown,
   return { ok: true as const, value: createPass(place.value, name, note, car) };
 }
 
-export async function addOwnPass(guestName: unknown, detail: unknown) {
-  const place = placeFromSession(await currentSession(), new Set(["RESIDENT"]));
-  if (!place.ok) return place;
-  const name = clean(guestName, "Введите имя гостя", 80);
-  if (typeof name !== "string") return name;
-  const note = clean(detail, "Введите срок или комментарий", 160);
-  if (typeof note !== "string") return note;
-  return { ok: true as const, value: createPass(place.value, name, note) };
-}
-
 export async function addRequestFor(session: SessionRef | null, category: unknown, text: unknown, fileName?: string) {
-  const place = placeFromSession(session);
+  const place = placeFromSession(session, "service.create");
   if (!place.ok) return place;
   const kind = clean(category, "Выберите тему", 40);
   if (typeof kind !== "string") return kind;
@@ -304,54 +275,30 @@ export async function addRequestFor(session: SessionRef | null, category: unknow
   return { ok: true as const, value: createRequest(place.value, kind, body, fileName) };
 }
 
-export async function addOwnRequest(category: unknown, text: unknown) {
-  const place = await residentPlace();
-  if (!place.ok) return place;
-  const kind = clean(category, "Выберите тему", 40);
-  if (typeof kind !== "string") return kind;
-  const body = clean(text, "Опишите заявку", 400);
-  if (typeof body !== "string") return body;
-  return { ok: true as const, value: createRequest(place.value, kind, body) };
-}
-
 const statuses = new Set<RequestStatus>(["CREATED", "ACCEPTED", "ASSIGNED", "IN_PROGRESS", "WAITING", "DONE", "CLOSED"]);
 
-export async function setRequestStatusFor(session: SessionRef | null, requestId: string, status: unknown, objectId: unknown) {
-  if (typeof objectId !== "string") return { ok: false as const, status: 400, message: "Выберите объект" };
-  const admin = adminObjectFrom(session, objectId);
-  if (!admin.ok) return admin;
+export async function setRequestStatusFor(actor: StaffActor, requestId: unknown, status: unknown, objectId: unknown) {
+  if (!can(actor, "service.edit")) return denied;
+  const object = objectFor(actor, objectId);
+  if (!object.ok) return object;
+  if (typeof requestId !== "string" || !requestId) return { ok: false as const, status: 404, message: "Заявка не найдена" };
   if (typeof status !== "string" || !statuses.has(status as RequestStatus)) {
     return { ok: false as const, status: 400, message: "Неизвестный статус" };
   }
-  const request = updateRequestStatus(admin.value.userId, admin.value.companyId, admin.value.objectId, requestId, status as RequestStatus);
+  const request = updateRequestStatus(actor.userId, object.value.companyId, object.value.id, requestId, status as RequestStatus);
   if (!request) return { ok: false as const, status: 404, message: "Заявка не найдена" };
   return { ok: true as const, value: request };
 }
 
-export async function setRequestStatus(requestId: string, status: unknown, objectId: unknown) {
-  return setRequestStatusFor(await currentSession(), requestId, status, objectId);
-}
-
 export async function payFor(session: SessionRef | null) {
-  const place = placeFromSession(session, new Set(["RESIDENT"]));
-  if (!place.ok) return place;
-  return { ok: true as const, value: await payOldest(place.value) };
-}
-
-export async function payOwnInvoice() {
-  const place = placeFromSession(await currentSession(), new Set(["RESIDENT"]));
+  const place = placeFromSession(session, "payments.pay");
   if (!place.ok) return place;
   return { ok: true as const, value: await payOldest(place.value) };
 }
 
 export async function alarmFor(session: SessionRef | null) {
-  const place = placeFromSession(session);
+  const place = placeFromSession(session, "security.alarm.raise");
   if (!place.ok) return place;
   return { ok: true as const, value: raiseAlarm(place.value) };
 }
 
-export async function callOwnSecurity() {
-  const place = await residentPlace();
-  if (!place.ok) return place;
-  return { ok: true as const, value: raiseAlarm(place.value) };
-}

@@ -1,8 +1,7 @@
 import { PaymentDesk } from "@/components/admin/OpsDesk";
-import { requireAdminContext, requireOps } from "@/server/access";
+import { requireDesk } from "@/server/access";
 
 export default async function PaymentsPage() {
-  await requireAdminContext();
-  const ops = await requireOps<Parameters<typeof PaymentDesk>[0]>();
+  const ops = await requireDesk<Parameters<typeof PaymentDesk>[0]>("payments");
   return <PaymentDesk invoices={ops.invoices} />;
 }

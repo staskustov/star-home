@@ -3,6 +3,8 @@ import { findUnit } from "@/server/catalog-store";
 import { deviceLabel, isOpener } from "@/server/device-kinds";
 import { findUserById } from "@/server/directory";
 import { readOps } from "@/server/ops-store";
+import { can, objectsInScope, type StaffActor } from "@/server/rbac/decide";
+import type { Permission } from "@/server/rbac/permissions";
 
 export const auditActionLabels: Record<string, string> = {
   OPEN_GATE: "Открытие ворот",
@@ -18,6 +20,7 @@ export const auditActionLabels: Record<string, string> = {
   TEAM_BLOCK: "Блокировка",
   TEAM_RESTORE: "Восстановление доступа",
   TEAM_REMOVE: "Отзыв доступа",
+  ROLES_EDIT: "Права роли",
 };
 
 function unitName(unitId: string | null): string {
@@ -58,18 +61,42 @@ export function residentNotices(userId: string) {
     .map((notice) => ({ id: notice.id, title: notice.title, body: notice.body, at: notice.at }));
 }
 
-export function companyOps(companyId: string) {
+export const deskSections = {
+  access: "access.view",
+  security: "security.view",
+  requests: "service.view",
+  payments: "payments.view",
+  devices: "devices.view",
+  ai: "ai.view",
+} as const satisfies Record<string, Permission>;
+
+export type DeskSection = keyof typeof deskSections;
+
+export function isDeskSection(value: unknown): value is DeskSection {
+  return typeof value === "string" && Object.hasOwn(deskSections, value);
+}
+
+function deviceState(device: { id: string; work?: string }, readings: { deviceId: string; temperatureC: number; humidityPercent: number }[]): string {
+  if (device.work === "FAULT") return "Неисправно";
+  if (device.work === "OFF") return "Отключено";
+  const reading = readings.find((item) => item.deviceId === device.id);
+  return reading ? `${formatTemperature(reading.temperatureC)} · ${formatHumidity(reading.humidityPercent)}` : "На связи";
+}
+
+export function deskFor(actor: StaffActor, section: DeskSection) {
   const file = readOps();
-  return {
-    passes: file.passes
-      .filter((pass) => pass.companyId === companyId)
-      .map((pass) => ({ id: pass.id, objectId: pass.objectId, guestName: pass.guestName, detail: pass.detail, unitName: unitName(pass.unitId) })),
-    events: file.events
-      .filter((event) => event.companyId === companyId)
-      .map((event) => ({ id: event.id, objectId: event.objectId, time: event.time, title: event.title, result: event.result })),
-    requests: file.requests
-      .filter((request) => request.companyId === companyId)
-      .map((request) => ({
+  const scope = new Set(objectsInScope(actor).map((object) => object.id));
+  const mine = <T extends { companyId: string; objectId: string }>(rows: T[]): T[] =>
+    rows.filter((row) => row.companyId === actor.companyId && scope.has(row.objectId));
+  if (section === "access") {
+    return {
+      passes: mine(file.passes).map((pass) => ({ id: pass.id, objectId: pass.objectId, guestName: pass.guestName, detail: pass.detail, unitName: unitName(pass.unitId) })),
+      events: mine(file.events).map((event) => ({ id: event.id, objectId: event.objectId, time: event.time, title: event.title, result: event.result })),
+    };
+  }
+  if (section === "requests") {
+    return {
+      requests: mine(file.requests).map((request) => ({
         id: request.id,
         objectId: request.objectId,
         unitName: unitName(request.unitId),
@@ -77,9 +104,11 @@ export function companyOps(companyId: string) {
         text: request.text,
         status: request.status,
       })),
-    invoices: file.invoices
-      .filter((invoice) => invoice.companyId === companyId)
-      .map((invoice) => ({
+    };
+  }
+  if (section === "payments") {
+    return {
+      invoices: mine(file.invoices).map((invoice) => ({
         id: invoice.id,
         objectId: invoice.objectId,
         unitName: unitName(invoice.unitId),
@@ -88,57 +117,45 @@ export function companyOps(companyId: string) {
         currency: invoice.currency,
         status: invoice.status,
       })),
-    devices: file.devices
-      .filter((device) => device.companyId === companyId)
-      .map((device) => {
-        const reading = file.readings.find((item) => item.deviceId === device.id);
-        return {
-          objectId: device.objectId,
-          name: device.name,
-          kind: deviceLabel(device.kind),
-          state:
-            device.work === "FAULT"
-              ? "Неисправно"
-              : device.work === "OFF"
-                ? "Отключено"
-                : reading
-                  ? `${formatTemperature(reading.temperatureC)} · ${formatHumidity(reading.humidityPercent)}`
-                  : "На связи",
-        };
-      }),
-    alarms: file.alarms
-      .filter((alarm) => alarm.companyId === companyId)
-      .map((alarm) => ({ id: alarm.id, objectId: alarm.objectId, title: alarm.title, unitName: unitName(alarm.unitId), at: alarm.at, status: alarm.status })),
-    audit: file.audit
-      .filter((entry) => entry.companyId === companyId)
-      .map((entry) => ({
-        id: entry.id,
-        objectId: entry.objectId,
-        actor: findUserById(entry.actorUserId)?.name ?? "Сотрудник",
-        action: auditActionLabels[entry.action] ?? entry.action,
-        target: entry.target,
-        result: entry.result,
-        error: entry.error,
-        at: entry.at,
-      })),
-    meters: file.meters
-      .filter((meter) => meter.companyId === companyId)
-      .map((meter) => {
+    };
+  }
+  if (section === "devices") {
+    return {
+      devices: mine(file.devices).map((device) => ({ objectId: device.objectId, name: device.name, kind: deviceLabel(device.kind), state: deviceState(device, file.readings) })),
+      meters: mine(file.meters).map((meter) => {
         const latest = file.meterReadings.filter((reading) => reading.meterId === meter.id).at(-1);
-        return {
-          objectId: meter.objectId,
-          name: meter.name,
-          value: latest ? String(latest.value).replace(".", ",") : "—",
-          unit: meter.unit,
-        };
+        return { objectId: meter.objectId, name: meter.name, value: latest ? String(latest.value).replace(".", ",") : "—", unit: meter.unit };
       }),
+    };
+  }
+  if (section === "security") {
+    return {
+      alarms: mine(file.alarms).map((alarm) => ({ id: alarm.id, objectId: alarm.objectId, title: alarm.title, unitName: unitName(alarm.unitId), at: alarm.at, status: alarm.status })),
+      cameras: can(actor, "security.camera.view")
+        ? mine(file.devices)
+            .filter((device) => device.kind === "CAMERA")
+            .map((device) => ({ objectId: device.objectId, name: device.name, state: deviceState(device, file.readings) }))
+        : [],
+      audit: can(actor, "audit.view")
+        ? mine(file.audit).map((entry) => ({
+            id: entry.id,
+            objectId: entry.objectId,
+            actor: findUserById(entry.actorUserId)?.name ?? "Сотрудник",
+            action: auditActionLabels[entry.action] ?? entry.action,
+            target: entry.target,
+            result: entry.result,
+            error: entry.error,
+            at: entry.at,
+          }))
+        : [],
+    };
+  }
+  return {
     turns: file.turns
-      .filter((turn) => turn.companyId === companyId)
-      .map((turn) => ({
-        id: turn.id,
-        objectId: findUnit(turn.unitId)?.objectId ?? "",
-        prompt: turn.prompt,
-        reply: turn.reply,
-      })),
+      .filter((turn) => turn.companyId === actor.companyId)
+      .flatMap((turn) => {
+        const objectId = findUnit(turn.unitId)?.objectId ?? "";
+        return scope.has(objectId) ? [{ id: turn.id, objectId, prompt: turn.prompt, reply: turn.reply }] : [];
+      }),
   };
 }

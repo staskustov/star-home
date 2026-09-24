@@ -28,7 +28,7 @@ export async function projectSnapshot(prisma: PrismaClient, name: string, value:
 
 async function projectCatalog(prisma: PrismaClient, body: Record<string, unknown>): Promise<void> {
   for (const company of list<{ id: string; name: string }>(body.companies)) {
-    await prisma.company.upsert({ where: { id: company.id }, create: company, update: { name: company.name } });
+    await prisma.company.upsert({ where: { id: company.id }, create: { id: company.id, name: company.name }, update: { name: company.name } });
   }
   for (const object of list<{ id: string; companyId: string; name: string; type: string; address: string }>(body.objects)) {
     const row = { companyId: object.companyId, name: object.name, type: object.type, address: object.address };

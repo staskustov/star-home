@@ -33,7 +33,7 @@ export function AccessDesk({
   passes: { id: string; objectId: string; guestName: string; detail: string; unitName: string }[];
   events: (AccessEvent & { objectId: string })[];
 }) {
-  const { selected } = useAdminPreview();
+  const { selected, can } = useAdminPreview();
   const router = useRouter();
   const [notice, setNotice] = useState<string | null>(null);
   const guests = useObjectRows(passes);
@@ -55,9 +55,11 @@ export function AccessDesk({
 
   return (
     <Shell title="Доступ">
-      <button type="button" onClick={openGate} className="btn btn-primary">
-        Открыть ворота
-      </button>
+      {can("access.gate.open") ? (
+        <button type="button" onClick={openGate} className="btn btn-primary">
+          Открыть ворота
+        </button>
+      ) : null}
       {notice ? <p className="text-sm text-muted">{notice}</p> : null}
       <List empty="Пропусков нет.">
         {guests.map((pass) => (
@@ -111,7 +113,7 @@ export function RequestDesk({
 }: {
   requests: { id: string; objectId: string; unitName: string; category: string; text: string; status: string }[];
 }) {
-  const { selected } = useAdminPreview();
+  const { selected, can } = useAdminPreview();
   const router = useRouter();
   const [notice, setNotice] = useState<string | null>(null);
   const rows = useObjectRows(requests);
@@ -145,7 +147,7 @@ export function RequestDesk({
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <span className="text-sm text-graphite">{requestStatus[request.status] ?? request.status}</span>
-              {nextStatus[request.status] ? (
+              {can("service.edit") && nextStatus[request.status] ? (
                 <button type="button" onClick={() => move(request.id, nextStatus[request.status])} className="btn btn-secondary btn-compact">
                   Дальше
                 </button>

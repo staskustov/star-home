@@ -24,4 +24,5 @@ export type CatalogTree = {
   };
   buildings: CatalogBuildingNode[] | null;
   units: CatalogUnitNode[] | null;
+  can: { edit: boolean; structure: boolean; remove: boolean };
 };

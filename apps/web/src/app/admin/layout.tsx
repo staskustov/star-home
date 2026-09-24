@@ -5,7 +5,7 @@ import { requireAdminContext } from "@/server/access";
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const admin = await requireAdminContext();
   return (
-    <AdminPreviewProvider companyName={admin.companyName} actorLabel={admin.actorLabel} initialObjects={admin.objects} sections={admin.sections}>
+    <AdminPreviewProvider companyName={admin.companyName} actorLabel={admin.actorLabel} initialObjects={admin.objects} sections={admin.sections} permissions={admin.permissions}>
       <AdminFrame>{children}</AdminFrame>
     </AdminPreviewProvider>
   );

@@ -1,11 +1,20 @@
 import { redirect } from "next/navigation";
+import type { DeskSection } from "@/server/ops-view";
+import type { Permission } from "@/server/rbac/permissions";
 import { rpc } from "@/server/rpc";
 import type { DashboardView } from "@/types/dashboard";
 import type { AccessEvent, AdminObjectSnapshot, NavGroup, ResidentHome } from "@/types/domain";
 
 type HomeBody = { home?: ResidentHome; redirect?: string };
 type PlacesBody = { name?: string; places?: { membershipId: string; title: string; meta: string }[]; redirect?: string };
-type AdminBody = { companyName?: string; actorLabel?: string; objects?: AdminObjectSnapshot[]; sections?: NavGroup[]; redirect?: string };
+type AdminBody = {
+  companyName?: string;
+  actorLabel?: string;
+  objects?: AdminObjectSnapshot[];
+  sections?: NavGroup[];
+  permissions?: Permission[];
+  redirect?: string;
+};
 type ProfileBody = {
   name: string;
   place: string | null;
@@ -41,7 +50,13 @@ export async function requirePlaces(): Promise<{ name: string; places: { members
   return { name: result.body.name as string, places: result.body.places as { membershipId: string; title: string; meta: string }[] };
 }
 
-export async function requireAdminContext(): Promise<{ companyName: string; actorLabel: string; objects: AdminObjectSnapshot[]; sections: NavGroup[] }> {
+export async function requireAdminContext(): Promise<{
+  companyName: string;
+  actorLabel: string;
+  objects: AdminObjectSnapshot[];
+  sections: NavGroup[];
+  permissions: Permission[];
+}> {
   const result = await rpc<AdminBody>("admin");
   if (result.status === 401 || result.body.redirect || !result.body.objects) await go(result, "/home");
   return {
@@ -49,6 +64,7 @@ export async function requireAdminContext(): Promise<{ companyName: string; acto
     actorLabel: result.body.actorLabel ?? "",
     objects: result.body.objects as AdminObjectSnapshot[],
     sections: result.body.sections ?? [],
+    permissions: result.body.permissions ?? [],
   };
 }
 
@@ -76,9 +92,10 @@ export async function requireRequests(): Promise<RequestsBody> {
   return result.body as RequestsBody;
 }
 
-export async function requireOps<T>(): Promise<T> {
-  const result = await rpc<T>("ops");
-  if (result.status !== 200) redirect("/no-access");
+export async function requireDesk<T>(section: DeskSection): Promise<T> {
+  const result = await rpc<T>("desk", { section });
+  if (result.status === 401) redirect("/");
+  if (result.status !== 200) redirect("/admin");
   return result.body;
 }
 

@@ -15,6 +15,7 @@ const sections: { group: string; permission: Permission; item: NavItem }[] = [
   { group: "Системы", permission: "devices.view", item: { href: "/admin/devices", label: "Устройства", icon: "devices" } },
   { group: "Системы", permission: "ai.view", item: { href: "/admin/ai", label: "AI", icon: "ai" } },
   { group: "Управление", permission: "users.view", item: { href: "/admin/team", label: "Команда", icon: "team" } },
+  { group: "Управление", permission: "roles.view", item: { href: "/admin/roles", label: "Роли и права", icon: "roles" } },
   { group: "Управление", permission: "settings.view", item: { href: "/admin/settings", label: "Настройки", icon: "settings" } },
 ];
 
@@ -35,6 +36,16 @@ export function sectionsFor(actor: StaffActor): NavGroup[] {
     else groups.push({ label: section.group, items: [item] });
   }
   return groups;
+}
+
+export function sectionPermission(pathname: string): Permission | null {
+  if (pathname === "/admin") return "dashboard.view";
+  const match = sections.find((section) => section.item.href !== "/admin" && (pathname === section.item.href || pathname.startsWith(`${section.item.href}/`)));
+  return match?.permission ?? null;
+}
+
+export function firstSection(actor: StaffActor): string | null {
+  return sections.find((section) => can(actor, section.permission))?.item.href ?? null;
 }
 
 export function adminObjectsFor(actor: StaffActor): AdminObjectSnapshot[] {
