@@ -253,13 +253,26 @@ model AiMessage {
 }
 
 model AuditLog {
-  id          String @id
-  actorUserId String
-  companyId   String
-  objectId    String
-  action      String
-  target      String
-  result      String
-  error       String
-  at          String
+  id           String  @id
+  actorUserId  String
+  actorRole    String?
+  membershipId String?
+  companyId    String
+  objectId     String?
+  buildingId   String?
+  unitId       String?
+  category     String?
+  action       String
+  targetType   String?
+  targetId     String?
+  target       String
+  result       String
+  error        String
+  ip           String?
+  device       String?
+  changes      Json?
+  at           String
+
+  @@index([companyId, at])
+  @@index([objectId, at])
 }

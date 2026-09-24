@@ -1,5 +1,6 @@
 import { placeFromSession, type Place, type SessionRef } from "@/server/actor";
 import { can, objectFor, reaches, type StaffActor } from "@/server/rbac/decide";
+import { appendAudit, type AuditInput } from "@/server/audit-store";
 import { publishLive, pushNotice } from "@/server/store-bind";
 import { accessPoint, gateFor, runDevice } from "@/server/devices";
 import { paymentProvider } from "@/server/payments";
@@ -8,7 +9,6 @@ import {
   newId,
   readOps,
   writeOps,
-  type AuditEntry,
   type Device,
   type Pass,
   type RequestStatus,
@@ -17,14 +17,12 @@ import {
 
 export type { Place };
 
-function audit(entry: Omit<AuditEntry, "id" | "at">): void {
-  const file = readOps();
-  file.audit.unshift({ ...entry, id: newId("audit"), at: clock() });
-  writeOps(file);
+function audit(entry: AuditInput): void {
+  appendAudit(entry);
 }
 
-export function recordAudit(entry: Omit<AuditEntry, "id" | "at">): void {
-  audit(entry);
+export function recordAudit(entry: AuditInput): void {
+  appendAudit(entry);
 }
 
 async function openDevice(place: Place, device: Device | null): Promise<{ confirmed: boolean; message: string }> {
@@ -46,10 +44,13 @@ async function openDevice(place: Place, device: Device | null): Promise<{ confir
     actorUserId: place.userId,
     companyId: place.companyId,
     objectId: place.objectId,
+    unitId: place.unitId || null,
     action: "OPEN_GATE",
+    targetType: "device",
+    targetId: device?.id ?? null,
     target: device?.name ?? "Ворота",
     result: result.confirmed ? "SUCCESS" : "ERROR",
-    error: result.confirmed ? "" : "Нет подтверждения адаптера",
+    reason: result.confirmed ? "" : "Нет подтверждения адаптера",
   });
   publishLive({ objectId: place.objectId, kind: "access", title: message.replace(/\.$/, "") });
   return { confirmed: result.confirmed, message };
@@ -81,10 +82,11 @@ export function createPass(place: Place, guestName: string, detail: string, vehi
     actorUserId: place.userId,
     companyId: place.companyId,
     objectId: place.objectId,
+    unitId: place.unitId,
     action: "CREATE_PASS",
+    targetType: "pass",
+    targetId: pass.id,
     target: guestName,
-    result: "SUCCESS",
-    error: "",
   });
   return pass;
 }
@@ -108,10 +110,11 @@ export function createRequest(place: Place, category: string, text: string, file
     actorUserId: place.userId,
     companyId: place.companyId,
     objectId: place.objectId,
+    unitId: place.unitId,
     action: "CREATE_REQUEST",
+    targetType: "request",
+    targetId: request.id,
     target: category,
-    result: "SUCCESS",
-    error: "",
   });
   return request;
 }
@@ -126,16 +129,19 @@ export function updateRequestStatus(
   const file = readOps();
   const request = file.requests.find((item) => item.id === requestId && item.companyId === companyId && item.objectId === objectId);
   if (!request) return null;
+  const before = request.status;
   request.status = status;
   writeOps(file);
   audit({
     actorUserId,
     companyId,
     objectId,
+    unitId: request.unitId,
     action: "UPDATE_REQUEST",
+    targetType: "request",
+    targetId: request.id,
     target: request.category,
-    result: "SUCCESS",
-    error: "",
+    changes: [{ field: "status", from: before, to: status }],
   });
   return request;
 }
@@ -150,10 +156,13 @@ export async function payOldest(place: Place): Promise<{ confirmed: boolean; mes
       actorUserId: place.userId,
       companyId: place.companyId,
       objectId: place.objectId,
+      unitId: place.unitId,
       action: "PAY_INVOICE",
-      target: invoice.title,
+      targetType: "invoice",
+      targetId: invoice.id,
+      target: `${invoice.title} · ${invoice.amount} ${invoice.currency}`,
       result: "ERROR",
-      error: "Провайдер не подтвердил оплату",
+      reason: "Провайдер не подтвердил оплату",
     });
     return { confirmed: false, message: "Не удалось подтвердить выполнение." };
   }
@@ -163,10 +172,11 @@ export async function payOldest(place: Place): Promise<{ confirmed: boolean; mes
     actorUserId: place.userId,
     companyId: place.companyId,
     objectId: place.objectId,
+    unitId: place.unitId,
     action: "PAY_INVOICE",
-    target: invoice.title,
-    result: "SUCCESS",
-    error: "",
+    targetType: "invoice",
+    targetId: invoice.id,
+    target: `${invoice.title} · ${invoice.amount} ${invoice.currency}`,
   });
   return { confirmed: true, message: "Счёт оплачен." };
 }
@@ -195,10 +205,10 @@ export function raiseAlarm(place: Place): { message: string } {
     actorUserId: place.userId,
     companyId: place.companyId,
     objectId: place.objectId,
+    unitId: place.unitId,
     action: "RAISE_ALARM",
+    targetType: "alarm",
     target: "Охрана",
-    result: "SUCCESS",
-    error: "",
   });
   publishLive({ objectId: place.objectId, kind: "alarm", title: "Вызов охраны" });
   pushNotice(place.userId, "Вызов принят и записан.");
@@ -242,6 +252,18 @@ export async function cameraFrameFor(actor: StaffActor, objectId: unknown, name:
   if (!device) return { ok: false as const, status: 404, message: "Камера не найдена" };
   if (!reaches(actor, device)) return denied;
   const result = await runDevice(device, "READ");
+  audit({
+    actorUserId: actor.userId,
+    companyId: device.companyId,
+    objectId: device.objectId,
+    unitId: device.unitId,
+    action: "CAMERA_VIEW",
+    targetType: "device",
+    targetId: device.id,
+    target: device.name,
+    result: result.confirmed ? "SUCCESS" : "ERROR",
+    reason: result.confirmed ? "" : "Нет подтверждения адаптера",
+  });
   return {
     ok: true as const,
     value: { confirmed: result.confirmed, message: result.confirmed ? "Кадр получен." : "Не удалось подтвердить выполнение." },

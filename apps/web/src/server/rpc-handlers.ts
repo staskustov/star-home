@@ -1,5 +1,9 @@
 import { createHmac } from "crypto";
 import { askFor, confirmFor } from "@/server/ai";
+import type { AuditAction } from "@/server/audit-actions";
+import { clientInfo, noteActor, withRequest } from "@/server/audit-context";
+import { findObject } from "@/server/catalog-store";
+import type { Membership } from "@/types/domain";
 import type { SessionRef } from "@/server/actor";
 import {
   createBuilding,
@@ -19,6 +23,8 @@ import {
   findUserByLogin,
   homeFor,
   homeMemberships,
+  isAdminRole,
+  membershipsOf,
   placesFor,
 } from "@/server/directory";
 import { saveModeFor, settingsFor, switchModeFor } from "@/server/life-modes";
@@ -34,6 +40,7 @@ import {
   openObjectGateFor,
   openPointFor,
   payFor,
+  recordAudit,
   setRequestStatusFor,
 } from "@/server/operations";
 import { dashboardFor } from "@/server/dashboard";
@@ -43,6 +50,7 @@ import { can, staffActor, withPermission, type StaffActor } from "@/server/rbac/
 import type { Permission } from "@/server/rbac/permissions";
 import { householdCan, selfOnlyOf } from "@/server/rbac/policy";
 import { rolesBoard, saveRole } from "@/server/roles";
+import { auditBoard, auditExport } from "@/server/audit-view";
 import { adminObjectsFor, sectionsFor } from "@/server/rbac/sections";
 import { record, text } from "@/server/schema";
 import { addResident, removeResident, residentBoard } from "@/server/residents";
@@ -83,10 +91,12 @@ function liveSession(session: SessionRef | null): SessionRef | null {
   return { userId: session.userId, membershipId: session.membershipId, sv: session.sv ?? 1 };
 }
 
-export async function handleRpc(method: string, input: unknown, session: SessionRef | null): Promise<Reply> {
-  const result = await dispatch(method, input, liveSession(session));
-  await storesFlushed();
-  return result;
+export async function handleRpc(method: string, input: unknown, session: SessionRef | null, client?: unknown): Promise<Reply> {
+  return withRequest(clientInfo(client), async () => {
+    const result = await dispatch(method, input, liveSession(session));
+    await storesFlushed();
+    return result;
+  });
 }
 
 type Result = { ok: true; value: unknown } | { ok: false; status: number; message: string };
@@ -146,6 +156,8 @@ const methodPolicy: Record<string, Route> = {
   teamRemove: staff("users.delete", removeMember),
   roles: staff("roles.view", (actor) => ({ ok: true, value: rolesBoard(actor) })),
   rolesSave: staff("roles.edit", saveRole),
+  audit: staff("audit.view", (actor, input) => ({ ok: true, value: auditBoard(actor, input) })),
+  auditExport: staff("audit.export", auditExport),
 
   tree: staff("objects.view", tree),
   createObject: staff("objects.create", (actor, input) => createObject(actor, { name: input.name, type: input.type, address: input.address }), 201),
@@ -170,15 +182,91 @@ const methodPolicy: Record<string, Route> = {
 
 export const rpcMethods: readonly string[] = Object.keys(methodPolicy);
 
+const guardedMethods: Partial<Record<string, AuditAction>> = {
+  teamAdd: "TEAM_ADD",
+  teamEdit: "TEAM_EDIT",
+  teamAccess: "TEAM_ROLE",
+  teamBlock: "TEAM_BLOCK",
+  teamRestore: "TEAM_RESTORE",
+  teamRemove: "TEAM_REMOVE",
+  rolesSave: "ROLES_EDIT",
+  createObject: "OBJECT_CREATE",
+  updateObject: "OBJECT_EDIT",
+  removeObject: "OBJECT_DELETE",
+  createBuilding: "BUILDING_CREATE",
+  removeBuilding: "BUILDING_DELETE",
+  createUnit: "UNIT_CREATE",
+  removeUnit: "UNIT_DELETE",
+  addResident: "RESIDENT_ADD",
+  removeResident: "RESIDENT_REMOVE",
+  saveMode: "MODE_SETTINGS",
+  switchMode: "MODE_SWITCH",
+  openObjectGate: "OPEN_GATE",
+  openGate: "OPEN_GATE",
+  openPoint: "OPEN_GATE",
+  cameraFrame: "CAMERA_VIEW",
+  setRequestStatus: "UPDATE_REQUEST",
+  addPass: "CREATE_PASS",
+  pay: "PAY_INVOICE",
+  alarm: "RAISE_ALARM",
+  auditExport: "AUDIT_EXPORT",
+};
+
+function noteDenial(method: string, input: unknown, current: SessionRef, companyId: string | null, membership: Membership | undefined, reply: Reply): Reply {
+  const action = guardedMethods[method];
+  if (reply.status !== 403 || !action || !companyId) return reply;
+  const body = record(input);
+  const asked = typeof body?.objectId === "string" ? findObject(body.objectId) : undefined;
+  const object = asked?.companyId === companyId ? asked : undefined;
+  const household = membership && !isAdminRole(membership.role) ? membership : undefined;
+  recordAudit({
+    actorUserId: current.userId,
+    companyId,
+    objectId: object?.id ?? household?.objectId ?? null,
+    unitId: household?.unitId ?? null,
+    action,
+    targetType: "method",
+    targetId: method,
+    target: object?.name ?? "Запрос отклонён",
+    result: "DENIED",
+    reason: (reply.body as { message?: string } | null)?.message ?? "Нет доступа",
+  });
+  return reply;
+}
+
 async function dispatch(method: string, input: unknown, current: SessionRef | null): Promise<Reply> {
   const route = Object.hasOwn(methodPolicy, method) ? methodPolicy[method] : undefined;
   if (!route) return fail(404, "Неизвестный метод");
   if (route.access === "public") return route.run(input);
   if (!current) return fail(401, "Нужно войти");
-  if (route.access === "session") return route.run(current, input);
-  const actor = withPermission(staffActor(current), route.permission);
-  if (!actor.ok) return fail(actor.status, actor.message);
-  return route.run(actor.value, record(input) ?? {});
+  const membership = current.membershipId ? findMembership(current.userId, current.membershipId) : undefined;
+  if (membership) noteActor({ userId: current.userId, role: membership.role, membershipId: membership.id });
+  if (route.access === "session") {
+    return noteDenial(method, input, current, membership?.companyId ?? null, membership, await route.run(current, input));
+  }
+  const built = staffActor(current);
+  if (built.ok) noteActor({ userId: current.userId, role: built.value.role, membershipId: built.value.membershipId });
+  const actor = withPermission(built, route.permission);
+  const reply = actor.ok ? await route.run(actor.value, record(input) ?? {}) : fail(actor.status, actor.message);
+  return noteDenial(method, input, current, built.ok ? built.value.companyId : (membership?.companyId ?? null), membership, reply);
+}
+
+function noteLogin(user: { id: string }, result: "SUCCESS" | "DENIED", reason = "", membershipId: string | null = null): void {
+  const memberships = membershipsOf(user.id);
+  const chosen = memberships.find((item) => item.id === membershipId) ?? memberships[0];
+  if (!chosen) return;
+  recordAudit({
+    actorUserId: user.id,
+    actorRole: chosen.role,
+    companyId: chosen.companyId,
+    objectId: isAdminRole(chosen.role) ? chosen.objectId : null,
+    action: result === "SUCCESS" ? "LOGIN" : "LOGIN_FAILED",
+    targetType: "user",
+    targetId: user.id,
+    target: result === "SUCCESS" ? "Вход в STAR HOME" : "Попытка входа",
+    result,
+    reason,
+  });
 }
 
 async function login(input: unknown): Promise<Reply> {
@@ -186,17 +274,25 @@ async function login(input: unknown): Promise<Reply> {
   const loginName = text(body?.login, 1, 80) ?? "";
   const password = typeof body?.password === "string" ? body.password : "";
   if (!loginName || password.length < 1 || password.length > 200) return fail(400, "Введите логин и пароль");
-  if (await loginLimited(loginName)) return fail(429, "Слишком много попыток. Подождите немного.");
   const user = findUserByLogin(loginName);
+  if (await loginLimited(loginName)) {
+    if (user) noteLogin(user, "DENIED", "Слишком много попыток");
+    return fail(429, "Слишком много попыток. Подождите немного.");
+  }
   const matches = user ? verifyPassword(password, user.passwordHash) : verifyPassword(password, "missing.missing");
   if (!user || !matches) {
     await noteLoginFailure(loginName);
+    if (user) noteLogin(user, "DENIED", "Неверный пароль");
     return fail(401, "Неверный логин или пароль");
   }
-  if (user.status === "BLOCKED") return fail(403, "Доступ приостановлен. Обратитесь к администратору.");
+  if (user.status === "BLOCKED") {
+    noteLogin(user, "DENIED", "Доступ приостановлен");
+    return fail(403, "Доступ приостановлен. Обратитесь к администратору.");
+  }
   await noteLoginSuccess(loginName);
   updateUser(user.id, { lastLoginAt: new Date().toISOString() });
   const membershipId = initialMembershipId(user.id);
+  noteLogin(user, "SUCCESS", "", membershipId);
   return ok({ userId: user.id, membershipId, sessionVersion: user.sessionVersion ?? 1, redirectTo: destinationFor(user.id, membershipId) });
 }
 

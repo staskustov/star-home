@@ -31,7 +31,7 @@ Resident app в этом этапе не меняется.
 | 10 | AI | `/admin/ai` | `ai.view` | есть |
 | 11 | Команда | `/admin/team` | `users.view` | **новый** (Phase B) |
 | 12 | Роли и права | `/admin/roles` | `roles.view` | **новый** (Phase C) |
-| 13 | Журнал действий | `/admin/audit` | `audit.view` | **новый** (Phase E) |
+| 13 | Журнал действий | `/admin/audit` | `audit.view` | есть (Phase E) |
 | 14 | Настройки | `/admin/settings` | `settings.view` | есть |
 
 \* Подпись зависит от типа выбранного объекта: КП → «Посёлок», ЖК / апарт-комплекс → «Комплекс», дом → «Дом». Путь один.
@@ -127,7 +127,7 @@ Resident app в этом этапе не меняется.
 | `POST /api/admin/team/[userId]/block`, `.../restore` | `teamBlock`, `teamRestore` |
 | `DELETE /api/admin/team/[membershipId]` | `teamRemove` |
 | `PUT /api/admin/roles` | `rolesSave` |
-| `GET /api/admin/audit/export` | `auditExport` |
+| `POST /api/admin/audit/export` | `auditExport` |
 | `POST /api/admin/security/alarm/[id]` | `alarmHandle` |
 | `DELETE /api/access/passes/[id]` | `passRevoke` |
 

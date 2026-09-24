@@ -25,7 +25,7 @@ const secret = () => process.env.STAR_HOME_INTERNAL_SECRET ?? "star-home-dev-int
 
 type LiveClient = WebSocket & { objectId?: string };
 
-let handle: ((method: string, input: unknown, session: { userId: string; membershipId: string | null } | null) => Promise<{ status: number; body: unknown }>) | null = null;
+let handle: ((method: string, input: unknown, session: { userId: string; membershipId: string | null } | null, client?: unknown) => Promise<{ status: number; body: unknown }>) | null = null;
 
 function signaturesMatch(actual: string, expected: string): boolean {
   const left = Buffer.from(actual);
@@ -156,9 +156,10 @@ async function signed(method: string | null, req: RawBodyRequest<Request>, res: 
     method?: string;
     input?: unknown;
     session?: { userId: string; membershipId: string | null } | null;
+    client?: unknown;
   };
   const input = fixed ? { ...(typeof payload.input === "object" && payload.input ? payload.input : {}), ...fixed } : payload.input;
-  const result = await handle(method ?? payload.method ?? "", input, payload.session ?? null);
+  const result = await handle(method ?? payload.method ?? "", input, payload.session ?? null, payload.client);
   res.status(result.status).json(result.body);
 }
 

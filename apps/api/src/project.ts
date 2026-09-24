@@ -24,6 +24,7 @@ export async function projectSnapshot(prisma: PrismaClient, name: string, value:
   if (name === "people") await projectPeople(prisma, body);
   if (name === "life") await projectLife(prisma, body);
   if (name === "ops") await projectOps(prisma, body);
+  if (name === "audit") await projectAudit(prisma, body);
 }
 
 async function projectCatalog(prisma: PrismaClient, body: Record<string, unknown>): Promise<void> {
@@ -219,11 +220,64 @@ async function projectOps(prisma: PrismaClient, body: Record<string, unknown>): 
     const row = { companyId: turn.companyId, userId: turn.userId, unitId: turn.unitId, prompt: turn.prompt, reply: turn.reply };
     await prisma.aiMessage.upsert({ where: { id: turn.id }, create: { id: turn.id, ...row }, update: row });
   }
-  for (const entry of list<{ id: string; actorUserId: string; companyId: string; objectId: string; action: string; target: string; result: string; error: string; at: string }>(body.audit)) {
-    await prisma.auditLog.upsert({
-      where: { id: entry.id },
-      create: entry,
-      update: { result: entry.result, error: entry.error, at: entry.at, action: entry.action, target: entry.target },
-    });
+}
+
+type AuditEntry = {
+  id: string;
+  at: string;
+  actorUserId: string;
+  actorRole: string | null;
+  membershipId: string | null;
+  companyId: string;
+  objectId: string | null;
+  buildingId: string | null;
+  unitId: string | null;
+  category: string;
+  action: string;
+  targetType: string;
+  targetId: string | null;
+  target: string;
+  result: string;
+  reason: string;
+  ip: string | null;
+  device: string | null;
+  changes?: { field: string; from: string; to: string }[];
+};
+
+const projectedAudit = new Set<string>();
+
+function auditRow(entry: AuditEntry) {
+  return {
+    id: entry.id,
+    at: entry.at,
+    actorUserId: entry.actorUserId,
+    actorRole: entry.actorRole,
+    membershipId: entry.membershipId,
+    companyId: entry.companyId,
+    objectId: entry.objectId,
+    buildingId: entry.buildingId,
+    unitId: entry.unitId,
+    category: entry.category,
+    action: entry.action,
+    targetType: entry.targetType,
+    targetId: entry.targetId,
+    target: entry.target,
+    result: entry.result,
+    error: entry.reason,
+    ip: entry.ip,
+    device: entry.device,
+    ...(entry.changes ? { changes: entry.changes } : {}),
+  };
+}
+
+async function projectAudit(prisma: PrismaClient, body: Record<string, unknown>): Promise<void> {
+  const fresh = list<AuditEntry>(body.entries).filter((entry) => !projectedAudit.has(entry.id));
+  if (fresh.length === 0) return;
+  const legacy = await prisma.auditLog.findMany({ where: { id: { in: fresh.map((entry) => entry.id) }, category: null }, select: { id: true } });
+  const stale = new Set(legacy.map((row) => row.id));
+  for (const entry of fresh.filter((item) => stale.has(item.id))) {
+    await prisma.auditLog.update({ where: { id: entry.id }, data: auditRow(entry) });
   }
+  await prisma.auditLog.createMany({ data: fresh.filter((entry) => !stale.has(entry.id)).map(auditRow), skipDuplicates: true });
+  for (const entry of fresh) projectedAudit.add(entry.id);
 }

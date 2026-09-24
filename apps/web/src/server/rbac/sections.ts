@@ -16,6 +16,7 @@ const sections: { group: string; permission: Permission; item: NavItem }[] = [
   { group: "Системы", permission: "ai.view", item: { href: "/admin/ai", label: "AI", icon: "ai" } },
   { group: "Управление", permission: "users.view", item: { href: "/admin/team", label: "Команда", icon: "team" } },
   { group: "Управление", permission: "roles.view", item: { href: "/admin/roles", label: "Роли и права", icon: "roles" } },
+  { group: "Управление", permission: "audit.view", item: { href: "/admin/audit", label: "Журнал действий", icon: "audit" } },
   { group: "Управление", permission: "settings.view", item: { href: "/admin/settings", label: "Настройки", icon: "settings" } },
 ];
 

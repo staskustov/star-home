@@ -3,8 +3,10 @@ import { objectPresentation } from "@/lib/object-presentation";
 import { findBuilding, findUnit, structureCounts, unitIdsOfBuilding, type CatalogObject } from "@/server/catalog-store";
 import type { DeviceKind } from "@/server/device-kinds";
 import { findUserById, residentCount } from "@/server/directory";
-import { alarmsForObject, auditForObject, devicesForObject, eventsForObject, passesForObject, readOps, requestsForObject, type Device } from "@/server/ops-store";
-import { auditActionLabels, auditVisible } from "@/server/ops-view";
+import { alarmsForObject, devicesForObject, eventsForObject, passesForObject, readOps, requestsForObject, type Device } from "@/server/ops-store";
+import { auditLabel } from "@/server/audit-actions";
+import { listAudit } from "@/server/audit-store";
+import { auditVisible, shortTime } from "@/server/audit-view";
 import { can, objectsInScope, reaches, wholeObject, type Scoped, type StaffActor } from "@/server/rbac/decide";
 import { auditCategoriesOf } from "@/server/rbac/policy";
 import type { DashboardAttention, DashboardFeedItem, DashboardObject, DashboardPulse, DashboardSystem, DashboardView } from "@/types/dashboard";
@@ -176,12 +178,13 @@ function systemsFor(actor: StaffActor, object: CatalogObject): DashboardSystem[]
 
 function feedFor(actor: StaffActor, object: CatalogObject): DashboardFeedItem[] | null {
   if (can(actor, "audit.view") && wholeObject(actor) && !auditCategoriesOf(actor.role)) {
-    return newestFirst(auditForObject(object.id).filter((entry) => auditVisible(actor, entry)), (entry) => entry.at)
+    return listAudit()
+      .filter((entry) => entry.objectId === object.id && auditVisible(actor, entry))
       .slice(0, feedLimit)
       .map((entry) => ({
         id: entry.id,
-        at: entry.at,
-        title: auditActionLabels[entry.action] ?? "Событие",
+        at: shortTime(entry.at),
+        title: auditLabel(entry.action),
         detail: `${findUserById(entry.actorUserId)?.name ?? "Сотрудник"} · ${entry.target}`,
         tone: entry.result !== "SUCCESS" ? "warning" : entry.action === "RAISE_ALARM" ? "danger" : "success",
       }));

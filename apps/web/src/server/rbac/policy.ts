@@ -1,3 +1,4 @@
+import type { AuditCategory } from "@/server/audit-actions";
 import { permissions, type Permission } from "@/server/rbac/permissions";
 import type { Role } from "@/types/domain";
 
@@ -173,13 +174,11 @@ export function selfOnlyOf(role: Role): ReadonlySet<Permission> {
   return new Set(selfOnly[role] ?? []);
 }
 
-export type AuditCategory = "RBAC" | "ACCESS" | "SECURITY" | "FINANCE" | "SERVICE" | "DATA" | "SETTINGS";
-
-const auditCategories: Partial<Record<Role, readonly AuditCategory[]>> = {
+const auditCategoryScope: Partial<Record<Role, readonly AuditCategory[]>> = {
   SECURITY: ["ACCESS", "SECURITY"],
 };
 
 export function auditCategoriesOf(role: Role): ReadonlySet<AuditCategory> | null {
-  const categories = auditCategories[role];
+  const categories = auditCategoryScope[role];
   return categories ? new Set(categories) : null;
 }

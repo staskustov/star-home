@@ -1,6 +1,6 @@
 import { findBuilding, findUnit, readTree } from "@/server/catalog-store";
 import { findUserById, findUserByLogin, isLive, membershipsOf } from "@/server/directory";
-import { createPass } from "@/server/operations";
+import { createPass, recordAudit } from "@/server/operations";
 import { createPerson, createResidentMembership, deleteMembership, listMemberships, listUsers } from "@/server/people-store";
 import { hashPassword } from "@/server/password";
 import { can, objectsInScope, unitFor, unitInScope, type StaffActor } from "@/server/rbac/decide";
@@ -170,6 +170,17 @@ export function addResident(
     expiresAt,
     passId: pass?.id ?? null,
   });
+  recordAudit({
+    actorUserId: actor.userId,
+    companyId: actor.companyId,
+    objectId: unit.objectId,
+    buildingId: unit.buildingId,
+    unitId: unit.id,
+    action: "RESIDENT_ADD",
+    targetType: "membership",
+    targetId: membership.id,
+    target: `${name} · ${roleLabel[role] ?? "Житель"} · ${unit.name}`,
+  });
   return { ok: true, value: { membershipId: membership.id, existed: Boolean(existing) } };
 }
 
@@ -184,5 +195,16 @@ export function removeResident(actor: StaffActor, membershipId: string): Success
   const user = findUserById(membership.userId);
   if (!user) return { ok: false, status: 404, message: "Житель не найден" };
   deleteMembership(membershipId);
+  recordAudit({
+    actorUserId: actor.userId,
+    companyId: actor.companyId,
+    objectId: unit.value.objectId,
+    buildingId: unit.value.buildingId,
+    unitId: unit.value.id,
+    action: "RESIDENT_REMOVE",
+    targetType: "membership",
+    targetId: membershipId,
+    target: `${user.name} · ${roleLabel[membership.role] ?? "Житель"} · ${unit.value.name}`,
+  });
   return { ok: true, value: { id: membershipId } };
 }

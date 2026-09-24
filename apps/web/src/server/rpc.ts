@@ -1,11 +1,12 @@
+import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 import { readSession } from "@/server/session";
-import { rpcWith } from "@/server/rpc-wire";
+import { clientFrom, rpcWith } from "@/server/rpc-wire";
 
 export { rpcWith } from "@/server/rpc-wire";
 
 export async function rpc<T = unknown>(method: string, input?: unknown): Promise<{ status: number; body: T }> {
-  return rpcWith<T>(await readSession(), method, input);
+  return rpcWith<T>(await readSession(), method, input, clientFrom(await headers()));
 }
 
 export async function jsonRpc(method: string, input?: unknown): Promise<NextResponse> {

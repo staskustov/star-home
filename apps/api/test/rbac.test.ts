@@ -3,7 +3,12 @@ import { before, describe, it } from "node:test";
 import { bindStore } from "../../web/src/server/store-bind";
 
 type Reply = { status: number; body: unknown };
-type Rpc = (method: string, input: unknown, session: { userId: string; membershipId: string | null; sv?: number } | null) => Promise<Reply>;
+type Rpc = (
+  method: string,
+  input: unknown,
+  session: { userId: string; membershipId: string | null; sv?: number } | null,
+  client?: { ip: string | null; device: string | null },
+) => Promise<Reply>;
 
 const memory = new Map<string, unknown>();
 bindStore({
@@ -540,28 +545,178 @@ describe("team with buildings", () => {
   });
 });
 
-describe("security audit", () => {
-  it("shows the guard only access and security records", async () => {
+describe("audit log", () => {
+  type Row = { id: string; action: string; result: string; role: string | null; ip: string | null; device: string | null; place: string; changes: { field: string }[] };
+  type Board = { entries: Row[]; total: number; canExport: boolean; options: { categories: { value: string }[] } };
+  const office = { ip: "203.0.113.7", device: "Chrome · macOS" };
+  const store = () => import("../../web/src/server/audit-store");
+  const latest = async (action: string) => (await store()).listAudit().find((entry) => entry.action === action);
+
+  it("moves the old records in once and keeps them", async () => {
     const ops = await import("../../web/src/server/ops-store");
     const file = ops.readOps();
-    const entry = (id: string, action: string) => ({
-      id,
-      actorUserId: "usr_admin",
-      companyId: "cmp_star",
-      objectId: "obj_siyanie",
-      action,
-      target: "Тест",
-      result: "SUCCESS" as const,
-      error: "",
-      at: "24.09 10:00",
-    });
-    ops.writeOps({ ...file, audit: [...file.audit, entry("aud_gate_test", "OPEN_GATE"), entry("aud_team_test", "TEAM_ADD"), entry("aud_pay_test", "PAY_INVOICE")] });
+    const old = { id: "aud_legacy_test", actorUserId: "usr_admin", companyId: "cmp_star", objectId: "obj_siyanie", action: "OPEN_GATE", target: "Старая запись", result: "SUCCESS" as const, error: "", at: "24.09 10:00" };
+    ops.writeOps({ ...file, audit: [...file.audit, old] });
+    memory.delete("audit");
+    delete (globalThis as { __starHomeAudit?: unknown }).__starHomeAudit;
+    const audit = await store();
+    assert.equal(audit.listAudit().filter((entry) => entry.id === old.id).length, 1);
+    const legacy = audit.listAudit().filter((entry) => entry.targetType === "legacy");
+    assert.ok(legacy.length > 0);
+    assert.ok(legacy.every((entry) => !Number.isNaN(Date.parse(entry.at))));
+    assert.equal(legacy.find((entry) => entry.id === old.id)?.category, "ACCESS");
+    assert.ok(ops.readOps().audit.every((entry) => audit.listAudit().some((record) => record.id === entry.id)));
+  });
+
+  it("writes who, role, place, ip and device for critical actions", async () => {
+    assert.equal((await rpc("openObjectGate", { objectId: "obj_siyanie" }, admin, office)).status, 200);
+    const gate = await latest("OPEN_GATE");
+    assert.equal(gate?.actorUserId, "usr_admin");
+    assert.equal(gate?.actorRole, "COMPANY_ADMIN");
+    assert.equal(gate?.membershipId, "mem_admin");
+    assert.equal(gate?.objectId, "obj_siyanie");
+    assert.equal(gate?.category, "ACCESS");
+    assert.equal(gate?.ip, office.ip);
+    assert.equal(gate?.device, office.device);
+
+    const created = await rpc("createBuilding", { objectId: "obj_park", name: "Корпус аудита" }, admin, office);
+    assert.equal(created.status, 201);
+    const buildingId = (created.body as { id: string }).id;
+    assert.equal((await latest("BUILDING_CREATE"))?.targetId, buildingId);
+    assert.equal((await rpc("removeBuilding", { buildingId }, admin, office)).status, 200);
+    assert.equal((await latest("BUILDING_DELETE"))?.category, "DATA");
+
+    const settings = (await rpc("settings", null, admin)).body as { objects: { objectId: string; modes: { mode: string; label: string; summary: string; detail: string; climate: string; lighting: string; security: string; notifications: string; checks: string[] }[] }[] };
+    const mode = settings.objects.find((object) => object.objectId === "obj_siyanie")?.modes[0];
+    assert.ok(mode);
+    assert.equal((await rpc("saveMode", { objectId: "obj_siyanie", setting: { ...mode, summary: `${mode.summary} ·` } }, admin, office)).status, 200);
+    const saved = await latest("MODE_SETTINGS");
+    assert.equal(saved?.category, "SETTINGS");
+    assert.deepEqual(saved?.changes?.map((change) => change.field), ["Статус"]);
+    assert.equal((await rpc("saveMode", { objectId: "obj_siyanie", setting: mode }, admin, office)).status, 200);
+
+    assert.equal((await rpc("switchMode", { mode: "HOME" }, resident, office)).status, 200);
+    const switched = await latest("MODE_SWITCH");
+    assert.equal(switched?.unitId, "unit_24");
+    assert.equal(switched?.actorRole, "RESIDENT");
+  });
+
+  it("writes refusals on guarded methods without trusting foreign ids", async () => {
+    assert.equal((await rpc("rolesSave", { role: "MANAGER", permissions: [] }, manager, office)).status, 403);
+    const denied = await latest("ROLES_EDIT");
+    assert.equal(denied?.result, "DENIED");
+    assert.equal(denied?.actorUserId, "usr_manager");
+    assert.equal(denied?.companyId, "cmp_star");
+    assert.equal(denied?.ip, office.ip);
+    assert.equal((await rpc("removeObject", { objectId: "obj_park" }, objectAdmin, office)).status, 403);
+    assert.equal((await latest("OBJECT_DELETE"))?.result, "DENIED");
+  });
+
+  it("records sign-ins and failed attempts for known users only", async () => {
+    const audit = await store();
+    const before = audit.listAudit().length;
+    assert.equal((await rpc("login", { login: "nobody.here", password: "wrong" }, null, office)).status, 401);
+    assert.equal(audit.listAudit().length, before);
+    assert.equal((await rpc("login", { login: "manager", password: "wrong-password" }, null, office)).status, 401);
+    const failed = await latest("LOGIN_FAILED");
+    assert.equal(failed?.actorUserId, "usr_manager");
+    assert.equal(failed?.result, "DENIED");
+    assert.equal(failed?.category, "AUTH");
+    assert.equal((await rpc("login", { login: "manager", password: "admin" }, null, office)).status, 200);
+    const signed = await latest("LOGIN");
+    assert.equal(signed?.actorUserId, "usr_manager");
+    assert.equal(signed?.device, office.device);
+  });
+
+  it("serves the log only with audit.view and by scope", async () => {
+    assert.equal((await rpc("audit", null, manager)).status, 403);
+    assert.equal((await rpc("audit", null, resident)).status, 403);
+    const audit = await store();
+    const company = audit.appendAudit({ actorUserId: "usr_admin", companyId: "cmp_star", objectId: null, action: "ROLES_EDIT", targetType: "role", target: "Тест компании" });
+    const park = audit.appendAudit({ actorUserId: "usr_admin", companyId: "cmp_star", objectId: "obj_park", action: "OPEN_GATE", target: "Тест парка" });
+    const pay = audit.appendAudit({ actorUserId: "usr_admin", companyId: "cmp_star", objectId: "obj_siyanie", action: "PAY_INVOICE", target: "Тест оплаты" });
+    const gate = audit.appendAudit({ actorUserId: "usr_admin", companyId: "cmp_star", objectId: "obj_siyanie", action: "OPEN_GATE", target: "Тест ворот" });
+    const foreign = audit.appendAudit({ actorUserId: "usr_other", companyId: "cmp_other", objectId: "obj_siyanie", action: "OPEN_GATE", target: "Чужая компания" });
+    const ids = async (session: typeof admin, input: unknown = { limit: 500 }) => ((await rpc("audit", input, session)).body as Board).entries.map((row) => row.id);
+
+    const chief = await ids(admin);
+    assert.ok([company.id, park.id, pay.id, gate.id].every((id) => chief.includes(id)));
+    assert.ok(!chief.includes(foreign.id));
+
+    const local = await ids(objectAdmin);
+    assert.ok(local.includes(pay.id) && local.includes(gate.id));
+    assert.ok(!local.includes(company.id), "company-level records stay with company admins");
+    assert.ok(!local.includes(park.id) && !local.includes(foreign.id));
+
+    const guard = await ids(security);
+    assert.ok(guard.includes(gate.id));
+    assert.ok(!guard.includes(pay.id) && !guard.includes(company.id));
+    const guardBoard = (await rpc("audit", null, security)).body as Board;
+    assert.deepEqual(
+      guardBoard.options.categories.map((item) => item.value),
+      ["ACCESS", "SECURITY"],
+    );
+
+    const onlyFinance = await ids(admin, { category: "FINANCE", limit: 500 });
+    assert.ok(onlyFinance.includes(pay.id) && !onlyFinance.includes(gate.id));
+    const forged = await ids(objectAdmin, { objectId: "obj_park", limit: 500 });
+    assert.ok(!forged.includes(park.id), "a foreign object filter is ignored, scope still applies");
+  });
+
+  it("shows a building guard only its building and shared object records", async () => {
+    const people = await import("../../web/src/server/people-store");
+    const catalog = await import("../../web/src/server/catalog-store");
+    const audit = await store();
+    const guard = people.createStaffMembership({ userId: "usr_security", companyId: "cmp_star", role: "SECURITY", objectId: "obj_park", buildingId: "bld_2", createdBy: "test" });
+    const session = { userId: "usr_security", membershipId: guard.id };
+    const [near] = catalog.unitIdsOfBuilding("bld_2");
+    const [far] = catalog.unitIdsOfBuilding("bld_park_1");
+    assert.ok(near && far);
+    const entry = (target: string, extra: { unitId?: string; buildingId?: string; action?: string }) =>
+      audit.appendAudit({ actorUserId: "usr_admin", companyId: "cmp_star", objectId: "obj_park", action: extra.action ?? "OPEN_GATE", target, unitId: extra.unitId, buildingId: extra.buildingId });
+    const own = entry("Свой корпус", { unitId: near });
+    const other = entry("Другой корпус", { unitId: far });
+    const otherBuilding = entry("Другой корпус без квартиры", { buildingId: "bld_park_1" });
+    const shared = entry("Общий въезд", {});
+    const alarm = entry("Общая тревога", { action: "RAISE_ALARM" });
+    const rows = ((await rpc("audit", { limit: 500 }, session)).body as Board).entries.map((row) => row.id);
+    assert.ok(rows.includes(own.id) && rows.includes(shared.id) && rows.includes(alarm.id));
+    assert.ok(!rows.includes(other.id) && !rows.includes(otherBuilding.id));
+    people.updateMembership(guard.id, { status: "REVOKED" });
+  });
+
+  it("keeps the dashboard and security desk on the same rules", async () => {
+    const audit = await store();
+    const gate = audit.appendAudit({ actorUserId: "usr_admin", companyId: "cmp_star", objectId: "obj_siyanie", action: "OPEN_GATE", target: "Тест охраны" });
+    const team = audit.appendAudit({ actorUserId: "usr_admin", companyId: "cmp_star", objectId: "obj_siyanie", action: "TEAM_ADD", target: "Тест команды" });
     const guard = (((await rpc("desk", { section: "security" }, security)).body as Rows).audit ?? []).map((row) => row.id);
     const chief = (((await rpc("desk", { section: "security" }, admin)).body as Rows).audit ?? []).map((row) => row.id);
-    assert.ok(guard.includes("aud_gate_test"));
-    assert.ok(!guard.includes("aud_team_test") && !guard.includes("aud_pay_test"));
-    assert.ok(chief.includes("aud_team_test") && chief.includes("aud_pay_test"));
-    ops.writeOps(file);
+    assert.ok(guard.includes(gate.id) && !guard.includes(team.id));
+    assert.ok(chief.includes(team.id));
+    const feed = ((await rpc("dashboard", null, objectAdmin)).body as Dashboard).objects[0]?.feed?.map((item) => item.id) ?? [];
+    assert.ok(feed.includes(team.id));
+  });
+
+  it("exports only with audit.export and records the export", async () => {
+    assert.equal((await rpc("auditExport", null, security, office)).status, 403);
+    assert.equal((await latest("AUDIT_EXPORT"))?.result, "DENIED");
+    assert.equal(((await rpc("audit", null, security)).body as Board).canExport, false);
+    const reply = await rpc("auditExport", { category: "ACCESS" }, admin, office);
+    assert.equal(reply.status, 200);
+    const csv = (reply.body as { csv: string }).csv;
+    assert.ok(csv.startsWith("\ufeff\"Время\""));
+    assert.ok(csv.includes("Открытие ворот"));
+    assert.ok(!csv.includes("\"Оплата\""));
+    const exported = await latest("AUDIT_EXPORT");
+    assert.equal(exported?.result, "SUCCESS");
+    assert.equal(exported?.actorUserId, "usr_admin");
+  });
+
+  it("neutralises spreadsheet formulas in the export", async () => {
+    const audit = await store();
+    audit.appendAudit({ actorUserId: "usr_admin", companyId: "cmp_star", objectId: "obj_siyanie", action: "OPEN_GATE", target: "=HYPERLINK(\"x\")" });
+    const csv = ((await rpc("auditExport", { category: "ACCESS" }, admin)).body as { csv: string }).csv;
+    assert.ok(csv.includes("\"'=HYPERLINK(\"\"x\"\")\""));
   });
 });
 

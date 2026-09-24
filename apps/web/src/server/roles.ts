@@ -76,11 +76,15 @@ export function saveRole(actor: StaffActor, input: { role?: unknown; permissions
   recordAudit({
     actorUserId: actor.userId,
     companyId: actor.companyId,
-    objectId: "",
+    objectId: null,
     action: "ROLES_EDIT",
+    targetType: "role",
+    targetId: role,
     target: `${roleLabels[role]} · ${standard ? "стандартные права" : `${chosen.size} из ${ceiling.size}`} · ${change}`,
-    result: "SUCCESS",
-    error: "",
+    changes: [
+      ...added.map((permission) => ({ field: permission, from: "нет", to: "есть" })),
+      ...removed.map((permission) => ({ field: permission, from: "есть", to: "нет" })),
+    ],
   });
   return { ok: true, value: { role, granted: sorted(chosen) } };
 }

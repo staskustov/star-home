@@ -1,4 +1,6 @@
 import { findMembership } from "@/server/directory";
+import type { AuditChange } from "@/server/audit-store";
+import { recordAudit } from "@/server/operations";
 import {
   isLifeMode,
   knownChecks,
@@ -29,6 +31,16 @@ export function switchModeFor(session: { userId: string; membershipId: string | 
   }
   if (!isLifeMode(mode)) return { ok: false, status: 400, message: "Неизвестный режим" };
   setUnitMode(membership.unitId, mode);
+  recordAudit({
+    actorUserId: session.userId,
+    companyId: membership.companyId,
+    objectId: membership.objectId,
+    unitId: membership.unitId,
+    action: "MODE_SWITCH",
+    targetType: "unit",
+    targetId: membership.unitId,
+    target: mode === "HOME" ? "Дома" : mode === "WORK" ? "На работе" : "В отпуске",
+  });
   return { ok: true, value: { mode } };
 }
 
@@ -57,17 +69,25 @@ export function saveModeFor(
   if (typeof security !== "string") return security;
   const notifications = text(input.setting.notifications, "Введите уведомления");
   if (typeof notifications !== "string") return notifications;
-  updateModeSetting(object.id, {
-    ...current,
-    label,
-    summary,
-    detail,
-    climate,
-    lighting,
-    security,
-    notifications,
-    checks: knownChecks(input.setting.checks),
-  });
+  const next = { ...current, label, summary, detail, climate, lighting, security, notifications, checks: knownChecks(input.setting.checks) };
+  updateModeSetting(object.id, next);
+  const fields = { label: "Название", summary: "Статус", detail: "Описание", climate: "Климат", lighting: "Свет", security: "Охрана", notifications: "Уведомления" } as const;
+  const changes: AuditChange[] = (Object.keys(fields) as (keyof typeof fields)[])
+    .filter((field) => current[field] !== next[field])
+    .map((field) => ({ field: fields[field], from: current[field], to: next[field] }));
+  if (JSON.stringify(current.checks) !== JSON.stringify(next.checks)) changes.push({ field: "Проверки", from: current.checks.join(", "), to: next.checks.join(", ") });
+  if (changes.length) {
+    recordAudit({
+      actorUserId: actor.userId,
+      companyId: actor.companyId,
+      objectId: object.id,
+      action: "MODE_SETTINGS",
+      targetType: "mode",
+      targetId: current.mode,
+      target: `${object.name} · ${label}`,
+      changes,
+    });
+  }
   return { ok: true, value: { mode: current.mode } };
 }
 

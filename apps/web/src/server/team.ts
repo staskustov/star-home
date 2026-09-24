@@ -155,8 +155,17 @@ function cleanPhone(value: unknown): Success<string> | Failure {
   return { ok: true, value: phone };
 }
 
-function audit(actor: StaffActor, action: string, place: Place, target: string, result: "SUCCESS" | "ERROR" = "SUCCESS", error = ""): void {
-  recordAudit({ actorUserId: actor.userId, companyId: actor.companyId, objectId: place.objectId ?? "", action, target, result, error });
+function audit(actor: StaffActor, action: string, place: Place, membershipId: string, target: string): void {
+  recordAudit({
+    actorUserId: actor.userId,
+    companyId: actor.companyId,
+    objectId: place.objectId,
+    buildingId: place.buildingId,
+    action,
+    targetType: "membership",
+    targetId: membershipId,
+    target,
+  });
 }
 
 function loginLabel(at: string | null): string {
@@ -276,7 +285,7 @@ export function addMember(
     buildingId: place.value.buildingId,
     createdBy: actor.userId,
   });
-  audit(actor, "TEAM_ADD", place.value, describe(user, role.value, place.value));
+  audit(actor, "TEAM_ADD", place.value, membership.id, describe(user, role.value, place.value));
   return { ok: true, value: { membershipId: membership.id, existed: Boolean(existing) } };
 }
 
@@ -291,7 +300,7 @@ export function editMember(actor: StaffActor, input: { membershipId?: unknown; n
   const phone = cleanPhone(input.phone);
   if (!phone.ok) return phone;
   updateUser(target.value.user.id, { name: name.value, email: email.value, phone: phone.value });
-  audit(actor, "TEAM_EDIT", placeOf(target.value.membership), name.value);
+  audit(actor, "TEAM_EDIT", placeOf(target.value.membership), target.value.membership.id, name.value);
   return { ok: true, value: { id: target.value.membership.id } };
 }
 
@@ -317,7 +326,7 @@ export function changeAccess(
   const before = describe(user, membership.role, placeOf(membership));
   updateMembership(membership.id, { role: role.value, objectId: place.value.objectId, buildingId: place.value.buildingId });
   endSessions(user.id);
-  audit(actor, roleChanged ? "TEAM_ROLE" : "TEAM_SCOPE", place.value, `${before} → ${roleLabels[role.value]} · ${placeLabel(place.value)}`);
+  audit(actor, roleChanged ? "TEAM_ROLE" : "TEAM_SCOPE", place.value, membership.id, `${before} → ${roleLabels[role.value]} · ${placeLabel(place.value)}`);
   return { ok: true, value: { id: membership.id } };
 }
 
@@ -335,7 +344,7 @@ export function setMemberBlocked(actor: StaffActor, input: { membershipId?: unkn
   }
   updateUser(user.id, { status: blocked ? "BLOCKED" : "ACTIVE" });
   if (blocked) endSessions(user.id);
-  audit(actor, blocked ? "TEAM_BLOCK" : "TEAM_RESTORE", placeOf(membership), describe(user, membership.role, placeOf(membership)));
+  audit(actor, blocked ? "TEAM_BLOCK" : "TEAM_RESTORE", placeOf(membership), membership.id, describe(user, membership.role, placeOf(membership)));
   return { ok: true, value: { id: membership.id } };
 }
 
@@ -349,6 +358,6 @@ export function removeMember(actor: StaffActor, input: { membershipId?: unknown 
   }
   updateMembership(membership.id, { status: "REVOKED", revokedAt: new Date().toISOString(), revokedBy: actor.userId });
   endSessions(user.id);
-  audit(actor, "TEAM_REMOVE", placeOf(membership), describe(user, membership.role, placeOf(membership)));
+  audit(actor, "TEAM_REMOVE", placeOf(membership), membership.id, describe(user, membership.role, placeOf(membership)));
   return { ok: true, value: { id: membership.id } };
 }

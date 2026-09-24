@@ -1,53 +1,13 @@
 import { formatHumidity, formatTemperature } from "@/lib/format";
 import { findUnit } from "@/server/catalog-store";
 import { deviceLabel, isOpener } from "@/server/device-kinds";
-import { findUserById } from "@/server/directory";
-import { readOps, type AuditEntry } from "@/server/ops-store";
+import { listAudit } from "@/server/audit-store";
+import { auditRow, auditVisible, shortTime } from "@/server/audit-view";
+import { readOps } from "@/server/ops-store";
 import { can, reaches, type Scoped, type StaffActor } from "@/server/rbac/decide";
 import type { Permission } from "@/server/rbac/permissions";
-import { auditCategoriesOf, type AuditCategory } from "@/server/rbac/policy";
 
-export const auditActionLabels: Record<string, string> = {
-  OPEN_GATE: "Открытие ворот",
-  CREATE_PASS: "Пропуск",
-  CREATE_REQUEST: "Заявка",
-  UPDATE_REQUEST: "Статус заявки",
-  PAY_INVOICE: "Оплата",
-  RAISE_ALARM: "Вызов охраны",
-  TEAM_ADD: "Новый сотрудник",
-  TEAM_EDIT: "Данные сотрудника",
-  TEAM_ROLE: "Смена роли",
-  TEAM_SCOPE: "Смена объекта",
-  TEAM_BLOCK: "Блокировка",
-  TEAM_RESTORE: "Восстановление доступа",
-  TEAM_REMOVE: "Отзыв доступа",
-  ROLES_EDIT: "Права роли",
-};
-
-const auditActionCategories: Record<string, AuditCategory> = {
-  OPEN_GATE: "ACCESS",
-  CREATE_PASS: "ACCESS",
-  CREATE_REQUEST: "SERVICE",
-  UPDATE_REQUEST: "SERVICE",
-  PAY_INVOICE: "FINANCE",
-  RAISE_ALARM: "SECURITY",
-  TEAM_ADD: "RBAC",
-  TEAM_EDIT: "RBAC",
-  TEAM_ROLE: "RBAC",
-  TEAM_SCOPE: "RBAC",
-  TEAM_BLOCK: "RBAC",
-  TEAM_RESTORE: "RBAC",
-  TEAM_REMOVE: "RBAC",
-  ROLES_EDIT: "RBAC",
-};
-
-export function auditVisible(actor: StaffActor, entry: AuditEntry): boolean {
-  if (!can(actor, "audit.view") || !reaches(actor, entry)) return false;
-  const allowed = auditCategoriesOf(actor.role);
-  if (!allowed) return true;
-  const category = auditActionCategories[entry.action];
-  return Boolean(category) && allowed.has(category as AuditCategory);
-}
+const deskAuditLimit = 100;
 
 function unitName(unitId: string | null): string {
   if (!unitId) return "Объект";
@@ -161,16 +121,13 @@ export function deskFor(actor: StaffActor, section: DeskSection) {
             .map((device) => ({ objectId: device.objectId, name: device.name, state: deviceState(device, file.readings) }))
         : [],
       audit: can(actor, "audit.view")
-        ? file.audit.filter((entry) => auditVisible(actor, entry)).map((entry) => ({
-            id: entry.id,
-            objectId: entry.objectId,
-            actor: findUserById(entry.actorUserId)?.name ?? "Сотрудник",
-            action: auditActionLabels[entry.action] ?? entry.action,
-            target: entry.target,
-            result: entry.result,
-            error: entry.error,
-            at: entry.at,
-          }))
+        ? listAudit()
+            .filter((entry) => auditVisible(actor, entry))
+            .slice(0, deskAuditLimit)
+            .map((entry) => {
+              const row = auditRow(entry);
+              return { id: row.id, objectId: entry.objectId ?? "", actor: row.actor, action: row.action, target: row.target, result: row.result, error: row.reason, at: shortTime(entry.at) };
+            })
         : [],
     };
   }

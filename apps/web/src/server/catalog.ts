@@ -13,7 +13,9 @@ import {
   unitIdsOfBuilding,
   updateCatalogObject,
 } from "@/server/catalog-store";
+import type { AuditInput } from "@/server/audit-store";
 import { buildingHasStaff, objectHasAssignments, unitHasAssignment } from "@/server/directory";
+import { recordAudit } from "@/server/operations";
 import { can, companyWide, objectFor, unitFor, wholeObject, type StaffActor } from "@/server/rbac/decide";
 import type { Permission } from "@/server/rbac/permissions";
 import type { CatalogTree, CatalogUnitNode } from "@/types/catalog";
@@ -39,6 +41,10 @@ function cleanAddress(value: unknown): string | Failure {
 }
 
 const denied: Failure = { ok: false, status: 403, message: "Нет доступа" };
+
+function note(actor: StaffActor, action: string, entry: Omit<AuditInput, "actorUserId" | "companyId" | "action">): void {
+  recordAudit({ actorUserId: actor.userId, companyId: actor.companyId, action, ...entry });
+}
 
 function ownObject(
   actor: StaffActor,
@@ -107,6 +113,7 @@ export function createObject(
     type: input.type as ObjectType,
     address,
   });
+  note(actor, "OBJECT_CREATE", { objectId: created.id, targetType: "object", targetId: created.id, target: name });
   return { ok: true, value: { id: created.id } };
 }
 
@@ -121,7 +128,12 @@ export function updateObject(
   if (typeof name !== "string") return name;
   const address = cleanAddress(input.address);
   if (typeof address !== "string") return address;
+  const changes = [
+    ...(owned.value.name !== name ? [{ field: "Название", from: owned.value.name, to: name }] : []),
+    ...(owned.value.address !== address ? [{ field: "Адрес", from: owned.value.address, to: address }] : []),
+  ];
   updateCatalogObject(objectId, { name, address });
+  if (changes.length) note(actor, "OBJECT_EDIT", { objectId, targetType: "object", targetId: objectId, target: name, changes });
   return { ok: true, value: { id: objectId } };
 }
 
@@ -132,6 +144,7 @@ export function removeObject(actor: StaffActor, objectId: string): Success<{ id:
     return { ok: false, status: 409, message: "Сначала уберите доступ людей к этому объекту." };
   }
   deleteCatalogObject(objectId);
+  note(actor, "OBJECT_DELETE", { objectId, targetType: "object", targetId: objectId, target: owned.value.name });
   return { ok: true, value: { id: objectId } };
 }
 
@@ -144,6 +157,7 @@ export function createBuilding(actor: StaffActor, objectId: string, name: unknow
   const title = cleanText(name, "Введите название");
   if (typeof title !== "string") return title;
   const building = createCatalogBuilding(objectId, title);
+  note(actor, "BUILDING_CREATE", { objectId, buildingId: building.id, targetType: "building", targetId: building.id, target: `${owned.value.name} · ${title}` });
   return { ok: true, value: { id: building.id } };
 }
 
@@ -156,7 +170,9 @@ export function removeBuilding(actor: StaffActor, buildingId: string): Success<{
     return { ok: false, status: 409, message: "В корпусе есть занятые единицы." };
   }
   if (buildingHasStaff(buildingId)) return { ok: false, status: 409, message: "За корпусом закреплены сотрудники." };
+  const title = findBuilding(buildingId)?.name ?? "Корпус";
   deleteCatalogBuilding(buildingId);
+  note(actor, "BUILDING_DELETE", { objectId: owned.value.id, buildingId, targetType: "building", targetId: buildingId, target: `${owned.value.name} · ${title}` });
   return { ok: true, value: { id: buildingId } };
 }
 
@@ -188,6 +204,7 @@ export function createUnit(
     name: title,
     type: owned.value.type,
   });
+  note(actor, "UNIT_CREATE", { objectId, buildingId: unit.buildingId, unitId: unit.id, targetType: "unit", targetId: unit.id, target: `${owned.value.name} · ${title}` });
   return { ok: true, value: { id: unit.id } };
 }
 
@@ -199,6 +216,14 @@ export function removeUnit(actor: StaffActor, unitId: string): Success<{ id: str
     return { ok: false, status: 409, message: "Эта единица уже закреплена за человеком." };
   }
   deleteCatalogUnit(unitId);
+  note(actor, "UNIT_DELETE", {
+    objectId: unit.value.objectId,
+    buildingId: unit.value.buildingId,
+    unitId,
+    targetType: "unit",
+    targetId: unitId,
+    target: `${findObject(unit.value.objectId)?.name ?? "Объект"} · ${unit.value.name}`,
+  });
   return { ok: true, value: { id: unitId } };
 }
 
