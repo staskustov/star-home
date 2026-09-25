@@ -4,7 +4,7 @@ import { execFileSync, spawn } from "child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import net from "net";
 import path from "path";
-import { Body, Controller, Module, Post, Req, Res } from "@nestjs/common";
+import { Body, Controller, Get, Module, Post, Req, Res } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import type { RawBodyRequest } from "@nestjs/common";
 import type { Request, Response } from "express";
@@ -19,7 +19,8 @@ import { bindFiles, bindLive, bindPush, bindStore, storesFlushed } from "../../w
 import { freshRpc, internalSecret } from "../../web/src/server/internal-secret";
 import { bindLoginLimit } from "../../web/src/server/login-limit";
 
-const port = 3457;
+const port = Number(process.env.PORT ?? 3457);
+const host = process.env.HOST ?? "127.0.0.1";
 const pgPort = 54329;
 const dataDir = path.join(process.cwd(), ".data");
 const secret = internalSecret;
@@ -42,6 +43,11 @@ function modelReply(prompt: string): { tool: string | null; query: string | null
 
 @Controller()
 class GatewayController {
+  @Get("health")
+  health(@Res() res: Response): void {
+    res.status(handle ? 200 : 503).json({ ok: Boolean(handle) });
+  }
+
   @Post("rpc")
   rpc(@Req() req: RawBodyRequest<Request>, @Res() res: Response): Promise<void> {
     return signed(null, req, res);
@@ -199,8 +205,71 @@ function readLiveToken(token: string): { objectId: string } | null {
   return { objectId: payload.objectId };
 }
 
-async function startRedis(): Promise<string> {
+type Bus = {
+  get(key: string): Promise<string | null>;
+  incr(key: string): Promise<number>;
+  del(key: string): Promise<void>;
+  pexpire(key: string, ms: number): Promise<void>;
+  publish(message: string): void;
+  onMessage(listener: (message: string) => void): void;
+};
+
+async function redisBus(url: string): Promise<Bus> {
+  const redis = new Redis(url);
+  const subscriber = new Redis(url);
+  await subscriber.subscribe("star-live");
+  return {
+    get: (key) => redis.get(key),
+    incr: (key) => redis.incr(key),
+    del: async (key) => {
+      await redis.del(key);
+    },
+    pexpire: async (key, ms) => {
+      await redis.pexpire(key, ms);
+    },
+    publish: (message) => void redis.publish("star-live", message),
+    onMessage: (listener) => subscriber.on("message", (_channel, message) => listener(message)),
+  };
+}
+
+function memoryBus(): Bus {
+  const values = new Map<string, { value: number; until: number }>();
+  const listeners: ((message: string) => void)[] = [];
+  const read = (key: string) => {
+    const entry = values.get(key);
+    if (entry && entry.until <= Date.now()) values.delete(key);
+    return values.get(key);
+  };
+  return {
+    get: async (key) => {
+      const entry = read(key);
+      return entry ? String(entry.value) : null;
+    },
+    incr: async (key) => {
+      const entry = read(key) ?? { value: 0, until: Number.POSITIVE_INFINITY };
+      entry.value += 1;
+      values.set(key, entry);
+      return entry.value;
+    },
+    del: async (key) => {
+      values.delete(key);
+    },
+    pexpire: async (key, ms) => {
+      const entry = read(key);
+      if (entry) entry.until = Date.now() + ms;
+    },
+    publish: (message) => {
+      for (const listener of listeners) listener(message);
+    },
+    onMessage: (listener) => {
+      listeners.push(listener);
+    },
+  };
+}
+
+async function startRedis(): Promise<string | null> {
   if (process.env.REDIS_URL) return process.env.REDIS_URL;
+  if (process.env.NODE_ENV === "production") return null;
   const probe = new Redis("redis://127.0.0.1:6379", { connectTimeout: 300, maxRetriesPerRequest: 1, lazyConnect: true, retryStrategy: () => null });
   try {
     await probe.connect();
@@ -270,6 +339,10 @@ async function pushSchema(databaseUrl: string): Promise<void> {
 }
 
 function vapid(): { publicKey: string; privateKey: string } {
+  if (process.env.STAR_HOME_VAPID_PUBLIC && process.env.STAR_HOME_VAPID_PRIVATE) {
+    return { publicKey: process.env.STAR_HOME_VAPID_PUBLIC, privateKey: process.env.STAR_HOME_VAPID_PRIVATE };
+  }
+  mkdirSync(dataDir, { recursive: true });
   const file = path.join(dataDir, "vapid.json");
   if (existsSync(file)) return JSON.parse(readFileSync(file, "utf8")) as { publicKey: string; privateKey: string };
   const keys = webpush.generateVAPIDKeys();
@@ -285,9 +358,7 @@ async function main(): Promise<void> {
   await prisma.$connect();
 
   const redisUrl = await startRedis();
-  const redis = new Redis(redisUrl);
-  const subscriber = new Redis(redisUrl);
-  await subscriber.subscribe("star-live");
+  const bus = redisUrl ? await redisBus(redisUrl) : memoryBus();
 
   const memory = new Map<string, unknown>();
   const rows = await prisma.snapshot.findMany();
@@ -310,21 +381,21 @@ async function main(): Promise<void> {
 
   bindLoginLimit(async (action, login) => {
     const key = `login:${login.toLowerCase()}`;
-    if (action === "check") return Number((await redis.get(key)) ?? 0) >= 8;
+    if (action === "check") return Number((await bus.get(key)) ?? 0) >= 8;
     if (action === "clear") {
-      await redis.del(key);
+      await bus.del(key);
       return false;
     }
-    const count = await redis.incr(key);
-    if (count === 1) await redis.pexpire(key, 10 * 60 * 1000);
+    const count = await bus.incr(key);
+    if (count === 1) await bus.pexpire(key, 10 * 60 * 1000);
     return count >= 8;
   });
 
   const clients = new Set<LiveClient>();
   bindLive((event) => {
-    void redis.publish("star-live", JSON.stringify(event));
+    bus.publish(JSON.stringify(event));
   });
-  subscriber.on("message", (_channel, message) => {
+  bus.onMessage((message) => {
     const event = JSON.parse(message) as { objectId?: string };
     const payload = message;
     for (const client of clients) {
@@ -334,7 +405,7 @@ async function main(): Promise<void> {
 
   const keys = vapid();
   process.env.STAR_HOME_VAPID_PUBLIC = keys.publicKey;
-  webpush.setVapidDetails("mailto:star-home@localhost", keys.publicKey, keys.privateKey);
+  webpush.setVapidDetails(process.env.STAR_HOME_VAPID_SUBJECT ?? "mailto:star-home@localhost", keys.publicKey, keys.privateKey);
   const pushRuntime = globalThis as typeof globalThis & {
     __starSavePush?: (row: { userId: string; endpoint: string; p256dh: string; auth: string }) => Promise<void>;
   };
@@ -407,7 +478,7 @@ async function main(): Promise<void> {
   handle = domain.handleRpc;
 
   const app = await NestFactory.create(AppModule, { rawBody: true, logger: ["error", "warn", "log"] });
-  await app.listen(port, "127.0.0.1");
+  await app.listen(port, host);
   const sockets = new WebSocketServer({ server: app.getHttpServer(), path: "/live" });
   sockets.on("connection", (socket, request) => {
     const token = new URL(request.url ?? "", "http://127.0.0.1").searchParams.get("token") ?? "";
