@@ -38,6 +38,7 @@ export type DashboardObject = {
   name: string;
   typeLabel: string;
   address: string;
+  canDelete: boolean;
   status: { tone: DashboardTone; title: string; detail: string };
   attention: DashboardAttention[];
   pulse: DashboardPulse[];
@@ -48,6 +49,8 @@ export type DashboardObject = {
 export type DashboardView = {
   scope: "COMPANY" | "OBJECT";
   canCreateObject: boolean;
+  canEditObject: boolean;
+  canDeleteObject: boolean;
   canEditStructure: boolean;
   objects: DashboardObject[];
 };

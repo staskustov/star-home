@@ -151,8 +151,10 @@ export type AdminObjectSnapshot = {
   companyId: string;
   name: string;
   type: ObjectType;
+  address: string;
   buildings: number | null;
   units: number;
+  canDelete: boolean;
 };
 
 export type NavItem = {

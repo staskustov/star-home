@@ -1,8 +1,8 @@
 import { plural } from "@/lib/format";
 import { objectPresentation } from "@/lib/object-presentation";
-import { findBuilding, findUnit, structureCounts, unitIdsOfBuilding, type CatalogObject } from "@/server/catalog-store";
+import { findBuilding, findUnit, structureCounts, unitIdsOf, unitIdsOfBuilding, type CatalogObject } from "@/server/catalog-store";
 import type { DeviceKind } from "@/server/device-kinds";
-import { findUserById, residentCount } from "@/server/directory";
+import { findUserById, objectHasAssignments, residentCount } from "@/server/directory";
 import { alarmsForObject, devicesForObject, eventsForObject, passesForObject, readOps, requestsForObject, type Device } from "@/server/ops-store";
 import { auditLabel } from "@/server/audit-actions";
 import { listAudit } from "@/server/audit-store";
@@ -211,6 +211,7 @@ function objectDashboard(actor: StaffActor, object: CatalogObject): DashboardObj
     name: object.name,
     typeLabel: [objectPresentation[object.type].label, actor.scope.buildingId ? findBuilding(actor.scope.buildingId)?.name : null].filter(Boolean).join(" · "),
     address: object.address,
+    canDelete: wholeObject(actor) && can(actor, "objects.delete") && !objectHasAssignments(object.id, unitIdsOf(object.id)),
     status: statusFor(actor, attention),
     attention: attention.slice(0, attentionLimit),
     pulse: pulseFor(actor, object),
@@ -223,6 +224,8 @@ export function dashboardFor(actor: StaffActor): DashboardView {
   return {
     scope: actor.scope.kind === "COMPANY" || actor.scope.kind === "PLATFORM" ? "COMPANY" : "OBJECT",
     canCreateObject: can(actor, "objects.create"),
+    canEditObject: can(actor, "objects.edit"),
+    canDeleteObject: can(actor, "objects.delete"),
     canEditStructure: can(actor, "objects.structure.edit"),
     objects: objectsInScope(actor).map((object) => objectDashboard(actor, object)),
   };

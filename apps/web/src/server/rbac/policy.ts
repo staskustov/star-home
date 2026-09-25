@@ -161,6 +161,9 @@ export function householdCan(role: Role, permission: Permission): boolean {
 }
 
 export function lockedOf(role: Role): ReadonlySet<Permission> {
+  if (role === "SUPER_ADMIN" || role === "COMPANY_ADMIN") {
+    return new Set<Permission>(["dashboard.view", "objects.view", "objects.edit", "objects.delete"]);
+  }
   return new Set<Permission>(staffRoles.includes(role) ? ["dashboard.view"] : []);
 }
 

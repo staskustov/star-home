@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { AddObjectButton } from "@/components/admin/ObjectDraftSheet";
+import { DeleteObjectButton, EditObjectButton } from "@/components/admin/ObjectManage";
 import { useAdminPreview } from "@/components/admin/AdminPreview";
 import { Icon } from "@/components/icons";
 import type { DashboardObject, DashboardTone, DashboardView } from "@/types/dashboard";
@@ -171,8 +172,10 @@ function Feed({ object }: { object: DashboardObject }) {
 }
 
 export function AdminDashboard({ view }: { view: DashboardView }) {
-  const { selectedId, select } = useAdminPreview();
+  const { selectedId, select, can } = useAdminPreview();
   const object = view.objects.find((item) => item.id === selectedId) ?? view.objects[0];
+  const canEditObject = view.canEditObject || can("objects.edit");
+  const canDeleteObject = view.canDeleteObject || can("objects.delete");
 
   if (!object) {
     return (
@@ -205,13 +208,15 @@ export function AdminDashboard({ view }: { view: DashboardView }) {
           </p>
           <p className="mt-1.5 pl-5 text-[15px] text-muted first-letter:uppercase">{object.status.detail}</p>
         </div>
-        <div className="flex flex-wrap gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          {canEditObject ? <EditObjectButton object={object} /> : null}
           {view.canEditStructure ? (
             <Link href={`/admin/objects/${object.id}`} className="btn btn-secondary">
               Структура
             </Link>
           ) : null}
           {view.canCreateObject ? <AddObjectButton /> : null}
+          {canDeleteObject ? <DeleteObjectButton objectId={object.id} canDelete={object.canDelete !== false} /> : null}
         </div>
       </header>
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
