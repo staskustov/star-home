@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
 import { deviceLabel, type DeviceKind } from "@/server/device-kinds";
+import { findObject } from "@/server/catalog-store";
 import { boundValue, remember } from "@/server/store-bind";
 import type { AccessEvent } from "@/types/domain";
 import { timeZone } from "@/server/time-zone";
@@ -376,7 +377,8 @@ function normalize(file: OpsFile): OpsFile {
     }
   }
   for (const device of catalogDevices()) {
-    if (!file.devices.some((item) => item.id === device.id)) file.devices.push({ ...device });
+    if (!findObject(device.objectId) || file.devices.some((item) => item.id === device.id)) continue;
+    file.devices.push({ ...device });
   }
   for (const device of file.devices) {
     if (device.work) continue;

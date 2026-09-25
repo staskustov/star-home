@@ -168,24 +168,17 @@ function seed(): Catalog {
 
 function withScale(catalog: Catalog): Catalog {
   const extra = seed();
+  const kept = new Set(catalog.objects.map((object) => object.id));
   let changed = false;
-  for (const object of extra.objects) {
-    if (!catalog.objects.some((item) => item.id === object.id)) {
-      catalog.objects.push(object);
-      changed = true;
-    }
-  }
   for (const building of extra.buildings) {
-    if (!catalog.buildings.some((item) => item.id === building.id)) {
-      catalog.buildings.push(building);
-      changed = true;
-    }
+    if (!kept.has(building.objectId) || catalog.buildings.some((item) => item.id === building.id)) continue;
+    catalog.buildings.push(building);
+    changed = true;
   }
   for (const unit of extra.units) {
-    if (!catalog.units.some((item) => item.id === unit.id)) {
-      catalog.units.push(unit);
-      changed = true;
-    }
+    if (!kept.has(unit.objectId) || catalog.units.some((item) => item.id === unit.id)) continue;
+    catalog.units.push(unit);
+    changed = true;
   }
   if (changed) persist(catalog);
   return catalog;
