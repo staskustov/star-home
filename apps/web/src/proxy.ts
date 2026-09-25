@@ -15,7 +15,7 @@ export async function proxy(request: NextRequest) {
     return NextResponse.json({ message: "Запрос отклонён" }, { status: 403 });
   }
   const session = readSessionToken(request.cookies.get(sessionCookie)?.value);
-  const isPublic = pathname === "/" || pathname === "/forgot-password" || pathname === "/api/auth/login" || pathname === "/offline.html";
+  const isPublic = pathname === "/" || pathname === "/forgot-password" || pathname === "/api/auth/login" || pathname === "/api/auth/logout" || pathname === "/offline.html";
 
   if (!session) {
     if (isPublic) return NextResponse.next();
