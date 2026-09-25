@@ -62,6 +62,14 @@ export function ObjectBuilder({ tree }: { tree: CatalogTree }) {
     if (saved) setBuildingName("");
   }
 
+  async function saveUnit(unitId: string, name: string) {
+    return send(`/api/catalog/units/${unitId}`, "PATCH", { name });
+  }
+
+  async function saveBuilding(buildingId: string, name: string) {
+    return send(`/api/catalog/buildings/${buildingId}`, "PATCH", { name });
+  }
+
   async function remove(url: string) {
     const saved = await send(url, "DELETE");
     if (saved && url.startsWith("/api/catalog/objects/")) router.push("/admin/objects");
@@ -119,6 +127,8 @@ export function ObjectBuilder({ tree }: { tree: CatalogTree }) {
               editable={tree.can.structure}
               pendingDelete={pendingDelete}
               onAsk={setPendingDelete}
+              onSave={saveUnit}
+              onBlocked={() => setError("Эта единица уже закреплена за человеком.")}
               onRemove={(id) => remove(`/api/catalog/units/${id}`)}
             />
             {!query.trim() && tree.units.length > 20 ? (
@@ -141,6 +151,9 @@ export function ObjectBuilder({ tree }: { tree: CatalogTree }) {
                 onAddUnit={(event) => addUnit(event, building.id)}
                 pendingDelete={pendingDelete}
                 onAsk={setPendingDelete}
+                onSaveUnit={saveUnit}
+                onSaveBuilding={saveBuilding}
+                onBlockedUnit={() => setError("Эта единица уже закреплена за человеком.")}
                 onRemoveUnit={(id) => remove(`/api/catalog/units/${id}`)}
                 onRemoveBuilding={() => remove(`/api/catalog/buildings/${building.id}`)}
                 countLabel={plural(building.units.length, presentation.unitForms)}
@@ -257,32 +270,116 @@ function UnitList({
   editable,
   pendingDelete,
   onAsk,
+  onSave,
+  onBlocked,
   onRemove,
 }: {
   units: CatalogUnitNode[];
   editable: boolean;
   pendingDelete: string | null;
   onAsk: (id: string | null) => void;
+  onSave: (id: string, name: string) => Promise<boolean>;
+  onBlocked: () => void;
   onRemove: (id: string) => void;
 }) {
   if (units.length === 0) return <p className="mt-4 text-sm text-muted">Пока пусто.</p>;
   return (
     <ul className="mt-4 divide-y divide-line panel">
       {units.map((unit) => (
-        <li key={unit.id} className="flex items-center justify-between gap-3 px-5 py-3">
-          <span className="min-w-0 truncate text-[15px] text-ink">{unit.name}</span>
-          {editable && unit.canDelete ? (
-            <button
-              type="button"
-              onClick={() => (pendingDelete === unit.id ? onRemove(unit.id) : onAsk(unit.id))}
-              className={`btn btn-compact shrink-0 ${pendingDelete === unit.id ? "btn-danger" : "btn-secondary"}`}
-            >
-              {pendingDelete === unit.id ? "Подтвердить" : "Удалить"}
-            </button>
-          ) : null}
-        </li>
+        <UnitRow
+          key={unit.id}
+          unit={unit}
+          editable={editable}
+          pendingDelete={pendingDelete}
+          onAsk={onAsk}
+          onSave={onSave}
+          onBlocked={onBlocked}
+          onRemove={onRemove}
+        />
       ))}
     </ul>
+  );
+}
+
+function UnitRow({
+  unit,
+  editable,
+  pendingDelete,
+  onAsk,
+  onSave,
+  onBlocked,
+  onRemove,
+}: {
+  unit: CatalogUnitNode;
+  editable: boolean;
+  pendingDelete: string | null;
+  onAsk: (id: string | null) => void;
+  onSave: (id: string, name: string) => Promise<boolean>;
+  onBlocked: () => void;
+  onRemove: (id: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(unit.name);
+
+  function close() {
+    setEditing(false);
+    setName(unit.name);
+  }
+
+  async function save(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const saved = await onSave(unit.id, name);
+    if (saved) setEditing(false);
+  }
+
+  if (editing) {
+    return (
+      <li className="px-5 py-3">
+        <form onSubmit={save} className="flex flex-wrap items-center gap-2">
+          <input value={name} onChange={(event) => setName(event.target.value)} className="control min-w-0 flex-1" />
+          <button type="submit" className="btn btn-primary btn-compact">
+            Сохранить
+          </button>
+          <button type="button" className="btn btn-secondary btn-compact" onClick={close}>
+            Отмена
+          </button>
+        </form>
+      </li>
+    );
+  }
+
+  return (
+    <li className="flex items-center justify-between gap-3 px-5 py-3">
+      <span className="min-w-0 truncate text-[15px] text-ink">{unit.name}</span>
+      {editable ? (
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <button
+            type="button"
+            className="btn btn-secondary btn-compact"
+            onClick={() => {
+              setName(unit.name);
+              setEditing(true);
+            }}
+          >
+            Изменить
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (!unit.canDelete) {
+                onBlocked();
+                return;
+              }
+              if (pendingDelete === unit.id) onRemove(unit.id);
+              else onAsk(unit.id);
+            }}
+            className={`btn btn-compact ${pendingDelete === unit.id ? "btn-danger" : "btn-secondary"}`}
+          >
+            {pendingDelete === unit.id ? "Подтвердить" : "Удалить"}
+          </button>
+        </div>
+      ) : null}
+    </li>
   );
 }
 
@@ -300,6 +397,9 @@ function BuildingBlock({
   onAddUnit,
   pendingDelete,
   onAsk,
+  onSaveUnit,
+  onSaveBuilding,
+  onBlockedUnit,
   onRemoveUnit,
   onRemoveBuilding,
 }: {
@@ -316,21 +416,68 @@ function BuildingBlock({
   onAddUnit: (event: React.FormEvent<HTMLFormElement>) => void;
   pendingDelete: string | null;
   onAsk: (id: string | null) => void;
+  onSaveUnit: (id: string, name: string) => Promise<boolean>;
+  onSaveBuilding: (id: string, name: string) => Promise<boolean>;
+  onBlockedUnit: () => void;
   onRemoveUnit: (id: string) => void;
   onRemoveBuilding: () => void;
 }) {
   const [query, setQuery] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(building.name);
   const blocked = building.units.some((unit) => !unit.canDelete);
+
+  async function save(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const saved = await onSaveBuilding(building.id, name);
+    if (saved) setEditing(false);
+  }
+
   return (
     <section className="panel p-5">
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="text-[20px] tracking-[-0.03em] text-ink">{building.name}</h3>
-          <p className="mt-1 text-sm text-muted">{countLabel}</p>
+        <div className="min-w-0 flex-1">
+          {editing ? (
+            <form onSubmit={save} className="flex flex-wrap items-center gap-2">
+              <input value={name} onChange={(event) => setName(event.target.value)} className="control min-w-0 flex-1" />
+              <button type="submit" className="btn btn-primary btn-compact">
+                Сохранить
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary btn-compact"
+                onClick={() => {
+                  setEditing(false);
+                  setName(building.name);
+                }}
+              >
+                Отмена
+              </button>
+            </form>
+          ) : (
+            <>
+              <h3 className="text-[20px] tracking-[-0.03em] text-ink">{building.name}</h3>
+              <p className="mt-1 text-sm text-muted">{countLabel}</p>
+            </>
+          )}
         </div>
-        <button type="button" onClick={onToggle} className="btn btn-secondary btn-compact shrink-0">
-          {open ? "Скрыть" : "Показать"}
-        </button>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          {editable && !editing ? (
+            <button
+              type="button"
+              className="btn btn-secondary btn-compact"
+              onClick={() => {
+                setName(building.name);
+                setEditing(true);
+              }}
+            >
+              Изменить
+            </button>
+          ) : null}
+          <button type="button" onClick={onToggle} className="btn btn-secondary btn-compact">
+            {open ? "Скрыть" : "Показать"}
+          </button>
+        </div>
       </div>
       {open ? (
         <div className="mt-4">
@@ -341,6 +488,8 @@ function BuildingBlock({
             editable={editable}
             pendingDelete={pendingDelete}
             onAsk={onAsk}
+            onSave={onSaveUnit}
+            onBlocked={onBlockedUnit}
             onRemove={onRemoveUnit}
           />
           {!query.trim() && building.units.length > 20 ? (
@@ -348,14 +497,18 @@ function BuildingBlock({
           ) : null}
         </div>
       ) : null}
-      {removable && !blocked ? (
-        <button
-          type="button"
-          onClick={() => (pendingDelete === building.id ? onRemoveBuilding() : onAsk(building.id))}
-          className={`btn btn-compact mt-4 ${pendingDelete === building.id ? "btn-danger" : "btn-secondary"}`}
-        >
-          {pendingDelete === building.id ? "Подтвердить удаление" : `Удалить ${buildingLabel}`}
-        </button>
+      {removable ? (
+        blocked ? (
+          <p className="mt-4 text-sm text-muted">В корпусе есть занятые единицы.</p>
+        ) : (
+          <button
+            type="button"
+            onClick={() => (pendingDelete === building.id ? onRemoveBuilding() : onAsk(building.id))}
+            className={`btn btn-compact mt-4 ${pendingDelete === building.id ? "btn-danger" : "btn-secondary"}`}
+          >
+            {pendingDelete === building.id ? "Подтвердить удаление" : `Удалить ${buildingLabel}`}
+          </button>
+        )
       ) : null}
     </section>
   );

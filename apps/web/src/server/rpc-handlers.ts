@@ -12,7 +12,9 @@ import {
   removeObject,
   removeUnit,
   treeFor,
+  updateBuilding,
   updateObject,
+  updateUnit,
 } from "@/server/catalog";
 import {
   adminMemberships,
@@ -166,8 +168,10 @@ const methodPolicy: Record<string, Route> = {
   updateObject: staff("objects.edit", (actor, input) => updateObject(actor, text(input.objectId, 1, 80) ?? "", { name: input.name, address: input.address })),
   removeObject: staff("objects.delete", (actor, input) => removeObject(actor, text(input.objectId, 1, 80) ?? "")),
   createBuilding: staff("objects.structure.edit", (actor, input) => createBuilding(actor, text(input.objectId, 1, 80) ?? "", input.name), 201),
+  updateBuilding: staff("objects.structure.edit", (actor, input) => updateBuilding(actor, text(input.buildingId, 1, 80) ?? "", input.name)),
   removeBuilding: staff("objects.structure.edit", (actor, input) => removeBuilding(actor, text(input.buildingId, 1, 80) ?? "")),
   createUnit: staff("objects.structure.edit", (actor, input) => createUnit(actor, text(input.objectId, 1, 80) ?? "", { name: input.name, buildingId: input.buildingId }), 201),
+  updateUnit: staff("objects.structure.edit", (actor, input) => updateUnit(actor, text(input.unitId, 1, 80) ?? "", input.name)),
   removeUnit: staff("objects.structure.edit", (actor, input) => removeUnit(actor, text(input.unitId, 1, 80) ?? "")),
 
   residents: staff("residents.view", (actor) => ({ ok: true, value: residentBoard(actor) })),
@@ -208,8 +212,10 @@ const guardedMethods: Partial<Record<string, AuditAction>> = {
   updateObject: "OBJECT_EDIT",
   removeObject: "OBJECT_DELETE",
   createBuilding: "BUILDING_CREATE",
+  updateBuilding: "BUILDING_EDIT",
   removeBuilding: "BUILDING_DELETE",
   createUnit: "UNIT_CREATE",
+  updateUnit: "UNIT_EDIT",
   removeUnit: "UNIT_DELETE",
   addResident: "RESIDENT_ADD",
   removeResident: "RESIDENT_REMOVE",

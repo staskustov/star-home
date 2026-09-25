@@ -324,6 +324,15 @@ export function createCatalogBuilding(objectId: string, name: string): CatalogBu
   return building;
 }
 
+export function updateCatalogBuilding(buildingId: string, name: string): CatalogBuilding | undefined {
+  const catalog = load();
+  const building = catalog.buildings.find((item) => item.id === buildingId);
+  if (!building) return undefined;
+  building.name = name;
+  persist(catalog);
+  return building;
+}
+
 export function deleteCatalogBuilding(buildingId: string): void {
   const catalog = load();
   catalog.buildings = catalog.buildings.filter((building) => building.id !== buildingId);
@@ -347,6 +356,17 @@ export function createCatalogUnit(input: {
     type: unitTypeFor(input.type),
   };
   catalog.units.push(unit);
+  persist(catalog);
+  return unit;
+}
+
+export function updateCatalogUnit(unitId: string, name: string): CatalogUnit | undefined {
+  const catalog = load();
+  const unit = catalog.units.find((item) => item.id === unitId);
+  if (!unit) return undefined;
+  unit.name = name;
+  const digits = name.match(/(\d+)\s*$/);
+  if (digits) unit.number = digits[1];
   persist(catalog);
   return unit;
 }

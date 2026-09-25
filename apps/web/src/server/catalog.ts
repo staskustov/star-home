@@ -11,7 +11,9 @@ import {
   readTree,
   unitIdsOf,
   unitIdsOfBuilding,
+  updateCatalogBuilding,
   updateCatalogObject,
+  updateCatalogUnit,
 } from "@/server/catalog-store";
 import type { AuditInput } from "@/server/audit-store";
 import { buildingHasStaff, objectHasAssignments, unitHasAssignment } from "@/server/directory";
@@ -161,6 +163,29 @@ export function createBuilding(actor: StaffActor, objectId: string, name: unknow
   return { ok: true, value: { id: building.id } };
 }
 
+export function updateBuilding(actor: StaffActor, buildingId: string, name: unknown): Success<{ id: string }> | Failure {
+  const building = findBuilding(buildingId);
+  if (!building) return { ok: false, status: 404, message: "Корпус не найден" };
+  const owned = ownObject(actor, building.objectId, "objects.structure.edit", "part");
+  if (!owned.ok) return owned;
+  if (!wholeObject(actor) && building.id !== actor.scope.buildingId) return denied;
+  const title = cleanText(name, "Введите название");
+  if (typeof title !== "string") return title;
+  const changes = building.name !== title ? [{ field: "Название", from: building.name, to: title }] : [];
+  updateCatalogBuilding(buildingId, title);
+  if (changes.length) {
+    note(actor, "BUILDING_EDIT", {
+      objectId: owned.value.id,
+      buildingId,
+      targetType: "building",
+      targetId: buildingId,
+      target: `${owned.value.name} · ${title}`,
+      changes,
+    });
+  }
+  return { ok: true, value: { id: buildingId } };
+}
+
 export function removeBuilding(actor: StaffActor, buildingId: string): Success<{ id: string }> | Failure {
   const building = locateBuilding(buildingId);
   if (!building) return { ok: false, status: 404, message: "Корпус не найден" };
@@ -206,6 +231,28 @@ export function createUnit(
   });
   note(actor, "UNIT_CREATE", { objectId, buildingId: unit.buildingId, unitId: unit.id, targetType: "unit", targetId: unit.id, target: `${owned.value.name} · ${title}` });
   return { ok: true, value: { id: unit.id } };
+}
+
+export function updateUnit(actor: StaffActor, unitId: string, name: unknown): Success<{ id: string }> | Failure {
+  if (!can(actor, "objects.structure.edit")) return denied;
+  const unit = unitFor(actor, unitId);
+  if (!unit.ok) return unit;
+  const title = cleanText(name, "Введите название");
+  if (typeof title !== "string") return title;
+  const changes = unit.value.name !== title ? [{ field: "Название", from: unit.value.name, to: title }] : [];
+  updateCatalogUnit(unitId, title);
+  if (changes.length) {
+    note(actor, "UNIT_EDIT", {
+      objectId: unit.value.objectId,
+      buildingId: unit.value.buildingId,
+      unitId,
+      targetType: "unit",
+      targetId: unitId,
+      target: `${findObject(unit.value.objectId)?.name ?? "Объект"} · ${title}`,
+      changes,
+    });
+  }
+  return { ok: true, value: { id: unitId } };
 }
 
 export function removeUnit(actor: StaffActor, unitId: string): Success<{ id: string }> | Failure {
