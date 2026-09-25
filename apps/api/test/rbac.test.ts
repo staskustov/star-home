@@ -142,6 +142,52 @@ describe("policy", () => {
     }
     assert.ok(!permissionsOf("SECURITY").has("payments.view"));
     assert.ok(!permissionsOf("ACCOUNTANT").has("access.gate.open"));
+    assert.ok(permissionsOf("COMPANY_ADMIN").has("residents.edit"));
+    assert.ok(permissionsOf("COMPANY_ADMIN").has("residents.delete"));
+    assert.ok(permissionsOf("OBJECT_ADMIN").has("residents.edit"));
+    assert.ok(permissionsOf("OBJECT_ADMIN").has("residents.delete"));
+  });
+});
+
+describe("residents", () => {
+  it("lets company and object admins edit and remove people in their objects", async () => {
+    const people = await import("../../web/src/server/people-store");
+    const person = people.createPerson({ login: "edit.resident.test", name: "Черновик", passwordHash: "x" });
+    const membership = people.createResidentMembership({
+      userId: person.id,
+      companyId: "cmp_star",
+      objectId: "obj_siyanie",
+      unitId: "unit_24",
+    });
+    const board = (await rpc("residents", null, objectAdmin)).body as {
+      can: { edit: boolean; remove: boolean };
+      people: { membershipId: string; name: string }[];
+    };
+    assert.equal(board.can.edit, true);
+    assert.equal(board.can.remove, true);
+    assert.ok(board.people.some((row) => row.membershipId === membership.id));
+    const saved = await rpc(
+      "updateResident",
+      { membershipId: membership.id, name: "Новое имя", login: "edit.resident.test", unitId: "unit_24", role: "FAMILY_MEMBER" },
+      objectAdmin,
+    );
+    assert.equal(saved.status, 200);
+    assert.equal(people.listUsers().find((user) => user.id === person.id)?.name, "Новое имя");
+    assert.equal(people.listMemberships().find((item) => item.id === membership.id)?.role, "FAMILY_MEMBER");
+    assert.equal(
+      (await rpc("updateResident", { membershipId: membership.id, name: "Чужой", login: "edit.resident.test", unitId: "unit_84", role: "RESIDENT" }, objectAdmin))
+        .status,
+      403,
+    );
+    assert.equal((await rpc("updateResident", { membershipId: "mem_missing", name: "Нет", login: "nobody.test", unitId: "unit_24" }, admin)).status, 404);
+    assert.equal(
+      (await rpc("updateResident", { membershipId: membership.id, name: "Новое имя", login: "edit.resident.test", unitId: "unit_24" }, security)).status,
+      403,
+    );
+    const company = await rpc("updateResident", { membershipId: membership.id, name: "Админ правил", login: "edit.resident.test", unitId: "unit_siyanie_1", role: "RESIDENT" }, admin);
+    assert.equal(company.status, 200);
+    assert.equal((await rpc("removeResident", { membershipId: membership.id }, objectAdmin)).status, 200);
+    assert.equal(people.listMemberships().some((item) => item.id === membership.id), false);
   });
 });
 
@@ -261,6 +307,7 @@ describe("method policy", () => {
     assert.equal((await rpc("openObjectGate", { objectId: "obj_siyanie" }, accountant)).status, 403);
     assert.equal((await rpc("openObjectGate", { objectId: "obj_park" }, security)).status, 403);
     assert.equal((await rpc("removeObject", { objectId: "obj_siyanie" }, objectAdmin)).status, 403);
+    assert.equal((await rpc("updateResident", { membershipId: "mem_stanislav_24", name: "Нет", login: "stanislav", unitId: "unit_24" }, accountant)).status, 403);
     assert.equal((await rpc("setRequestStatus", { id: "x", status: "DONE", objectId: "obj_siyanie" }, accountant)).status, 403);
     assert.equal((await rpc("cameraFrame", { objectId: "obj_siyanie", name: "x" }, accountant)).status, 403);
   });

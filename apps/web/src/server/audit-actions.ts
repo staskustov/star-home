@@ -20,6 +20,7 @@ export const auditActions = {
   OPEN_GATE: { label: "Открытие ворот", category: "ACCESS" },
   CREATE_PASS: { label: "Пропуск", category: "ACCESS" },
   RESIDENT_ADD: { label: "Житель добавлен", category: "ACCESS" },
+  RESIDENT_EDIT: { label: "Данные жителя", category: "ACCESS" },
   RESIDENT_REMOVE: { label: "Доступ жителя отозван", category: "ACCESS" },
   RAISE_ALARM: { label: "Вызов охраны", category: "SECURITY" },
   CAMERA_VIEW: { label: "Кадр с камеры", category: "SECURITY" },

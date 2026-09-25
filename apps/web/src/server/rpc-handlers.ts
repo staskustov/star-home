@@ -57,7 +57,7 @@ import { engineeringBoard, pollDeviceFor, setDeviceWorkFor } from "@/server/engi
 import { auditBoard, auditExport } from "@/server/audit-view";
 import { adminObjectsFor, sectionsFor } from "@/server/rbac/sections";
 import { record, text } from "@/server/schema";
-import { addResident, removeResident, residentBoard } from "@/server/residents";
+import { addResident, removeResident, residentBoard, updateResident } from "@/server/residents";
 import { destinationFor, guardPath, initialMembershipId } from "@/server/routing";
 import { addMember, changeAccess, editMember, removeMember, setMemberBlocked, teamBoard } from "@/server/team";
 import { keepFile, storesFlushed } from "@/server/store-bind";
@@ -176,6 +176,7 @@ const methodPolicy: Record<string, Route> = {
 
   residents: staff("residents.view", (actor) => ({ ok: true, value: residentBoard(actor) })),
   addResident: staff("residents.create", (actor, input) => addResident(actor, input as never), 201),
+  updateResident: staff("residents.edit", (actor, input) => updateResident(actor, text(input.membershipId, 1, 80) ?? "", input)),
   removeResident: staff("residents.delete", (actor, input) => removeResident(actor, text(input.membershipId, 1, 80) ?? "")),
 
   settings: staff("settings.view", (actor) => ({ ok: true, value: settingsFor(actor) })),
@@ -218,6 +219,7 @@ const guardedMethods: Partial<Record<string, AuditAction>> = {
   updateUnit: "UNIT_EDIT",
   removeUnit: "UNIT_DELETE",
   addResident: "RESIDENT_ADD",
+  updateResident: "RESIDENT_EDIT",
   removeResident: "RESIDENT_REMOVE",
   saveMode: "MODE_SETTINGS",
   switchMode: "MODE_SWITCH",

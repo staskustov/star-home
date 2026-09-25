@@ -260,7 +260,10 @@ export function deleteMembership(membershipId: string): void {
   persist(people);
 }
 
-export function updateUser(userId: string, patch: Partial<Pick<StoredUser, "name" | "email" | "phone" | "status" | "lastLoginAt">>): StoredUser | undefined {
+export function updateUser(
+  userId: string,
+  patch: Partial<Pick<StoredUser, "name" | "login" | "email" | "phone" | "status" | "lastLoginAt" | "passwordHash">>,
+): StoredUser | undefined {
   const people = load();
   const user = people.users.find((item) => item.id === userId);
   if (!user) return undefined;
@@ -305,7 +308,7 @@ export function createStaffMembership(input: {
 
 export function updateMembership(
   membershipId: string,
-  patch: Partial<Pick<Membership, "role" | "objectId" | "buildingId" | "status" | "revokedAt" | "revokedBy">>,
+  patch: Partial<Pick<Membership, "role" | "objectId" | "buildingId" | "unitId" | "expiresAt" | "passId" | "status" | "revokedAt" | "revokedBy">>,
 ): Membership | undefined {
   const people = load();
   const membership = people.memberships.find((item) => item.id === membershipId);

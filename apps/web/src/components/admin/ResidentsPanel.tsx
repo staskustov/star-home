@@ -4,7 +4,9 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAdminPreview } from "@/components/admin/AdminPreview";
 import { Select } from "@/components/ui/Select";
-import type { ResidentObjectChoices, ResidentRow } from "@/server/residents";
+import type { ResidentGroup, ResidentObjectChoices, ResidentRow } from "@/server/residents";
+
+type Rights = { create: boolean; edit: boolean; remove: boolean };
 
 export function ResidentsPanel({
   people,
@@ -13,7 +15,7 @@ export function ResidentsPanel({
 }: {
   people: ResidentRow[];
   objects: ResidentObjectChoices[];
-  can: { create: boolean; remove: boolean };
+  can: Rights;
 }) {
   const { selected } = useAdminPreview();
   const router = useRouter();
@@ -23,6 +25,7 @@ export function ResidentsPanel({
   const [role, setRole] = useState("RESIDENT");
   const [expiresAt, setExpiresAt] = useState("");
   const [unitId, setUnitId] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -57,15 +60,42 @@ export function ResidentsPanel({
     router.refresh();
   }
 
+  async function save(person: ResidentRow, draft: ResidentDraft) {
+    setError(null);
+    setNotice(null);
+    const response = await fetch(`/api/residents/${person.membershipId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: draft.name,
+        login: draft.login,
+        password: draft.password || undefined,
+        role: draft.role,
+        unitId: draft.unitId,
+        expiresAt: draft.role === "GUEST" ? draft.expiresAt : undefined,
+      }),
+    });
+    const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+    if (!response.ok) {
+      setError(payload?.message ?? "Не удалось сохранить");
+      return false;
+    }
+    setEditingId(null);
+    setNotice("Данные жителя сохранены.");
+    router.refresh();
+    return true;
+  }
+
   async function remove(membershipId: string) {
     setError(null);
     const response = await fetch(`/api/residents/${membershipId}`, { method: "DELETE" });
     const payload = (await response.json().catch(() => null)) as { message?: string } | null;
     if (!response.ok) {
-      setError(payload?.message ?? "Не удалось убрать");
+      setError(payload?.message ?? "Не удалось удалить");
       return;
     }
     setPendingDelete(null);
+    setEditingId(null);
     router.refresh();
   }
 
@@ -79,52 +109,20 @@ export function ResidentsPanel({
       <p className="mt-3 text-[15px] text-muted">{selected.name}</p>
 
       {can.create ? (
-      <form onSubmit={add} className="mt-8 panel p-5">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Имя" value={name} onChange={setName} />
-          <Field label="Логин" value={login} onChange={setLogin} autoCapitalize="none" />
-          <Field label="Пароль" value={password} onChange={setPassword} type="password" />
-          <label className="block">
-            <span className="text-sm text-muted">Роль</span>
-            <Select wrapClassName="mt-2" value={role} onChange={(event) => setRole(event.target.value)}>
-              <option value="RESIDENT">Житель</option>
-              <option value="FAMILY_MEMBER">Семья</option>
-              <option value="GUEST">Гость</option>
-            </Select>
-          </label>
-          {role === "GUEST" ? <Field label="Срок пропуска" value={expiresAt} onChange={setExpiresAt} type="date" /> : null}
-          <label className="block">
-            <span className="text-sm text-muted">Единица</span>
-            <Select wrapClassName="mt-2" value={selectedUnit} onChange={(event) => setUnitId(event.target.value)} disabled={units.length === 0}>
-              {groups.map((group, index) =>
-                group.label ? (
-                  <optgroup key={`${group.label}-${index}`} label={group.label}>
-                    {group.units.map((unit) => (
-                      <option key={unit.id} value={unit.id}>
-                        {unit.name}
-                      </option>
-                    ))}
-                  </optgroup>
-                ) : (
-                  group.units.map((unit) => (
-                    <option key={unit.id} value={unit.id}>
-                      {unit.name}
-                    </option>
-                  ))
-                ),
-              )}
-            </Select>
-          </label>
-        </div>
-        {units.length === 0 ? <p className="mt-4 text-sm text-muted">Сначала добавьте единицы в структуре.</p> : null}
-        <button
-          type="submit"
-          disabled={units.length === 0}
-          className="mt-5 btn btn-primary disabled:opacity-40"
-        >
-          Добавить жителя
-        </button>
-      </form>
+        <form onSubmit={add} className="mt-8 panel p-5">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Имя" value={name} onChange={setName} />
+            <Field label="Логин" value={login} onChange={setLogin} autoCapitalize="none" />
+            <Field label="Пароль" value={password} onChange={setPassword} type="password" />
+            <RoleField value={role} onChange={setRole} />
+            {role === "GUEST" ? <Field label="Срок пропуска" value={expiresAt} onChange={setExpiresAt} type="date" /> : null}
+            <UnitField groups={groups} value={selectedUnit} onChange={setUnitId} disabled={units.length === 0} />
+          </div>
+          {units.length === 0 ? <p className="mt-4 text-sm text-muted">Сначала добавьте единицы в структуре.</p> : null}
+          <button type="submit" disabled={units.length === 0} className="mt-5 btn btn-primary disabled:opacity-40">
+            Добавить жителя
+          </button>
+        </form>
       ) : null}
 
       {error ? (
@@ -139,29 +137,127 @@ export function ResidentsPanel({
       ) : (
         <ul className="mt-8 divide-y divide-line panel">
           {rows.map((person) => (
-            <li key={person.membershipId} className="flex items-center justify-between gap-3 px-5 py-4">
-              <div className="min-w-0">
-                <p className="truncate text-[17px] text-ink">{person.name}</p>
-                <p className="mt-1 truncate text-sm text-muted">
-                  {person.login} · {person.roleLabel} · {person.place}
-                </p>
-              </div>
-              {can.remove ? (
-                <button
-                  type="button"
-                  onClick={() =>
-                    pendingDelete === person.membershipId ? remove(person.membershipId) : setPendingDelete(person.membershipId)
-                  }
-                  className={`btn btn-compact shrink-0 ${pendingDelete === person.membershipId ? "btn-danger" : "btn-secondary"}`}
-                >
-                  {pendingDelete === person.membershipId ? "Подтвердить" : "Убрать"}
-                </button>
-              ) : null}
-            </li>
+            <ResidentRowItem
+              key={`${person.membershipId}-${editingId === person.membershipId ? "edit" : "view"}`}
+              person={person}
+              groups={groups}
+              can={can}
+              editing={editingId === person.membershipId}
+              pendingDelete={pendingDelete === person.membershipId}
+              onEdit={() => {
+                setPendingDelete(null);
+                setEditingId(person.membershipId);
+              }}
+              onCancelEdit={() => setEditingId(null)}
+              onAskDelete={() => {
+                setEditingId(null);
+                setPendingDelete(person.membershipId);
+              }}
+              onDelete={() => remove(person.membershipId)}
+              onSave={(draft) => save(person, draft)}
+            />
           ))}
         </ul>
       )}
     </div>
+  );
+}
+
+type ResidentDraft = {
+  name: string;
+  login: string;
+  password: string;
+  role: string;
+  unitId: string;
+  expiresAt: string;
+};
+
+function ResidentRowItem({
+  person,
+  groups,
+  can,
+  editing,
+  pendingDelete,
+  onEdit,
+  onCancelEdit,
+  onAskDelete,
+  onDelete,
+  onSave,
+}: {
+  person: ResidentRow;
+  groups: ResidentGroup[];
+  can: Rights;
+  editing: boolean;
+  pendingDelete: boolean;
+  onEdit: () => void;
+  onCancelEdit: () => void;
+  onAskDelete: () => void;
+  onDelete: () => void;
+  onSave: (draft: ResidentDraft) => Promise<boolean>;
+}) {
+  const units = groups.flatMap((group) => group.units);
+  const [name, setName] = useState(person.name);
+  const [login, setLogin] = useState(person.login);
+  const [password, setPassword] = useState("");
+  const [role, setRole] = useState(person.role);
+  const [expiresAt, setExpiresAt] = useState(person.expiresAt);
+  const [unitId, setUnitId] = useState(units.some((unit) => unit.id === person.unitId) ? person.unitId : (units[0]?.id ?? person.unitId));
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await onSave({ name, login, password, role, unitId, expiresAt });
+  }
+
+  if (editing) {
+    return (
+      <li className="px-5 py-4">
+        <form onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
+          <Field label="Имя" value={name} onChange={setName} />
+          <Field label="Логин" value={login} onChange={setLogin} autoCapitalize="none" />
+          <Field label="Новый пароль" value={password} onChange={setPassword} type="password" autoComplete="new-password" />
+          <RoleField value={role} onChange={setRole} />
+          {role === "GUEST" ? <Field label="Срок пропуска" value={expiresAt} onChange={setExpiresAt} type="date" /> : null}
+          <UnitField groups={groups} value={unitId} onChange={setUnitId} disabled={units.length === 0} />
+          <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
+            <button type="submit" className="btn btn-primary btn-compact">
+              Сохранить
+            </button>
+            <button type="button" className="btn btn-secondary btn-compact" onClick={onCancelEdit}>
+              Отмена
+            </button>
+          </div>
+        </form>
+      </li>
+    );
+  }
+
+  return (
+    <li className="flex items-center justify-between gap-3 px-5 py-4">
+      <div className="min-w-0">
+        <p className="truncate text-[17px] text-ink">{person.name}</p>
+        <p className="mt-1 truncate text-sm text-muted">
+          {person.login} · {person.roleLabel} · {person.place}
+        </p>
+      </div>
+      {can.edit || can.remove ? (
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          {can.edit ? (
+            <button type="button" onClick={onEdit} className="btn btn-secondary btn-compact">
+              Изменить
+            </button>
+          ) : null}
+          {can.remove ? (
+            <button
+              type="button"
+              onClick={() => (pendingDelete ? onDelete() : onAskDelete())}
+              className={`btn btn-compact ${pendingDelete ? "btn-danger" : "btn-secondary"}`}
+            >
+              {pendingDelete ? "Подтвердить" : "Удалить"}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </li>
   );
 }
 
@@ -174,18 +270,70 @@ function compareUnits(left: ResidentRow, right: ResidentRow): number {
   return left.unitName.localeCompare(right.unitName, "ru");
 }
 
+function RoleField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return (
+    <label className="block">
+      <span className="text-sm text-muted">Роль</span>
+      <Select wrapClassName="mt-2" value={value} onChange={(event) => onChange(event.target.value)}>
+        <option value="RESIDENT">Житель</option>
+        <option value="FAMILY_MEMBER">Семья</option>
+        <option value="GUEST">Гость</option>
+      </Select>
+    </label>
+  );
+}
+
+function UnitField({
+  groups,
+  value,
+  onChange,
+  disabled,
+}: {
+  groups: ResidentGroup[];
+  value: string;
+  onChange: (value: string) => void;
+  disabled: boolean;
+}) {
+  return (
+    <label className="block">
+      <span className="text-sm text-muted">Единица</span>
+      <Select wrapClassName="mt-2" value={value} onChange={(event) => onChange(event.target.value)} disabled={disabled}>
+        {groups.map((group, index) =>
+          group.label ? (
+            <optgroup key={`${group.label}-${index}`} label={group.label}>
+              {group.units.map((unit) => (
+                <option key={unit.id} value={unit.id}>
+                  {unit.name}
+                </option>
+              ))}
+            </optgroup>
+          ) : (
+            group.units.map((unit) => (
+              <option key={unit.id} value={unit.id}>
+                {unit.name}
+              </option>
+            ))
+          ),
+        )}
+      </Select>
+    </label>
+  );
+}
+
 function Field({
   label,
   value,
   onChange,
   type = "text",
   autoCapitalize,
+  autoComplete,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   type?: string;
   autoCapitalize?: "none";
+  autoComplete?: string;
 }) {
   return (
     <label className="block">
@@ -194,6 +342,7 @@ function Field({
         type={type}
         value={value}
         autoCapitalize={autoCapitalize}
+        autoComplete={autoComplete}
         onChange={(event) => onChange(event.target.value)}
         className="control mt-2"
       />

@@ -189,6 +189,7 @@ describe("another company", () => {
       ["updateUnit", { unitId: rival.unitId, name: "Захват" }],
       ["removeUnit", { unitId: rival.unitId }],
       ["addResident", { objectId: rival.objectId, unitId: rival.unitId, name: "Захват", login: "grab.test", password: "secret-12" }],
+      ["updateResident", { membershipId: rival.residentId, name: "Захват", login: "grab.test", unitId: rival.unitId, role: "RESIDENT" }],
       ["removeResident", { membershipId: rival.residentId }],
       ["teamEdit", { membershipId: rival.adminId, name: "Захват" }],
       ["teamAccess", { membershipId: rival.adminId, role: "MANAGER", objectId: null }],
