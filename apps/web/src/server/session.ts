@@ -62,12 +62,29 @@ export async function readSession(): Promise<SessionPayload | null> {
   return readSessionToken(jar.get(sessionCookie)?.value);
 }
 
-export function sessionCookieOptions() {
+function cookieSecureFrom(request?: { url: string; headers: Headers }) {
+  const forwarded = request?.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  if (forwarded) return forwarded === "https";
+  if (request) return new URL(request.url).protocol === "https:";
+  return process.env.NODE_ENV === "production";
+}
+
+export function sessionCookieOptions(request?: { url: string; headers: Headers }) {
   return {
     httpOnly: true,
     sameSite: "lax" as const,
-    secure: process.env.NODE_ENV === "production",
+    secure: cookieSecureFrom(request),
     path: "/",
     maxAge: maxAgeSeconds,
+  };
+}
+
+export function clearSessionCookieOptions(request?: { url: string; headers: Headers }) {
+  return {
+    httpOnly: true,
+    sameSite: "lax" as const,
+    secure: cookieSecureFrom(request),
+    path: "/",
+    maxAge: 0,
   };
 }

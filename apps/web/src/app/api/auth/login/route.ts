@@ -9,6 +9,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: result.body.message ?? "Не удалось подтвердить выполнение." }, { status: result.status });
   }
   const response = NextResponse.json({ redirectTo: result.body.redirectTo });
-  response.cookies.set(sessionCookie, signSession(result.body.userId, result.body.membershipId ?? null, result.body.sessionVersion ?? 1), sessionCookieOptions());
+  response.cookies.set(
+    sessionCookie,
+    signSession(result.body.userId, result.body.membershipId ?? null, result.body.sessionVersion ?? 1),
+    sessionCookieOptions(request),
+  );
   return response;
 }

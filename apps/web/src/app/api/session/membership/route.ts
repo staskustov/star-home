@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { rpc } from "@/server/rpc";
+import { publicUrl } from "@/server/same-origin";
 import { sessionCookie, sessionCookieOptions, signSession } from "@/server/session";
 import { readSession } from "@/server/session";
 
@@ -24,7 +25,7 @@ export async function POST(request: Request) {
   const acceptsJson = (request.headers.get("accept") ?? "").includes("application/json");
   const response = acceptsJson
     ? NextResponse.json({ redirectTo: result.body.redirectTo })
-    : NextResponse.redirect(new URL(result.body.redirectTo, request.url), 303);
-  response.cookies.set(sessionCookie, signSession(session.userId, result.body.membershipId, session.sv), sessionCookieOptions());
+    : NextResponse.redirect(publicUrl(request, result.body.redirectTo), 303);
+  response.cookies.set(sessionCookie, signSession(session.userId, result.body.membershipId, session.sv), sessionCookieOptions(request));
   return response;
 }

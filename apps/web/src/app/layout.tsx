@@ -19,7 +19,11 @@ export const metadata: Metadata = {
     statusBarStyle: "default",
   },
   icons: {
-    icon: [{ url: "/pwa-icon/192", sizes: "192x192", type: "image/png" }],
+    icon: [
+      { url: "/favicon.svg", type: "image/svg+xml" },
+      { url: "/pwa-icon/32", sizes: "32x32", type: "image/png" },
+      { url: "/pwa-icon/192", sizes: "192x192", type: "image/png" },
+    ],
     apple: [{ url: "/pwa-icon/180", sizes: "180x180" }],
   },
 };

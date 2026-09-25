@@ -1,10 +1,14 @@
 import { ImageResponse } from "next/og";
+import { AppIconMark, FaviconMark } from "@/server/app-mark";
 
-const sizes: Record<string, { canvas: number; markRatio: number }> = {
-  "180": { canvas: 180, markRatio: 0.62 },
-  "192": { canvas: 192, markRatio: 0.62 },
-  "512": { canvas: 512, markRatio: 0.62 },
-  maskable: { canvas: 512, markRatio: 0.42 },
+const sizes: Record<string, { canvas: number; markRatio: number; kind: "app" | "favicon" }> = {
+  "32": { canvas: 32, markRatio: 1, kind: "favicon" },
+  "48": { canvas: 48, markRatio: 1, kind: "favicon" },
+  favicon: { canvas: 48, markRatio: 1, kind: "favicon" },
+  "180": { canvas: 180, markRatio: 0.86, kind: "app" },
+  "192": { canvas: 192, markRatio: 0.86, kind: "app" },
+  "512": { canvas: 512, markRatio: 0.86, kind: "app" },
+  maskable: { canvas: 512, markRatio: 0.62, kind: "app" },
 };
 
 export async function GET(_request: Request, { params }: { params: Promise<{ size: string }> }) {
@@ -12,38 +16,6 @@ export async function GET(_request: Request, { params }: { params: Promise<{ siz
   const spec = sizes[size];
   if (!spec) return new Response("Not found", { status: 404 });
 
-  const mark = Math.round(spec.canvas * spec.markRatio);
-  return new ImageResponse(
-    (
-      <div
-        style={{
-          width: "100%",
-          height: "100%",
-          background: "#F6F4F0",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <div
-          style={{
-            width: mark,
-            height: mark,
-            borderRadius: Math.round(mark * 0.22),
-            background: "#1F3A34",
-            color: "#F7F5F1",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: Math.round(mark * 0.34),
-            fontWeight: 600,
-            letterSpacing: -1,
-          }}
-        >
-          SH
-        </div>
-      </div>
-    ),
-    { width: spec.canvas, height: spec.canvas },
-  );
+  const mark = spec.kind === "favicon" ? <FaviconMark canvas={spec.canvas} /> : <AppIconMark canvas={spec.canvas} markRatio={spec.markRatio} />;
+  return new ImageResponse(mark, { width: spec.canvas, height: spec.canvas });
 }
