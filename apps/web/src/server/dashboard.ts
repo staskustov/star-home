@@ -10,6 +10,7 @@ import { auditVisible, shortTime } from "@/server/audit-view";
 import { can, objectsInScope, reaches, wholeObject, type Scoped, type StaffActor } from "@/server/rbac/decide";
 import { auditCategoriesOf } from "@/server/rbac/policy";
 import type { DashboardAttention, DashboardFeedItem, DashboardObject, DashboardPulse, DashboardSystem, DashboardView } from "@/types/dashboard";
+import { timeZone } from "@/server/time-zone";
 
 const systemGroups: { id: string; name: string; kinds: readonly DeviceKind[] }[] = [
   { id: "access", name: "Доступ", kinds: ["GATE", "WICKET", "BARRIER", "LOCK"] },
@@ -37,7 +38,7 @@ function newestFirst<T>(items: T[], at: (item: T) => string): T[] {
 }
 
 function today(): string {
-  return new Date().toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" });
+  return new Date().toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", timeZone });
 }
 
 function placeOf(unitId: string | null): string {

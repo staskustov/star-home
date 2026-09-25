@@ -17,6 +17,7 @@ import { can, companyWide, objectsInScope, type StaffActor } from "@/server/rbac
 import { canManageRole, roleLabels, roleScopes, staffRoles } from "@/server/rbac/policy";
 import type { Membership, Role } from "@/types/domain";
 import type { TeamBoard } from "@/types/team";
+import { timeZone } from "@/server/time-zone";
 
 type Failure = { ok: false; status: number; message: string };
 type Success<T> = { ok: true; value: T };
@@ -172,8 +173,8 @@ function loginLabel(at: string | null): string {
   if (!at) return "Ещё не входил";
   const date = new Date(at);
   if (Number.isNaN(date.getTime())) return "Ещё не входил";
-  const day = date.toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
-  const time = date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  const day = date.toLocaleDateString("ru-RU", { day: "numeric", month: "long", timeZone });
+  const time = date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", timeZone });
   return `${day}, ${time}`;
 }
 

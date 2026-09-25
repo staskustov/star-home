@@ -6,6 +6,7 @@ import { recordAudit } from "@/server/operations";
 import { can, companyWide, inScope, objectsInScope, type StaffActor } from "@/server/rbac/decide";
 import { auditCategoriesOf, roleLabels } from "@/server/rbac/policy";
 import type { AuditBoard, AuditRow } from "@/types/audit";
+import { timeZone } from "@/server/time-zone";
 
 type Failure = { ok: false; status: number; message: string };
 type Success<T> = { ok: true; value: T };
@@ -31,16 +32,16 @@ export function auditVisible(actor: StaffActor, entry: AuditRecord): boolean {
 export function shortTime(at: string): string {
   const date = new Date(at);
   if (Number.isNaN(date.getTime())) return "";
-  const day = date.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" });
-  const time = date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  const day = date.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", timeZone });
+  const time = date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", timeZone });
   return `${day} ${time}`;
 }
 
 function longTime(at: string): string {
   const date = new Date(at);
   if (Number.isNaN(date.getTime())) return "";
-  const day = date.toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
-  const time = date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const day = date.toLocaleDateString("ru-RU", { day: "numeric", month: "long", timeZone });
+  const time = date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone });
   return `${day}, ${time}`;
 }
 

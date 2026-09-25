@@ -4,6 +4,7 @@ import path from "path";
 import { deviceLabel, type DeviceKind } from "@/server/device-kinds";
 import { boundValue, remember } from "@/server/store-bind";
 import type { AccessEvent } from "@/types/domain";
+import { timeZone } from "@/server/time-zone";
 
 export type Pass = {
   id: string;
@@ -160,8 +161,8 @@ function id(prefix: string): string {
 
 export function clock(): string {
   const date = new Date();
-  const day = date.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" });
-  const time = date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  const day = date.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", timeZone });
+  const time = date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", timeZone });
   return `${day} ${time}`;
 }
 
