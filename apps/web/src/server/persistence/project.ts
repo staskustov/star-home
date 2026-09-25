@@ -283,3 +283,18 @@ async function projectAudit(prisma: PrismaClient, body: Record<string, unknown>)
   await prisma.auditLog.createMany({ data: fresh.filter((entry) => !stale.has(entry.id)).map(auditRow), skipDuplicates: true });
   for (const entry of fresh) projectedAudit.add(entry.id);
 }
+
+export async function projectLatest(prisma: PrismaClient, names: string[]): Promise<void> {
+  for (const name of names) {
+    await prisma.$transaction(
+      async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(4211)`;
+        const row = await tx.snapshot.findUnique({ where: { id: name } });
+        if (!row || row.projected >= row.version) return;
+        await projectSnapshot(tx as unknown as PrismaClient, name, row.body);
+        await tx.snapshot.update({ where: { id: name }, data: { projected: row.version } });
+      },
+      { maxWait: 30_000, timeout: 120_000 },
+    );
+  }
+}

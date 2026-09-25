@@ -8,8 +8,16 @@ datasource db {
 }
 
 model Snapshot {
-  id   String @id
-  body Json
+  id        String @id
+  body      Json
+  version   Int    @default(0)
+  projected Int    @default(0)
+}
+
+model LoginAttempt {
+  login String   @id
+  count Int
+  until DateTime
 }
 
 model Meter {
@@ -35,6 +43,7 @@ model StoredFile {
   requestId String?
   name      String
   path      String
+  data      Bytes?
 }
 
 model PushSubscription {

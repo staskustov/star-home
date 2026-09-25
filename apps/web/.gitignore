@@ -42,3 +42,6 @@ next-env.d.ts
 
 # company catalog written by the server
 /data
+
+# copied from apps/api/prisma on install
+/prisma

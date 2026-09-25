@@ -13,11 +13,12 @@ import EmbeddedPostgres from "embedded-postgres";
 import Redis from "ioredis";
 import webpush from "web-push";
 import { WebSocketServer, type WebSocket } from "ws";
-import { projectSnapshot } from "./project";
 import { intentFromPrompt } from "../../web/src/server/ai-intent";
 import { bindFiles, bindLive, bindPush, bindStore, storesFlushed } from "../../web/src/server/store-bind";
 import { freshRpc, internalSecret } from "../../web/src/server/internal-secret";
+import { readLiveToken } from "../../web/src/server/live-token";
 import { bindLoginLimit } from "../../web/src/server/login-limit";
+import { projectSnapshot } from "../../web/src/server/persistence/project";
 
 const port = Number(process.env.PORT ?? 3457);
 const host = process.env.HOST ?? "127.0.0.1";
@@ -195,16 +196,6 @@ function waitForPort(target: number): Promise<void> {
   });
 }
 
-function readLiveToken(token: string): { objectId: string } | null {
-  const [body, signature] = token.split(".");
-  if (!body || !signature) return null;
-  const expected = createHmac("sha256", secret()).update(body).digest("base64url");
-  if (!signaturesMatch(signature, expected)) return null;
-  const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as { objectId?: string; exp?: number };
-  if (!payload.objectId || !payload.exp || payload.exp < Date.now()) return null;
-  return { objectId: payload.objectId };
-}
-
 type Bus = {
   get(key: string): Promise<string | null>;
   incr(key: string): Promise<number>;
@@ -374,8 +365,11 @@ async function main(): Promise<void> {
       };
       memory.set(name, snapshot);
       return prisma.snapshot
-        .upsert({ where: { id: name }, create: { id: name, body: snapshot }, update: { body: snapshot } })
-        .then(() => projectSnapshot(prisma, name, snapshot));
+        .upsert({ where: { id: name }, create: { id: name, body: snapshot, version: 1 }, update: { body: snapshot, version: { increment: 1 } } })
+        .then(async (row) => {
+          await projectSnapshot(prisma, name, snapshot);
+          await prisma.snapshot.updateMany({ where: { id: name, projected: { lt: row.version } }, data: { projected: row.version } });
+        });
     },
   });
 

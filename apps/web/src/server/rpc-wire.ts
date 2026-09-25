@@ -5,6 +5,8 @@ import { internalSecret } from "@/server/internal-secret";
 
 const endpoint = () => process.env.STAR_HOME_API_URL ?? "http://127.0.0.1:3457";
 
+export const embeddedRuntime = () => process.env.STAR_HOME_RUNTIME === "embedded";
+
 const browsers: [RegExp, string][] = [
   [/YaBrowser\//, "Яндекс Браузер"],
   [/Edg\//, "Edge"],
@@ -41,6 +43,15 @@ export async function rpcWith<T = unknown>(
   input?: unknown,
   client?: ClientInfo,
 ): Promise<{ status: number; body: T }> {
+  if (embeddedRuntime()) {
+    const { embeddedRpc } = await import("@/server/persistence/embedded");
+    try {
+      return (await embeddedRpc(method, input ?? null, session, client)) as { status: number; body: T };
+    } catch (error) {
+      console.error(error);
+      return { status: 503, body: { message: "Не удалось подтвердить выполнение." } as T };
+    }
+  }
   const payload = JSON.stringify({ method, input: input ?? null, session, client: client ?? null, at: Date.now() });
   const signature = createHmac("sha256", internalSecret()).update(payload).digest("hex");
   const response = await fetch(`${endpoint()}/rpc`, {

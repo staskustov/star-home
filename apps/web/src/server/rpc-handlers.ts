@@ -1,4 +1,3 @@
-import { createHmac } from "crypto";
 import { askFor, confirmFor } from "@/server/ai";
 import type { AuditAction } from "@/server/audit-actions";
 import { clientInfo, noteActor, withRequest } from "@/server/audit-context";
@@ -49,7 +48,7 @@ import { updateUser } from "@/server/people-store";
 import { can, staffActor, withPermission, type StaffActor } from "@/server/rbac/decide";
 import type { Permission } from "@/server/rbac/permissions";
 import { householdCan, selfOnlyOf } from "@/server/rbac/policy";
-import { internalSecret } from "@/server/internal-secret";
+import { signLiveToken } from "@/server/live-token";
 import { rolesBoard, saveRole } from "@/server/roles";
 import { checkPassFor, handleAlarmFor, securityCameras, securityPost } from "@/server/security-post";
 import { engineeringBoard, pollDeviceFor, setDeviceWorkFor } from "@/server/engineering";
@@ -480,12 +479,10 @@ async function subscribe(session: SessionRef, input: Input): Promise<Reply> {
   return ok({ saved: true });
 }
 
-function liveToken(session: SessionRef): Reply {
+function liveToken(session: SessionRef, input: Input): Reply {
   const membership = session.membershipId ? findMembership(session.userId, session.membershipId) : undefined;
   const objectId = membership && !expired(membership.expiresAt) ? membership.objectId : "";
   if (!objectId) return fail(403, "Нет доступа");
-  const exp = Date.now() + 60_000;
-  const body = Buffer.from(JSON.stringify({ userId: session.userId, objectId, exp })).toString("base64url");
-  const signature = createHmac("sha256", internalSecret()).update(body).digest("base64url");
-  return ok({ token: `${body}.${signature}`, objectId });
+  const ttl = input.poll === true ? 12 * 60 * 60_000 : 60_000;
+  return ok({ token: signLiveToken(session.userId, objectId, ttl), objectId });
 }

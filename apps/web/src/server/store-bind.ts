@@ -22,6 +22,24 @@ export function bindStore(binder: StoreBinder): void {
   runtime.__starFlush = Promise.resolve();
 }
 
+const storeCaches: Record<string, string> = {
+  ops: "__starHomeOps",
+  people: "__starHomePeople",
+  audit: "__starHomeAudit",
+  catalog: "__starHomeCatalog",
+  life: "__starHomeLife",
+};
+
+export const storeNames = Object.keys(storeCaches);
+
+export function forgetStores(names: string[]): void {
+  const caches = globalThis as unknown as Record<string, unknown>;
+  for (const name of names) {
+    const key = storeCaches[name];
+    if (key) delete caches[key];
+  }
+}
+
 export function boundValue(name: string): unknown {
   return runtime.__starBind?.load(name);
 }
