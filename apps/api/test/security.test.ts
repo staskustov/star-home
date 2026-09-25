@@ -195,7 +195,8 @@ describe("another company", () => {
       ["teamRemove", { membershipId: rival.adminId }],
       ["saveMode", { objectId: rival.objectId, setting: { mode: "HOME" } }],
       ["openObjectGate", { objectId: rival.objectId }],
-      ["cameraFrame", { objectId: rival.objectId, name: "Въезд" }],
+      ["cameraFrame", { objectId: rival.objectId, deviceId: "dev_camera_rival" }],
+      ["securityCameras", { objectId: rival.objectId }],
       ["setRequestStatus", { id: rival.requestId, status: "DONE", objectId: rival.objectId }],
     ];
     for (const [method, input] of calls) {

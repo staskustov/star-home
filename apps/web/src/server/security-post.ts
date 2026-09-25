@@ -7,7 +7,7 @@ import { recordAudit } from "@/server/operations";
 import { clock, readOps, writeOps, type Alarm, type Device } from "@/server/ops-store";
 import { can, objectFor, objectsInScope, reaches, type StaffActor } from "@/server/rbac/decide";
 import { publishLive } from "@/server/store-bind";
-import type { PassCheck, SecurityPostView } from "@/types/security";
+import type { PassCheck, SecurityCamera, SecurityCameraWall, SecurityPostView } from "@/types/security";
 
 type Failure = { ok: false; status: number; message: string };
 type Success<T> = { ok: true; value: T };
@@ -35,11 +35,29 @@ function handler(userId: string | undefined): string | null {
   return userId ? (findUserById(userId)?.name ?? "Сотрудник") : null;
 }
 
-export function securityPost(actor: StaffActor, objectId: unknown): Success<SecurityPostView> | Failure {
-  if (!can(actor, "security.view")) return denied;
+function postObject(actor: StaffActor, objectId: unknown) {
   const objects = objectsInScope(actor);
   const wanted = typeof objectId === "string" && objectId ? objectId : objects[0]?.id;
   const object = objectFor(actor, wanted);
+  return { objects: objects.map((item) => ({ id: item.id, name: item.name })), object };
+}
+
+function cameraRows(actor: StaffActor, objectId: string): SecurityCamera[] {
+  return readOps()
+    .devices.filter((device) => device.objectId === objectId && device.kind === "CAMERA" && reaches(actor, device))
+    .map((device) => ({ id: device.id, name: device.name, place: placeName(device.unitId), ...workState(device) }));
+}
+
+export function securityCameras(actor: StaffActor, objectId: unknown): Success<SecurityCameraWall> | Failure {
+  if (!can(actor, "security.view") || !can(actor, "security.camera.view")) return denied;
+  const { objects, object } = postObject(actor, objectId);
+  if (!object.ok) return object;
+  return { ok: true, value: { objects, objectId: object.value.id, objectName: object.value.name, cameras: cameraRows(actor, object.value.id) } };
+}
+
+export function securityPost(actor: StaffActor, objectId: unknown): Success<SecurityPostView> | Failure {
+  if (!can(actor, "security.view")) return denied;
+  const { objects, object } = postObject(actor, objectId);
   if (!object.ok) return object;
   const file = readOps();
   const here = <T extends { companyId: string; objectId: string; unitId: string | null }>(rows: T[]): T[] =>
@@ -51,7 +69,7 @@ export function securityPost(actor: StaffActor, objectId: unknown): Success<Secu
   return {
     ok: true,
     value: {
-      objects: objects.map((item) => ({ id: item.id, name: item.name })),
+      objects,
       objectId: object.value.id,
       objectName: object.value.name,
       can: {
@@ -74,11 +92,7 @@ export function securityPost(actor: StaffActor, objectId: unknown): Success<Secu
       points: devices
         .filter((device) => isOpener(device.kind) && device.unitId === null)
         .map((device) => ({ id: device.id, name: device.name, kind: deviceLabel(device.kind), ...workState(device) })),
-      cameras: can(actor, "security.camera.view")
-        ? devices
-            .filter((device) => device.kind === "CAMERA")
-            .map((device) => ({ id: device.id, name: device.name, place: placeName(device.unitId), ...workState(device) }))
-        : [],
+      cameras: can(actor, "security.camera.view") ? cameraRows(actor, object.value.id) : [],
       passes: can(actor, "access.view")
         ? here(file.passes).map((pass) => ({ id: pass.id, guestName: pass.guestName, place: placeName(pass.unitId), detail: pass.detail, vehicle: pass.vehicle || "" }))
         : [],

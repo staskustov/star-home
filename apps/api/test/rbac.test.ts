@@ -810,6 +810,35 @@ describe("security post", () => {
     people.updateMembership(guard.id, { status: "REVOKED" });
   });
 
+  it("serves the camera window only cameras of the object and frames by device id", async () => {
+    type Wall = { objectId: string; cameras: { id: string; ready: boolean }[] };
+    const reply = await rpc("securityCameras", {}, security);
+    assert.equal(reply.status, 200);
+    const wall = reply.body as Wall;
+    assert.deepEqual(Object.keys(wall).sort(), ["cameras", "objectId", "objectName", "objects"]);
+    const ops = await import("../../web/src/server/ops-store");
+    const own = new Set(ops.devicesForObject("obj_siyanie").filter((device) => device.kind === "CAMERA").map((device) => device.id));
+    assert.ok(wall.cameras.length > 0 && wall.cameras.every((camera) => own.has(camera.id)));
+    assert.equal((await rpc("securityCameras", { objectId: "obj_park" }, security)).status, 403);
+    assert.equal((await rpc("securityCameras", {}, resident)).status, 403);
+    assert.equal((await rpc("securityCameras", {}, accountant)).status, 403);
+
+    const camera = wall.cameras[0];
+    assert.ok(camera);
+    assert.equal((await rpc("cameraFrame", { objectId: "obj_siyanie", deviceId: camera.id }, security)).status, 200);
+    assert.equal((await rpc("cameraFrame", { objectId: "obj_siyanie", deviceId: "dev_gate_siyanie" }, security)).status, 404, "only cameras give frames");
+    assert.equal((await rpc("cameraFrame", { objectId: "obj_siyanie", name: "Камера входа" }, security)).status, 400);
+    const setWork = (work: "ON" | "OFF") => {
+      const file = ops.readOps();
+      const device = file.devices.find((item) => item.id === camera.id);
+      if (device) device.work = work;
+      ops.writeOps(file);
+    };
+    setWork("OFF");
+    assert.equal((await rpc("cameraFrame", { objectId: "obj_siyanie", deviceId: camera.id }, security)).status, 409);
+    setWork("ON");
+  });
+
   it("checks a pass code and records the result", async () => {
     const ops = await import("../../web/src/server/ops-store");
     const pass = ops.passesForObject("obj_siyanie")[0];

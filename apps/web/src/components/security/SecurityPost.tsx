@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useMemo, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Icon } from "@/components/icons";
 import { ObjectSwitcher } from "@/components/home/ObjectSwitcher";
+import { CameraTile } from "@/components/security/CameraTile";
+import { Clock } from "@/components/security/Clock";
 import { ThemeToggle } from "@/components/shell/ThemeToggle";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { openCameraWindow } from "@/lib/camera-window";
 import { commandMessage, runCommand } from "@/lib/command";
 import type { PassCheck, SecurityAlarmStatus, SecurityPostView } from "@/types/security";
 
@@ -15,21 +17,6 @@ const alarmLabels: Record<SecurityAlarmStatus, string> = {
   ACCEPTED: "Принята",
   CLOSED: "Закрыта",
 };
-
-function Clock() {
-  const [now, setNow] = useState<Date | null>(null);
-  useEffect(() => {
-    const tick = () => setNow(new Date());
-    tick();
-    const timer = window.setInterval(tick, 15_000);
-    return () => window.clearInterval(timer);
-  }, []);
-  return (
-    <p className="text-[22px] leading-none tracking-[-0.03em] text-ink tabular-nums" aria-live="off">
-      {now ? now.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }) : "\u00a0"}
-    </p>
-  );
-}
 
 function Panel({ title, meta, children, className = "" }: { title: string; meta?: ReactNode; children: ReactNode; className?: string }) {
   return (
@@ -236,39 +223,32 @@ function PassCheckForm({ view }: { view: SecurityPostView }) {
 }
 
 function Cameras({ view }: { view: SecurityPostView }) {
-  const [busy, setBusy] = useState<string | null>(null);
-  const [notices, setNotices] = useState<Record<string, { text: string; ok: boolean }>>({});
-
-  async function frame(id: string, name: string) {
-    setBusy(id);
-    const result = await post("/api/security/camera", { objectId: view.objectId, name });
-    setBusy(null);
-    setNotices((all) => ({ ...all, [id]: { text: commandMessage(result.payload), ok: result.ok && result.payload?.confirmed === true } }));
-  }
-
+  const [blocked, setBlocked] = useState(false);
   return (
-    <Panel title="Камеры" meta="Видеопоток не подключён, доступен запрос кадра">
+    <Panel
+      title="Камеры"
+      meta={
+        view.cameras.length > 0 ? (
+          <button type="button" onClick={() => setBlocked(!openCameraWindow(view.objectId))} className="btn btn-secondary btn-compact">
+            Отдельное окно
+          </button>
+        ) : null
+      }
+    >
+      <p className="-mt-2 mb-4 text-[13px] text-muted">Видеопоток не подключён, доступен запрос кадра. Отдельное окно можно перенести на другой монитор.</p>
+      {blocked ? (
+        <p role="alert" className="mb-4 text-[13px] text-danger">
+          Браузер заблокировал окно. Разрешите всплывающие окна для этого сайта или откройте{" "}
+          <a href={`/security/cameras?object=${encodeURIComponent(view.objectId)}`} target="_blank" rel="noreferrer" className="underline underline-offset-4">
+            камеры во вкладке
+          </a>
+          .
+        </p>
+      ) : null}
       {view.cameras.length === 0 ? <Empty>Камер нет.</Empty> : null}
       <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {view.cameras.map((camera) => (
-          <li key={camera.id} className="flex flex-col justify-between gap-4 rounded-2xl border border-line/60 bg-surface-muted/30 p-4">
-            <div className="flex items-start gap-3">
-              <span className="tile-icon shrink-0" aria-hidden>
-                <Icon name="security" />
-              </span>
-              <div className="min-w-0">
-                <p className="truncate text-[16px] text-ink">{camera.name}</p>
-                <p className="text-[13px] text-muted">{camera.place}</p>
-                <p className={`text-[13px] ${camera.ready ? "text-muted" : "text-danger"}`}>{camera.state}</p>
-              </div>
-            </div>
-            <div>
-              <button type="button" disabled={!camera.ready || busy === camera.id} onClick={() => void frame(camera.id, camera.name)} className="btn btn-secondary btn-compact disabled:opacity-50">
-                {busy === camera.id ? "Запрашиваем…" : "Запросить кадр"}
-              </button>
-              {notices[camera.id] ? <p className={`mt-2 text-[13px] ${notices[camera.id]?.ok ? "text-success" : "text-danger"}`}>{notices[camera.id]?.text}</p> : null}
-            </div>
-          </li>
+          <CameraTile key={camera.id} camera={camera} objectId={view.objectId} />
         ))}
       </ul>
     </Panel>

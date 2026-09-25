@@ -51,7 +51,7 @@ import type { Permission } from "@/server/rbac/permissions";
 import { householdCan, selfOnlyOf } from "@/server/rbac/policy";
 import { internalSecret } from "@/server/internal-secret";
 import { rolesBoard, saveRole } from "@/server/roles";
-import { checkPassFor, handleAlarmFor, securityPost } from "@/server/security-post";
+import { checkPassFor, handleAlarmFor, securityCameras, securityPost } from "@/server/security-post";
 import { engineeringBoard, pollDeviceFor, setDeviceWorkFor } from "@/server/engineering";
 import { auditBoard, auditExport } from "@/server/audit-view";
 import { adminObjectsFor, sectionsFor } from "@/server/rbac/sections";
@@ -179,8 +179,9 @@ const methodPolicy: Record<string, Route> = {
   saveMode: staff("settings.edit", (actor, input) => saveModeFor(actor, { objectId: input.objectId, setting: record(input.setting) ?? null })),
 
   openObjectGate: staff("access.gate.open", (actor, input) => openObjectGateFor(actor, input.objectId)),
-  cameraFrame: staff("security.camera.view", (actor, input) => cameraFrameFor(actor, input.objectId, input.name)),
+  cameraFrame: staff("security.camera.view", (actor, input) => cameraFrameFor(actor, input.objectId, input.deviceId)),
   securityPost: staff("security.view", (actor, input) => securityPost(actor, input.objectId)),
+  securityCameras: staff("security.camera.view", (actor, input) => securityCameras(actor, input.objectId)),
   handleAlarm: staff("security.alarm.handle", (actor, input) => handleAlarmFor(actor, input.alarmId, input.step)),
   openObjectPoint: staff("access.gate.open", (actor, input) => openObjectPointFor(actor, input.objectId, input.pointId)),
   checkPass: staff("access.view", (actor, input) => checkPassFor(actor, input.objectId, input.code)),

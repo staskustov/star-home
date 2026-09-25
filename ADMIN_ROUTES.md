@@ -111,6 +111,7 @@ Resident app в этом этапе не меняется.
 | `audit` | `audit.view` | scope, фильтр категорий | E |
 | `auditExport` | `audit.export` | scope | E |
 | `securityPost` | `security.view` | объект ⊂ scope; камеры — `camera.view`, гости и события — `access.view`, журнал — `audit.view` | пост |
+| `securityCameras` | `security.view` + `security.camera.view` | камеры объекта в досягаемости, без остальных данных поста | пост |
 | `handleAlarm` | `security.alarm.handle` | alarm → object, досягаемость корпуса; OPEN → ACCEPTED → CLOSED | пост |
 | `openObjectPoint` | `access.gate.open` | только общие точки объекта, без квартирных замков | пост |
 | `checkPass` | `access.view` | пропуска объекта в досягаемости | пост |
@@ -133,8 +134,10 @@ Resident app в этом этапе не меняется.
 | `DELETE /api/admin/team/[membershipId]` | `teamRemove` |
 | `PUT /api/admin/roles` | `rolesSave` |
 | `POST /api/admin/audit/export` | `auditExport` |
-| `POST /api/security/alarms/[id]` | `handleAlarm` |
+| `POST /api/security/alarms/[id]` | `securityCameras` | `security.view` + `security.camera.view` | камеры объекта в досягаемости, без остальных данных поста | пост |
+| `handleAlarm` |
 | `POST /api/security/points` | `openObjectPoint` |
+| `POST /api/security/camera` | `cameraFrame` (по `deviceId` камеры) |
 | `POST /api/security/passes` | `checkPass` |
 | `POST /api/engineering/devices/[id]` | `pollDevice` |
 | `PATCH /api/engineering/devices/[id]` | `setDeviceWork` |
