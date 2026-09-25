@@ -76,6 +76,17 @@ export function deskFor(actor: StaffActor, section: DeskSection) {
     return {
       passes: mine(file.passes).map((pass) => ({ id: pass.id, objectId: pass.objectId, guestName: pass.guestName, detail: pass.detail, unitName: unitName(pass.unitId) })),
       events: mine(file.events).map((event) => ({ id: event.id, objectId: event.objectId, time: event.time, title: event.title, result: event.result })),
+      points: mine(file.devices)
+        .filter((device) => isOpener(device.kind))
+        .map((device) => ({
+          id: device.id,
+          objectId: device.objectId,
+          name: device.name,
+          endpoint: device.endpoint ?? "",
+          latch: (device.latch === "OPEN" ? "OPEN" : "CLOSED") as "OPEN" | "CLOSED",
+          work: (device.work === "FAULT" ? "FAULT" : device.work === "OFF" ? "OFF" : "ON") as "ON" | "OFF" | "FAULT",
+          status: device.work === "FAULT" ? "Неисправно" : device.work === "OFF" ? "Отключено" : device.latch === "OPEN" ? "Открыто" : "Закрыто",
+        })),
     };
   }
   if (section === "requests") {
@@ -105,7 +116,13 @@ export function deskFor(actor: StaffActor, section: DeskSection) {
   }
   if (section === "devices") {
     return {
-      devices: mine(file.devices).map((device) => ({ objectId: device.objectId, name: device.name, kind: deviceLabel(device.kind), state: deviceState(device, file.readings) })),
+      devices: mine(file.devices).map((device) => ({
+        id: device.id,
+        objectId: device.objectId,
+        name: device.name,
+        kind: deviceLabel(device.kind),
+        state: deviceState(device, file.readings),
+      })),
       meters: mine(file.meters).map((meter) => {
         const latest = file.meterReadings.filter((reading) => reading.meterId === meter.id).at(-1);
         return { objectId: meter.objectId, name: meter.name, value: latest ? String(latest.value).replace(".", ",") : "—", unit: meter.unit };

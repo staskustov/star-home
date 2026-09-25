@@ -30,6 +30,11 @@ export type CatalogBuilding = {
   floors: number | null;
 };
 
+export type FloorPlan = {
+  floor: number;
+  image: string;
+};
+
 export type CatalogUnit = {
   id: string;
   objectId: string;
@@ -37,6 +42,9 @@ export type CatalogUnit = {
   name: string;
   number: string;
   type: Unit["type"];
+  areaM2: number | null;
+  floors: number;
+  plans: FloorPlan[];
 };
 
 type Catalog = {
@@ -66,6 +74,9 @@ function house(number: number): CatalogUnit {
     name: `Дом №${number}`,
     number: String(number),
     type: "HOUSE",
+    areaM2: null,
+    floors: 1,
+    plans: [],
   };
 }
 
@@ -79,6 +90,9 @@ function apartment(objectId: string, buildingId: string, number: number, kind: "
     name: `${title} №${number}`,
     number: String(number),
     type: kind,
+    areaM2: null,
+    floors: 1,
+    plans: [],
   };
 }
 
@@ -102,10 +116,10 @@ function seed(): Catalog {
   }
   buildings.push({ id: "bld_new_1", objectId: "obj_new", name: "Корпус 1", number: "1", floors: null });
   units.push(
-    { id: "unit_new_1", objectId: "obj_new", buildingId: "bld_new_1", name: "Квартира №1", number: "1", type: "APARTMENT" },
-    { id: "unit_new_2", objectId: "obj_new", buildingId: "bld_new_1", name: "Квартира №2", number: "2", type: "APARTMENT" },
-    { id: "unit_new_house_1", objectId: "obj_new_cottage", buildingId: null, name: "Дом №1", number: "1", type: "HOUSE" },
-    { id: "unit_new_house_2", objectId: "obj_new_cottage", buildingId: null, name: "Дом №2", number: "2", type: "HOUSE" },
+    { id: "unit_new_1", objectId: "obj_new", buildingId: "bld_new_1", name: "Квартира №1", number: "1", type: "APARTMENT", areaM2: null, floors: 1, plans: [] },
+    { id: "unit_new_2", objectId: "obj_new", buildingId: "bld_new_1", name: "Квартира №2", number: "2", type: "APARTMENT", areaM2: null, floors: 1, plans: [] },
+    { id: "unit_new_house_1", objectId: "obj_new_cottage", buildingId: null, name: "Дом №1", number: "1", type: "HOUSE", areaM2: null, floors: 1, plans: [] },
+    { id: "unit_new_house_2", objectId: "obj_new_cottage", buildingId: null, name: "Дом №2", number: "2", type: "HOUSE", areaM2: null, floors: 1, plans: [] },
   );
   return {
     companies: [{ id: "cmp_star", name: "Star" }],
@@ -181,6 +195,15 @@ function withScale(catalog: Catalog): Catalog {
     changed = true;
   }
   if (changed) persist(catalog);
+  return normalizeUnits(catalog);
+}
+
+function normalizeUnits(catalog: Catalog): Catalog {
+  for (const unit of catalog.units) {
+    unit.areaM2 ??= null;
+    unit.floors ??= 1;
+    unit.plans ??= [];
+  }
   return catalog;
 }
 
@@ -354,19 +377,30 @@ export function createCatalogUnit(input: {
     name: input.name,
     number: "",
     type: unitTypeFor(input.type),
+    areaM2: null,
+    floors: 1,
+    plans: [],
   };
   catalog.units.push(unit);
   persist(catalog);
   return unit;
 }
 
-export function updateCatalogUnit(unitId: string, name: string): CatalogUnit | undefined {
+export function updateCatalogUnit(
+  unitId: string,
+  patch: { name?: string; areaM2?: number | null; floors?: number; plans?: FloorPlan[] },
+): CatalogUnit | undefined {
   const catalog = load();
   const unit = catalog.units.find((item) => item.id === unitId);
   if (!unit) return undefined;
-  unit.name = name;
-  const digits = name.match(/(\d+)\s*$/);
-  if (digits) unit.number = digits[1];
+  if (typeof patch.name === "string") {
+    unit.name = patch.name;
+    const digits = patch.name.match(/(\d+)\s*$/);
+    if (digits) unit.number = digits[1];
+  }
+  if (patch.areaM2 !== undefined) unit.areaM2 = patch.areaM2;
+  if (typeof patch.floors === "number") unit.floors = patch.floors;
+  if (patch.plans) unit.plans = patch.plans.filter((plan) => plan.floor >= 1 && plan.floor <= (unit.floors ?? 1));
   persist(catalog);
   return unit;
 }

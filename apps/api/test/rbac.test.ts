@@ -109,7 +109,7 @@ describe("navigation", () => {
       body.objects.map((object) => object.id),
       ["obj_siyanie"],
     );
-    assert.deepEqual(Object.keys(body.objects[0] ?? {}).sort(), ["buildings", "companyId", "id", "name", "type", "units"]);
+    assert.deepEqual(Object.keys(body.objects[0] ?? {}).sort(), ["address", "buildings", "canDelete", "companyId", "id", "name", "type", "units"]);
   });
 
   it("sends residents away from the admin console", async () => {
@@ -146,6 +146,9 @@ describe("policy", () => {
     assert.ok(permissionsOf("COMPANY_ADMIN").has("residents.delete"));
     assert.ok(permissionsOf("OBJECT_ADMIN").has("residents.edit"));
     assert.ok(permissionsOf("OBJECT_ADMIN").has("residents.delete"));
+    assert.ok(permissionsOf("COMPANY_ADMIN").has("access.points.manage"));
+    assert.ok(permissionsOf("OBJECT_ADMIN").has("access.points.manage"));
+    assert.ok(!permissionsOf("MANAGER").has("access.points.manage"));
   });
 });
 
@@ -188,6 +191,75 @@ describe("residents", () => {
     assert.equal(company.status, 200);
     assert.equal((await rpc("removeResident", { membershipId: membership.id }, objectAdmin)).status, 200);
     assert.equal(people.listMemberships().some((item) => item.id === membership.id), false);
+  });
+});
+
+describe("access points", () => {
+  it("lets company and object admins add a point, open, close and see status", async () => {
+    const created = await rpc("createAccessPoint", { objectId: "obj_siyanie", name: "Калитка теста", api: "" }, objectAdmin);
+    assert.equal(created.status, 201);
+    const pointId = (created.body as { id: string }).id;
+    const desk = (await rpc("desk", { section: "access" }, objectAdmin)).body as {
+      points: { id: string; name: string; status: string; latch: string }[];
+    };
+    const row = desk.points.find((point) => point.id === pointId);
+    assert.ok(row);
+    assert.equal(row.status, "Закрыто");
+    assert.equal((await rpc("createAccessPoint", { objectId: "obj_siyanie", name: "Чужая", api: "" }, manager)).status, 403);
+    assert.equal((await rpc("createAccessPoint", { objectId: "obj_park", name: "Чужая", api: "" }, objectAdmin)).status, 403);
+    const opened = await rpc("openObjectPoint", { objectId: "obj_siyanie", pointId }, objectAdmin);
+    assert.equal(opened.status, 200);
+    const afterOpen = (await rpc("desk", { section: "access" }, objectAdmin)).body as { points: { id: string; status: string }[] };
+    assert.equal(afterOpen.points.find((point) => point.id === pointId)?.status, "Открыто");
+    const closed = await rpc("closeObjectPoint", { objectId: "obj_siyanie", pointId }, objectAdmin);
+    assert.equal(closed.status, 200);
+    const afterClose = (await rpc("desk", { section: "access" }, objectAdmin)).body as { points: { id: string; status: string }[] };
+    assert.equal(afterClose.points.find((point) => point.id === pointId)?.status, "Закрыто");
+    const renamed = await rpc("updateAccessPoint", { objectId: "obj_siyanie", pointId, name: "Калитка двора", api: "" }, admin);
+    assert.equal(renamed.status, 200);
+    assert.equal((await rpc("removeAccessPoint", { objectId: "obj_siyanie", pointId }, objectAdmin)).status, 200);
+  });
+});
+
+describe("houses", () => {
+  it("stores area, floors and plans on a unit", async () => {
+    const plan = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const saved = await rpc(
+      "updateUnit",
+      { unitId: "unit_24", name: "Дом №24", areaM2: 186.5, floors: 2, plans: [{ floor: 1, image: plan }, { floor: 2, image: plan }] },
+      objectAdmin,
+    );
+    assert.equal(saved.status, 200);
+    const details = await rpc("unitDetails", { unitId: "unit_24" }, objectAdmin);
+    assert.equal(details.status, 200);
+    const body = details.body as { areaM2: number; floors: number; plans: { floor: number }[] };
+    assert.equal(body.areaM2, 186.5);
+    assert.equal(body.floors, 2);
+    assert.equal(body.plans.length, 2);
+    const tree = (await rpc("tree", { objectId: "obj_siyanie" }, objectAdmin)).body as {
+      units: { id: string; areaM2: number | null; floors: number; planFloors: number[] }[];
+    };
+    const house = tree.units.find((unit) => unit.id === "unit_24");
+    assert.equal(house?.areaM2, 186.5);
+    assert.equal(house?.floors, 2);
+    assert.deepEqual(house?.planFloors, [1, 2]);
+    assert.equal(JSON.stringify(tree).includes("data:image"), false);
+    const person = (await import("../../web/src/server/people-store")).createPerson({
+      login: "surname.resident.test",
+      name: "Иван",
+      surname: "Петров",
+      passwordHash: "x",
+    });
+    const membership = (await import("../../web/src/server/people-store")).createResidentMembership({
+      userId: person.id,
+      companyId: "cmp_star",
+      objectId: "obj_siyanie",
+      unitId: "unit_24",
+    });
+    const board = (await rpc("residents", null, objectAdmin)).body as { people: { membershipId: string; surname: string; displayName: string }[] };
+    const row = board.people.find((item) => item.membershipId === membership.id);
+    assert.equal(row?.surname, "Петров");
+    assert.equal(row?.displayName, "Иван Петров");
   });
 });
 

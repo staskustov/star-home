@@ -25,18 +25,38 @@ export function recordAudit(entry: AuditInput): void {
   appendAudit(entry);
 }
 
-async function openDevice(place: Place, device: Device | null): Promise<{ confirmed: boolean; message: string }> {
-  const result = device ? await runDevice(device, "OPEN") : { confirmed: false };
+async function commandDevice(place: Place, device: Device | null, command: "OPEN" | "CLOSE"): Promise<{ confirmed: boolean; message: string }> {
+  const result = device ? await runDevice(device, command) : { confirmed: false };
+  const opening = command === "OPEN";
   const gate = device?.kind === "GATE";
-  const message = result.confirmed ? (gate ? "Ворота открыты." : `${device?.name ?? "Точка"}: открыто.`) : "Не удалось подтвердить выполнение.";
+  const done = opening
+    ? gate
+      ? "Ворота открыты."
+      : `${device?.name ?? "Точка"}: открыто.`
+    : gate
+      ? "Ворота закрыты."
+      : `${device?.name ?? "Точка"}: закрыто.`;
+  const message = result.confirmed ? done : "Не удалось подтвердить выполнение.";
   const file = readOps();
+  if (result.confirmed && device) {
+    const current = file.devices.find((item) => item.id === device.id);
+    if (current) current.latch = opening ? "OPEN" : "CLOSED";
+  }
   file.events.unshift({
     id: newId("evt"),
     companyId: place.companyId,
     objectId: place.objectId,
     unitId: place.unitId || null,
     time: clock(),
-    title: result.confirmed ? (gate ? "Ворота открыты" : device?.name ?? "Точка доступа") : "Команда не подтверждена",
+    title: result.confirmed
+      ? opening
+        ? gate
+          ? "Ворота открыты"
+          : device?.name ?? "Точка доступа"
+        : gate
+          ? "Ворота закрыты"
+          : `${device?.name ?? "Точка доступа"}: закрыто`
+      : "Команда не подтверждена",
     result: result.confirmed ? "SUCCESS" : "UNCONFIRMED",
   });
   writeOps(file);
@@ -45,7 +65,7 @@ async function openDevice(place: Place, device: Device | null): Promise<{ confir
     companyId: place.companyId,
     objectId: place.objectId,
     unitId: place.unitId || null,
-    action: "OPEN_GATE",
+    action: opening ? "OPEN_GATE" : "CLOSE_GATE",
     targetType: "device",
     targetId: device?.id ?? null,
     target: device?.name ?? "Ворота",
@@ -54,6 +74,14 @@ async function openDevice(place: Place, device: Device | null): Promise<{ confir
   });
   publishLive({ objectId: place.objectId, kind: "access", title: message.replace(/\.$/, "") });
   return { confirmed: result.confirmed, message };
+}
+
+async function openDevice(place: Place, device: Device | null): Promise<{ confirmed: boolean; message: string }> {
+  return commandDevice(place, device, "OPEN");
+}
+
+async function closeDevice(place: Place, device: Device | null): Promise<{ confirmed: boolean; message: string }> {
+  return commandDevice(place, device, "CLOSE");
 }
 
 export async function openGate(place: Place): Promise<{ confirmed: boolean; message: string }> {
@@ -241,7 +269,7 @@ export async function openObjectGateFor(actor: StaffActor, objectId: unknown) {
   };
 }
 
-export async function openObjectPointFor(actor: StaffActor, objectId: unknown, pointId: unknown) {
+async function commandObjectPointFor(actor: StaffActor, objectId: unknown, pointId: unknown, command: "OPEN" | "CLOSE") {
   if (!can(actor, "access.gate.open")) return denied;
   const object = objectFor(actor, objectId);
   if (!object.ok) return object;
@@ -250,10 +278,19 @@ export async function openObjectPointFor(actor: StaffActor, objectId: unknown, p
   if (!device || device.companyId !== object.value.companyId) return { ok: false as const, status: 404, message: "Точка доступа не найдена" };
   if (!reaches(actor, device)) return denied;
   if (device.work === "FAULT" || device.work === "OFF") return { ok: false as const, status: 409, message: "Точка доступа не в работе" };
+  const run = command === "OPEN" ? openDevice : closeDevice;
   return {
     ok: true as const,
-    value: await openDevice({ userId: actor.userId, companyId: object.value.companyId, objectId: object.value.id, unitId: "", role: actor.role }, device),
+    value: await run({ userId: actor.userId, companyId: object.value.companyId, objectId: object.value.id, unitId: "", role: actor.role }, device),
   };
+}
+
+export async function openObjectPointFor(actor: StaffActor, objectId: unknown, pointId: unknown) {
+  return commandObjectPointFor(actor, objectId, pointId, "OPEN");
+}
+
+export async function closeObjectPointFor(actor: StaffActor, objectId: unknown, pointId: unknown) {
+  return commandObjectPointFor(actor, objectId, pointId, "CLOSE");
 }
 
 export async function cameraFrameFor(actor: StaffActor, objectId: unknown, deviceId: unknown) {

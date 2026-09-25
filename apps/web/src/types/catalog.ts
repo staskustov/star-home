@@ -4,6 +4,9 @@ export type CatalogUnitNode = {
   id: string;
   name: string;
   number: string;
+  areaM2: number | null;
+  floors: number;
+  planFloors: number[];
   canDelete: boolean;
 };
 

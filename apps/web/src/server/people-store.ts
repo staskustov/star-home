@@ -10,6 +10,7 @@ export type StoredUser = {
   id: string;
   login: string;
   name: string;
+  surname?: string;
   passwordHash: string;
   email?: string;
   phone?: string;
@@ -17,6 +18,10 @@ export type StoredUser = {
   lastLoginAt?: string | null;
   sessionVersion?: number;
 };
+
+export function personName(user: { name: string; surname?: string }): string {
+  return [user.name, user.surname].filter((part) => part?.trim()).join(" ");
+}
 
 type PeopleFile = {
   users: StoredUser[];
@@ -93,6 +98,7 @@ const demoStaff: { user: StoredUser; membership: Membership }[] = [
 
 function normalize(people: PeopleFile): PeopleFile {
   for (const user of people.users) {
+    user.surname ??= "";
     user.email ??= "";
     user.phone ??= "";
     user.status ??= "ACTIVE";
@@ -206,12 +212,13 @@ export function listMemberships(): Membership[] {
   return load().memberships;
 }
 
-export function createPerson(input: { login: string; name: string; passwordHash: string; email?: string; phone?: string }): StoredUser {
+export function createPerson(input: { login: string; name: string; surname?: string; passwordHash: string; email?: string; phone?: string }): StoredUser {
   const people = load();
   const user: StoredUser = {
     id: `usr_${randomBytes(8).toString("hex")}`,
     login: input.login,
     name: input.name,
+    surname: input.surname ?? "",
     passwordHash: input.passwordHash,
     email: input.email ?? "",
     phone: input.phone ?? "",
@@ -262,7 +269,7 @@ export function deleteMembership(membershipId: string): void {
 
 export function updateUser(
   userId: string,
-  patch: Partial<Pick<StoredUser, "name" | "login" | "email" | "phone" | "status" | "lastLoginAt" | "passwordHash">>,
+  patch: Partial<Pick<StoredUser, "name" | "surname" | "login" | "email" | "phone" | "status" | "lastLoginAt" | "passwordHash">>,
 ): StoredUser | undefined {
   const people = load();
   const user = people.users.find((item) => item.id === userId);

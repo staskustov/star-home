@@ -58,8 +58,16 @@ function ownObject(
   return objectFor(actor, objectId, reach);
 }
 
-function unitNode(unit: { id: string; name: string; number: string }): CatalogUnitNode {
-  return { id: unit.id, name: unit.name, number: unit.number, canDelete: !unitHasAssignment(unit.id) };
+function unitNode(unit: { id: string; name: string; number: string; areaM2?: number | null; floors?: number; plans?: { floor: number }[] }): CatalogUnitNode {
+  return {
+    id: unit.id,
+    name: unit.name,
+    number: unit.number,
+    areaM2: unit.areaM2 ?? null,
+    floors: unit.floors ?? 1,
+    planFloors: (unit.plans ?? []).filter((plan) => plan.floor >= 1).map((plan) => plan.floor),
+    canDelete: !unitHasAssignment(unit.id),
+  };
 }
 
 export function treeFor(actor: StaffActor, objectId: string): Success<CatalogTree> | Failure {
@@ -233,15 +241,85 @@ export function createUnit(
   return { ok: true, value: { id: unit.id } };
 }
 
-export function updateUnit(actor: StaffActor, unitId: string, name: unknown): Success<{ id: string }> | Failure {
+function cleanArea(value: unknown): number | null | Failure {
+  if (value === undefined || value === null || value === "") return null;
+  const amount = typeof value === "number" ? value : typeof value === "string" ? Number(value.replace(",", ".")) : NaN;
+  if (!Number.isFinite(amount) || amount <= 0 || amount > 20_000) return { ok: false, status: 400, message: "Площадь: от 1 до 20 000 м²" };
+  return Math.round(amount * 10) / 10;
+}
+
+function cleanFloors(value: unknown): number | Failure {
+  const floors = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+  if (!Number.isInteger(floors) || floors < 1 || floors > 6) return { ok: false, status: 400, message: "Этажность: от 1 до 6" };
+  return floors;
+}
+
+const planImage = /^data:image\/(jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$/i;
+
+function cleanPlans(value: unknown, floors: number): { floor: number; image: string }[] | Failure {
+  if (!Array.isArray(value)) return [];
+  const plans: { floor: number; image: string }[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const row = item as { floor?: unknown; image?: unknown };
+    const floor = typeof row.floor === "number" ? row.floor : Number(row.floor);
+    if (!Number.isInteger(floor) || floor < 1 || floor > floors) continue;
+    if (typeof row.image !== "string" || !planImage.test(row.image) || row.image.length > 800_000) {
+      return { ok: false, status: 400, message: "Планировка: изображение JPEG, PNG или WebP до 600 КБ" };
+    }
+    plans.push({ floor, image: row.image });
+  }
+  return plans;
+}
+
+export function unitDetails(actor: StaffActor, unitId: string): Success<{
+  id: string;
+  name: string;
+  areaM2: number | null;
+  floors: number;
+  plans: { floor: number; image: string }[];
+}> | Failure {
+  if (!can(actor, "objects.view")) return denied;
+  const unit = unitFor(actor, unitId);
+  if (!unit.ok) return unit;
+  return {
+    ok: true,
+    value: {
+      id: unit.value.id,
+      name: unit.value.name,
+      areaM2: unit.value.areaM2 ?? null,
+      floors: unit.value.floors ?? 1,
+      plans: (unit.value.plans ?? []).map((plan) => ({ floor: plan.floor, image: plan.image })),
+    },
+  };
+}
+
+export function updateUnit(
+  actor: StaffActor,
+  unitId: string,
+  input: { name?: unknown; areaM2?: unknown; floors?: unknown; plans?: unknown },
+): Success<{ id: string }> | Failure {
   if (!can(actor, "objects.structure.edit")) return denied;
   const unit = unitFor(actor, unitId);
   if (!unit.ok) return unit;
-  const title = cleanText(name, "Введите название");
+  const title = cleanText(input.name, "Введите название");
   if (typeof title !== "string") return title;
-  const changes = unit.value.name !== title ? [{ field: "Название", from: unit.value.name, to: title }] : [];
-  updateCatalogUnit(unitId, title);
-  if (changes.length) {
+  const area = input.areaM2 === undefined ? (unit.value.areaM2 ?? null) : cleanArea(input.areaM2);
+  if (area && typeof area !== "number") return area;
+  const areaM2 = typeof area === "number" ? area : null;
+  const floors = input.floors === undefined ? (unit.value.floors ?? 1) : cleanFloors(input.floors);
+  if (typeof floors !== "number") return floors;
+  const plans = input.plans === undefined ? (unit.value.plans ?? []).filter((plan) => plan.floor <= floors) : cleanPlans(input.plans, floors);
+  if (!Array.isArray(plans)) return plans;
+  const changes = [
+    ...(unit.value.name !== title ? [{ field: "Название", from: unit.value.name, to: title }] : []),
+    ...((unit.value.areaM2 ?? null) !== areaM2
+      ? [{ field: "Площадь", from: unit.value.areaM2 == null ? "" : String(unit.value.areaM2), to: areaM2 == null ? "" : String(areaM2) }]
+      : []),
+    ...((unit.value.floors ?? 1) !== floors ? [{ field: "Этажность", from: String(unit.value.floors ?? 1), to: String(floors) }] : []),
+  ];
+  updateCatalogUnit(unitId, { name: title, areaM2, floors, plans });
+  if (changes.length || input.plans !== undefined) {
     note(actor, "UNIT_EDIT", {
       objectId: unit.value.objectId,
       buildingId: unit.value.buildingId,

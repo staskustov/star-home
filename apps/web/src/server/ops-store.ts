@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
-import { deviceLabel, type DeviceKind } from "@/server/device-kinds";
+import { deviceLabel, isOpener, type DeviceKind } from "@/server/device-kinds";
 import { findObject } from "@/server/catalog-store";
 import { boundValue, remember } from "@/server/store-bind";
 import type { AccessEvent } from "@/types/domain";
@@ -73,6 +73,7 @@ export type Device = {
   adapter: "local" | "http" | "matter" | "mqtt" | "modbus" | "onvif" | "rs485";
   endpoint?: string;
   work?: "ON" | "OFF" | "FAULT";
+  latch?: "OPEN" | "CLOSED";
 };
 
 export type DeviceReading = {
@@ -144,6 +145,7 @@ type OpsFile = {
   requests: ServiceRequest[];
   invoices: Invoice[];
   devices: Device[];
+  removedDeviceIds: string[];
   readings: DeviceReading[];
   alarms: Alarm[];
   notices: Notice[];
@@ -339,6 +341,7 @@ function seed(): OpsFile {
         adapter: "local",
       },
     ],
+    removedDeviceIds: [],
     readings: [
       { deviceId: "dev_climate_24", temperatureC: 22.4, humidityPercent: 48 },
       { deviceId: "dev_climate_84", temperatureC: 21.1, humidityPercent: 41 },
@@ -367,6 +370,7 @@ function normalize(file: OpsFile): OpsFile {
   file.meterReadings ??= [];
   file.passes ??= [];
   file.devices ??= [];
+  file.removedDeviceIds ??= [];
   for (const request of file.requests ?? []) {
     if ((request.status as string) === "NEW") request.status = "CREATED";
   }
@@ -377,13 +381,15 @@ function normalize(file: OpsFile): OpsFile {
     }
   }
   for (const device of catalogDevices()) {
-    if (!findObject(device.objectId) || file.devices.some((item) => item.id === device.id)) continue;
+    if (!findObject(device.objectId) || file.removedDeviceIds.includes(device.id) || file.devices.some((item) => item.id === device.id)) continue;
     file.devices.push({ ...device });
   }
   for (const device of file.devices) {
-    if (device.work) continue;
-    const seeded = catalogDevices().find((item) => item.id === device.id);
-    device.work = seeded?.work ?? "ON";
+    if (!device.work) {
+      const seeded = catalogDevices().find((item) => item.id === device.id);
+      device.work = seeded?.work ?? "ON";
+    }
+    if (isOpener(device.kind)) device.latch ??= "CLOSED";
   }
   return file;
 }

@@ -4,9 +4,20 @@ import { useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useAdminPreview } from "@/components/admin/AdminPreview";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { ViewToggle, useViewMode } from "@/components/ui/ViewToggle";
 import { commandMessage, runCommand } from "@/lib/command";
 import { formatMoney } from "@/lib/format";
 import type { AccessEvent } from "@/types/domain";
+
+type AccessPointRow = {
+  id: string;
+  objectId: string;
+  name: string;
+  endpoint: string;
+  latch: "OPEN" | "CLOSED";
+  work: "ON" | "OFF" | "FAULT";
+  status: string;
+};
 
 type Row = { objectId: string };
 
@@ -29,15 +40,22 @@ function useObjectRows<T extends Row>(rows: T[]): T[] {
 export function AccessDesk({
   passes,
   events,
+  points = [],
 }: {
   passes: { id: string; objectId: string; guestName: string; detail: string; unitName: string }[];
   events: (AccessEvent & { objectId: string })[];
+  points?: AccessPointRow[];
 }) {
   const { selected, can } = useAdminPreview();
   const router = useRouter();
   const [notice, setNotice] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const [api, setApi] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const guests = useObjectRows(passes);
   const history = useObjectRows(events);
+  const rows = useObjectRows(points);
 
   async function openGate() {
     if (!selected) return;
@@ -53,6 +71,80 @@ export function AccessDesk({
     if (result.ok) router.refresh();
   }
 
+  async function commandPoint(pointId: string, action: "open" | "close") {
+    if (!selected) return;
+    setNotice(null);
+    const url = action === "open" ? "/api/security/points" : `/api/access/object-points/${pointId}/close`;
+    const result = await runCommand(() =>
+      fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ objectId: selected.id, pointId }),
+      }),
+    );
+    setNotice(commandMessage(result.payload));
+    if (result.ok) router.refresh();
+  }
+
+  async function addPoint(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selected) return;
+    setNotice(null);
+    const result = await runCommand(() =>
+      fetch("/api/access/object-points", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ objectId: selected.id, name, api }),
+      }),
+    );
+    if (!result.ok) {
+      setNotice(commandMessage(result.payload));
+      return;
+    }
+    setName("");
+    setApi("");
+    setNotice("Точка доступа сохранена.");
+    router.refresh();
+  }
+
+  async function savePoint(point: AccessPointRow, draft: { name: string; api: string }) {
+    if (!selected) return false;
+    setNotice(null);
+    const result = await runCommand(() =>
+      fetch(`/api/access/object-points/${point.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ objectId: selected.id, name: draft.name, api: draft.api }),
+      }),
+    );
+    if (!result.ok) {
+      setNotice(commandMessage(result.payload));
+      return false;
+    }
+    setEditingId(null);
+    setNotice("Точка доступа сохранена.");
+    router.refresh();
+    return true;
+  }
+
+  async function removePoint(pointId: string) {
+    if (!selected) return;
+    setNotice(null);
+    const result = await runCommand(() =>
+      fetch(`/api/access/object-points/${pointId}`, {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ objectId: selected.id }),
+      }),
+    );
+    if (!result.ok) {
+      setNotice(commandMessage(result.payload));
+      return;
+    }
+    setPendingDelete(null);
+    router.refresh();
+  }
+
   return (
     <Shell title="Доступ">
       {can("access.gate.open") ? (
@@ -61,6 +153,73 @@ export function AccessDesk({
         </button>
       ) : null}
       {notice ? <p className="text-sm text-muted">{notice}</p> : null}
+      {can("access.points.manage") ? (
+        <form onSubmit={addPoint} className="panel p-5">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="block">
+              <span className="text-sm text-muted">Название</span>
+              <input value={name} onChange={(event) => setName(event.target.value)} className="control mt-2" />
+            </label>
+            <label className="block">
+              <span className="text-sm text-muted">Api</span>
+              <input value={api} onChange={(event) => setApi(event.target.value)} className="control mt-2" placeholder="https://" />
+            </label>
+          </div>
+          <button type="submit" className="mt-5 btn btn-primary">
+            Добавить точку доступа
+          </button>
+        </form>
+      ) : null}
+      <List empty="Точек доступа нет.">
+        {rows.map((point) =>
+          editingId === point.id ? (
+            <AccessPointEdit
+              key={point.id}
+              point={point}
+              onCancel={() => setEditingId(null)}
+              onSave={(draft) => savePoint(point, draft)}
+            />
+          ) : (
+            <li key={point.id} className="px-5 py-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[16px] text-ink">{point.name}</p>
+                  <p className="mt-1 text-sm text-muted">{point.endpoint || "Локальный адаптер"}</p>
+                </div>
+                <StatusBadge tone={point.work === "FAULT" ? "danger" : point.work === "OFF" ? "warning" : point.latch === "OPEN" ? "success" : "info"}>
+                  {point.status}
+                </StatusBadge>
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                {can("access.gate.open") ? (
+                  <>
+                    <button type="button" className="btn btn-primary btn-compact" onClick={() => commandPoint(point.id, "open")} disabled={point.work !== "ON"}>
+                      Открыть
+                    </button>
+                    <button type="button" className="btn btn-secondary btn-compact" onClick={() => commandPoint(point.id, "close")} disabled={point.work !== "ON"}>
+                      Закрыть
+                    </button>
+                  </>
+                ) : null}
+                {can("access.points.manage") ? (
+                  <>
+                    <button type="button" className="btn btn-secondary btn-compact" onClick={() => setEditingId(point.id)}>
+                      Изменить
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn btn-compact ${pendingDelete === point.id ? "btn-danger" : "btn-secondary"}`}
+                      onClick={() => (pendingDelete === point.id ? removePoint(point.id) : setPendingDelete(point.id))}
+                    >
+                      {pendingDelete === point.id ? "Подтвердить" : "Удалить"}
+                    </button>
+                  </>
+                ) : null}
+              </div>
+            </li>
+          ),
+        )}
+      </List>
       <List empty="Пропусков нет.">
         {guests.map((pass) => (
           <li key={pass.id} className="px-5 py-4">
@@ -190,23 +349,42 @@ export function DeviceDesk({
   devices,
   meters = [],
 }: {
-  devices: { objectId: string; name: string; kind: string; state: string }[];
+  devices: { id?: string; objectId: string; name: string; kind: string; state: string }[];
   meters?: { objectId: string; name: string; value: string; unit: string }[];
 }) {
+  const [view, setView] = useViewMode("devices");
   const rows = useObjectRows(devices);
   const readings = useObjectRows(meters);
   return (
     <Shell title="Устройства">
-      <List empty="Устройств нет.">
-        {rows.map((device) => (
-          <li key={`${device.objectId}-${device.name}`} className="px-5 py-4">
-            <p className="text-[16px] text-ink">{device.name}</p>
-            <p className="text-sm text-muted">
-              {device.kind} · {device.state}
-            </p>
-          </li>
-        ))}
-      </List>
+      <ViewToggle value={view} onChange={setView} />
+      {view === "blocks" ? (
+        <ul className="grid gap-3 sm:grid-cols-2">
+          {rows.length === 0 ? (
+            <li className="panel px-5 py-4 text-[15px] text-muted">Устройств нет.</li>
+          ) : (
+            rows.map((device) => (
+              <li key={device.id ?? `${device.objectId}-${device.name}`} className="panel p-5">
+                <p className="text-[16px] text-ink">{device.name}</p>
+                <p className="mt-2 text-sm text-muted">
+                  {device.kind} · {device.state}
+                </p>
+              </li>
+            ))
+          )}
+        </ul>
+      ) : (
+        <List empty="Устройств нет.">
+          {rows.map((device) => (
+            <li key={device.id ?? `${device.objectId}-${device.name}`} className="px-5 py-4">
+              <p className="text-[16px] text-ink">{device.name}</p>
+              <p className="text-sm text-muted">
+                {device.kind} · {device.state}
+              </p>
+            </li>
+          ))}
+        </List>
+      )}
       <List empty="Счётчиков нет.">
         {readings.map((meter) => (
           <li key={`${meter.objectId}-${meter.name}`} className="px-5 py-4">
@@ -218,6 +396,47 @@ export function DeviceDesk({
         ))}
       </List>
     </Shell>
+  );
+}
+
+function AccessPointEdit({
+  point,
+  onCancel,
+  onSave,
+}: {
+  point: AccessPointRow;
+  onCancel: () => void;
+  onSave: (draft: { name: string; api: string }) => Promise<boolean>;
+}) {
+  const [name, setName] = useState(point.name);
+  const [api, setApi] = useState(point.endpoint);
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await onSave({ name, api });
+  }
+
+  return (
+    <li className="px-5 py-4">
+      <form onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
+        <label className="block">
+          <span className="text-sm text-muted">Название</span>
+          <input value={name} onChange={(event) => setName(event.target.value)} className="control mt-2" />
+        </label>
+        <label className="block">
+          <span className="text-sm text-muted">Api</span>
+          <input value={api} onChange={(event) => setApi(event.target.value)} className="control mt-2" placeholder="https://" />
+        </label>
+        <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
+          <button type="submit" className="btn btn-primary btn-compact">
+            Сохранить
+          </button>
+          <button type="button" className="btn btn-secondary btn-compact" onClick={onCancel}>
+            Отмена
+          </button>
+        </div>
+      </form>
+    </li>
   );
 }
 

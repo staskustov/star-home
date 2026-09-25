@@ -1,7 +1,7 @@
 import { residentHome } from "@/mocks/resident-home";
 import { findBuilding, findCompany, findObject, findUnit } from "@/server/catalog-store";
 import { modeForUnit, modesForObject } from "@/server/life-mode-store";
-import { listMemberships, listUsers, type StoredUser } from "@/server/people-store";
+import { listMemberships, listUsers, personName, type StoredUser } from "@/server/people-store";
 import { staffRoles } from "@/server/rbac/policy";
 import type { Membership, ResidentHome, Role } from "@/types/domain";
 
@@ -130,7 +130,7 @@ export function homeFor(user: DirectoryUser, membership: Membership): ResidentHo
   };
   return {
     ...home,
-    residentName: user.name,
+    residentName: personName(user),
     company: { id: object.companyId, name: company?.name ?? home.company.name },
     object: {
       id: object.id,

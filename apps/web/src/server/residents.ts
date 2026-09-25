@@ -8,6 +8,7 @@ import {
   endSessions,
   listMemberships,
   listUsers,
+  personName,
   updateMembership,
   updateUser,
 } from "@/server/people-store";
@@ -24,6 +25,8 @@ const roleLabel: Record<string, string> = { RESIDENT: "Житель", FAMILY_MEM
 export type ResidentRow = {
   membershipId: string;
   name: string;
+  surname: string;
+  displayName: string;
   login: string;
   objectId: string;
   unitId: string;
@@ -60,6 +63,14 @@ function cleanName(value: unknown): string | Failure {
   return name;
 }
 
+function cleanSurname(value: unknown): string | Failure {
+  if (value === undefined || value === null || value === "") return "";
+  if (typeof value !== "string") return { ok: false, status: 400, message: "Проверьте фамилию" };
+  const surname = value.trim().replace(/\s+/g, " ");
+  if (surname.length > 80) return { ok: false, status: 400, message: "Слишком длинная фамилия" };
+  return surname;
+}
+
 function cleanLogin(value: unknown): string | Failure {
   if (typeof value !== "string") return { ok: false, status: 400, message: "Введите логин" };
   const login = value.trim().toLowerCase();
@@ -92,6 +103,8 @@ export function residentBoard(actor: StaffActor): {
         {
           membershipId: membership.id,
           name: user.name,
+          surname: user.surname ?? "",
+          displayName: personName(user),
           login: user.login,
           objectId: membership.objectId,
           unitId: unit.id,
@@ -132,7 +145,7 @@ function groupsFor(actor: StaffActor, objectId: string): ResidentGroup[] {
 
 export function addResident(
   actor: StaffActor,
-  input: { objectId: unknown; unitId: unknown; name: unknown; login: unknown; password: unknown; role?: unknown; expiresAt?: unknown },
+  input: { objectId: unknown; unitId: unknown; name: unknown; surname?: unknown; login: unknown; password: unknown; role?: unknown; expiresAt?: unknown },
 ): Success<{ membershipId: string; existed: boolean }> | Failure {
   if (!can(actor, "residents.create")) return denied;
   if (typeof input.objectId !== "string" || typeof input.unitId !== "string") {
@@ -155,6 +168,8 @@ export function addResident(
   const existing = findUserByLogin(login);
   const name = existing ? existing.name : cleanName(input.name);
   if (typeof name !== "string") return name;
+  const surname = existing ? (existing.surname ?? "") : cleanSurname(input.surname);
+  if (typeof surname !== "string") return surname;
   if (
     existing &&
     listMemberships().filter(isLive).some(
@@ -170,7 +185,7 @@ export function addResident(
     if (password.length < 6 || password.length > 72) {
       return { ok: false, status: 400, message: "Пароль: от 6 до 72 символов" };
     }
-    userId = createPerson({ login, name, passwordHash: hashPassword(password) }).id;
+    userId = createPerson({ login, name, surname, passwordHash: hashPassword(password) }).id;
   } else if (!membershipsOf(userId).some((membership) => membership.companyId === actor.companyId)) {
     return { ok: false, status: 403, message: "Нет доступа" };
   }
@@ -200,7 +215,7 @@ export function addResident(
     action: "RESIDENT_ADD",
     targetType: "membership",
     targetId: membership.id,
-    target: `${name} · ${roleLabel[role] ?? "Житель"} · ${unit.name}`,
+    target: `${personName({ name, surname: existing ? (existing.surname ?? "") : surname })} · ${roleLabel[role] ?? "Житель"} · ${unit.name}`,
   });
   return { ok: true, value: { membershipId: membership.id, existed: Boolean(existing) } };
 }
@@ -214,13 +229,14 @@ function guestExpiry(value: unknown, fallback: string | null): string | Failure 
 function reachableHousehold(actor: StaffActor, membership: { role: Role; unitId: string | null }): boolean {
   if (!householdRoles.has(membership.role) || !membership.unitId) return false;
   const unit = findUnit(membership.unitId);
-  return Boolean(unit) && unitInScope(actor, unit);
+  if (!unit) return false;
+  return unitInScope(actor, unit);
 }
 
 export function updateResident(
   actor: StaffActor,
   membershipId: string,
-  input: { name?: unknown; login?: unknown; password?: unknown; role?: unknown; unitId?: unknown; expiresAt?: unknown },
+  input: { name?: unknown; surname?: unknown; login?: unknown; password?: unknown; role?: unknown; unitId?: unknown; expiresAt?: unknown },
 ): Success<{ id: string }> | Failure {
   if (!can(actor, "residents.edit")) return denied;
   const membership = listMemberships().filter(isLive).find((item) => item.id === membershipId);
@@ -233,6 +249,8 @@ export function updateResident(
   if (!user) return { ok: false, status: 404, message: "Житель не найден" };
   const name = cleanName(input.name);
   if (typeof name !== "string") return name;
+  const surname = cleanSurname(input.surname);
+  if (typeof surname !== "string") return surname;
   const login = cleanLogin(input.login);
   if (typeof login !== "string") return login;
   const taken = findUserByLogin(login);
@@ -282,6 +300,7 @@ export function updateResident(
   }
   updateUser(user.id, {
     name,
+    surname,
     login,
     ...(passwordChanged ? { passwordHash: hashPassword(password) } : {}),
   });
@@ -304,7 +323,7 @@ export function updateResident(
     action: "RESIDENT_EDIT",
     targetType: "membership",
     targetId: membership.id,
-    target: `${name} · ${roleLabel[role] ?? "Житель"} · ${nextUnit.value.name}`,
+    target: `${personName({ name, surname })} · ${roleLabel[role] ?? "Житель"} · ${nextUnit.value.name}`,
   });
   return { ok: true, value: { id: membership.id } };
 }
@@ -329,7 +348,7 @@ export function removeResident(actor: StaffActor, membershipId: string): Success
     action: "RESIDENT_REMOVE",
     targetType: "membership",
     targetId: membershipId,
-    target: `${user.name} · ${roleLabel[membership.role] ?? "Житель"} · ${unit.value.name}`,
+    target: `${personName(user)} · ${roleLabel[membership.role] ?? "Житель"} · ${unit.value.name}`,
   });
   return { ok: true, value: { id: membershipId } };
 }

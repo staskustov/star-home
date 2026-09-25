@@ -2,7 +2,7 @@ import { isOpener } from "@/server/device-kinds";
 import type { Device } from "@/server/ops-store";
 import { readOps, writeOps } from "@/server/ops-store";
 
-export type DeviceCommand = "OPEN" | "READ";
+export type DeviceCommand = "OPEN" | "CLOSE" | "READ";
 
 export type DeviceResult = {
   confirmed: boolean;
@@ -15,7 +15,7 @@ export interface DeviceAdapter {
 
 class LocalAdapter implements DeviceAdapter {
   async execute(device: Device, command: DeviceCommand): Promise<DeviceResult> {
-    if (command === "OPEN" && isOpener(device.kind)) return { confirmed: true };
+    if ((command === "OPEN" || command === "CLOSE") && isOpener(device.kind)) return { confirmed: true };
     if (command === "READ" && device.kind === "CLIMATE") {
       const reading = readOps().readings.find((item) => item.deviceId === device.id);
       return reading ? { confirmed: true, reading } : { confirmed: false };
