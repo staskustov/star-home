@@ -1,3 +1,4 @@
+import "./register-paths";
 import assert from "node:assert/strict";
 import { before, describe, it } from "node:test";
 import { bindStore } from "../../web/src/server/store-bind";
@@ -149,6 +150,9 @@ describe("policy", () => {
     assert.ok(permissionsOf("COMPANY_ADMIN").has("access.points.manage"));
     assert.ok(permissionsOf("OBJECT_ADMIN").has("access.points.manage"));
     assert.ok(!permissionsOf("MANAGER").has("access.points.manage"));
+    assert.ok(permissionsOf("COMPANY_ADMIN").has("devices.create"));
+    assert.ok(permissionsOf("OBJECT_ADMIN").has("devices.create"));
+    assert.ok(!permissionsOf("MANAGER").has("devices.create"));
   });
 });
 
@@ -218,6 +222,153 @@ describe("access points", () => {
     const renamed = await rpc("updateAccessPoint", { objectId: "obj_siyanie", pointId, name: "Калитка двора", api: "" }, admin);
     assert.equal(renamed.status, 200);
     assert.equal((await rpc("removeAccessPoint", { objectId: "obj_siyanie", pointId }, objectAdmin)).status, 200);
+  });
+});
+
+describe("smart home registry", () => {
+  it("stores rooms, gateways and device bindings inside object scope", async () => {
+    const room = await rpc("createRoom", { unitId: "unit_24", name: "Кабинет", kind: "STUDY", floor: 1 }, objectAdmin);
+    assert.equal(room.status, 201);
+    const roomId = (room.body as { id: string }).id;
+    const details = (await rpc("unitDetails", { unitId: "unit_24" }, objectAdmin)).body as {
+      rooms: { id: string; name: string; kind: string; floor: number | null }[];
+    };
+    assert.ok(details.rooms.some((item) => item.id === roomId && item.name === "Кабинет"));
+    assert.equal((await rpc("createRoom", { unitId: "unit_84", name: "Чужая" }, objectAdmin)).status, 403);
+    assert.equal((await rpc("createRoom", { unitId: "unit_24", name: "Чужая" }, security)).status, 403);
+
+    const gateway = await rpc("createGateway", { objectId: "obj_siyanie", name: "WB Local Gateway", adapter: "wirenboard" }, objectAdmin);
+    assert.equal(gateway.status, 201);
+    const gatewayId = (gateway.body as { id: string }).id;
+    assert.equal((await rpc("createGateway", { objectId: "obj_park", name: "Чужой" }, objectAdmin)).status, 403);
+    assert.equal((await rpc("createGateway", { objectId: "obj_siyanie", name: "Чужой" }, manager)).status, 403);
+    const listed = (await rpc("listGateways", { objectId: "obj_siyanie" }, objectAdmin)).body as {
+      gateways: { id: string; status: string; adapter: string; connectedDevices: number }[];
+    };
+    const row = listed.gateways.find((item) => item.id === gatewayId);
+    assert.ok(row);
+    assert.equal(row.status, "OFFLINE");
+    assert.equal(row.adapter, "wirenboard");
+
+    const created = await rpc(
+      "registerDevice",
+      { objectId: "obj_siyanie", unitId: "unit_24", roomId, gatewayId, name: "Свет в кабинете", kind: "LIGHTING" },
+      objectAdmin,
+    );
+    assert.equal(created.status, 201);
+    const deviceId = (created.body as { id: string }).id;
+    assert.equal((await rpc("registerDevice", { objectId: "obj_park", name: "Чужой", kind: "LIGHTING" }, objectAdmin)).status, 403);
+    const devices = (await rpc("listDevices", { objectId: "obj_siyanie" }, objectAdmin)).body as {
+      devices: { id: string; roomId: string | null; gatewayId: string | null; capabilities: string[]; availability: string }[];
+    };
+    const device = devices.devices.find((item) => item.id === deviceId);
+    assert.ok(device);
+    assert.equal(device.roomId, roomId);
+    assert.equal(device.gatewayId, gatewayId);
+    assert.deepEqual(device.capabilities, ["power", "brightness"]);
+    assert.equal(device.availability, "UNKNOWN");
+    const climate = devices.devices.find((item) => item.id === "dev_climate_24");
+    assert.ok(climate);
+    assert.ok(climate.capabilities.includes("temperature"));
+
+    assert.equal((await rpc("removeRoom", { roomId }, objectAdmin)).status, 409);
+    assert.equal((await rpc("removeGateway", { gatewayId }, objectAdmin)).status, 409);
+    assert.equal((await rpc("removeDevice", { deviceId }, objectAdmin)).status, 200);
+    assert.equal((await rpc("removeRoom", { roomId }, objectAdmin)).status, 200);
+    assert.equal((await rpc("removeGateway", { gatewayId }, objectAdmin)).status, 200);
+    const after = (await rpc("listDevices", { objectId: "obj_siyanie" }, objectAdmin)).body as { devices: { id: string }[] };
+    assert.ok(!after.devices.some((item) => item.id === deviceId));
+  });
+});
+
+describe("smart home commands", () => {
+  it("lets a resident command a low-risk device on their unit", async () => {
+    const reply = await rpc("commandDeviceSmart", { deviceId: "dev_light_24", command: "setPower", value: true }, resident);
+    assert.equal(reply.status, 200, JSON.stringify(reply.body));
+    const body = reply.body as { confirmed: boolean; device?: { state?: { on?: boolean } } };
+    assert.equal(body.confirmed, true);
+    assert.equal(body.device?.state?.on, true);
+  });
+
+  it("keeps HIGH commands behind confirm and audit", async () => {
+    const first = await rpc("commandDeviceSmart", { deviceId: "dev_gate_siyanie", command: "open" }, resident);
+    assert.equal(first.status, 200);
+    const pending = first.body as { needsConfirm?: boolean; token?: string; confirmed: boolean };
+    assert.equal(pending.confirmed, false);
+    assert.equal(pending.needsConfirm, true);
+    assert.ok(pending.token);
+    const opened = await rpc("commandDeviceSmart", { deviceId: "dev_gate_siyanie", command: "open", confirmToken: pending.token }, resident);
+    assert.equal(opened.status, 200);
+    assert.equal((opened.body as { confirmed: boolean }).confirmed, true);
+  });
+
+  it("rejects an unknown capability and a neighbour device", async () => {
+    assert.equal((await rpc("commandDeviceSmart", { deviceId: "dev_light_24", command: "setTemperature", value: 21 }, resident)).status, 400);
+    const people = await import("../../web/src/server/people-store");
+    const person = people.createPerson({ login: "park.smart.resident", name: "Мария", passwordHash: "x" });
+    const membership = people.createResidentMembership({
+      userId: person.id,
+      companyId: "cmp_star",
+      objectId: "obj_park",
+      unitId: "unit_84",
+    });
+    const other = { userId: person.id, membershipId: membership.id };
+    const reply = await rpc("commandDeviceSmart", { deviceId: "dev_light_24", command: "setPower", value: false }, other);
+    assert.ok(reply.status === 403 || reply.status === 404, JSON.stringify(reply.body));
+  });
+
+  it("reads catalog rooms and hides protocol fields from the resident", async () => {
+    const home = (await rpc("home", null, resident)).body as { home: { rooms: { name: string }[] } };
+    assert.ok(home.home.rooms.some((room) => room.name === "Гостиная"));
+    assert.ok(!home.home.rooms.some((room) => room.name === "Детская"));
+    const devices = (await rpc("smartHomeDevices", {}, resident)).body as {
+      devices: { id: string; technical?: unknown; endpoint?: string }[];
+    };
+    const light = devices.devices.find((item) => item.id === "dev_light_24");
+    assert.ok(light);
+    assert.equal(light.technical, undefined);
+    assert.equal(JSON.stringify(light).includes("endpoint"), false);
+  });
+
+  it("runs a life-mode scenario without executing HIGH steps", async () => {
+    const created = await rpc(
+      "createScenario",
+      {
+        objectId: "obj_siyanie",
+        unitId: "unit_24",
+        name: "Ушёл на работу",
+        trigger: "LIFE_MODE",
+        lifeMode: "WORK",
+        steps: [
+          { deviceId: "dev_light_24", command: "setPower", value: false },
+          { deviceId: "dev_gate_siyanie", command: "open" },
+        ],
+      },
+      resident,
+    );
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    const close = await rpc("commandDeviceSmart", { deviceId: "dev_gate_siyanie", command: "close" }, resident);
+    const closeToken = (close.body as { token?: string }).token;
+    if (closeToken) await rpc("commandDeviceSmart", { deviceId: "dev_gate_siyanie", command: "close", confirmToken: closeToken }, resident);
+    await rpc("commandDeviceSmart", { deviceId: "dev_light_24", command: "setPower", value: true }, resident);
+    const switched = await rpc("switchMode", { mode: "WORK" }, resident);
+    assert.equal(switched.status, 200);
+    const device = (await rpc("smartHomeDevice", { deviceId: "dev_light_24" }, resident)).body as { device: { state?: { on?: boolean } } };
+    assert.equal(device.device.state?.on, false);
+    const gate = (await rpc("smartHomeDevice", { deviceId: "dev_gate_siyanie" }, resident)).body as { device: { state?: { latch?: string } } };
+    assert.notEqual(gate.device.state?.latch, "OPEN");
+  });
+
+  it("does not let AI open a gate without confirm", async () => {
+    const before = (await rpc("smartHomeDevice", { deviceId: "dev_gate_siyanie" }, resident)).body as { device: { state?: { latch?: string } } };
+    const asked = await rpc("ask", { prompt: "открой ворота" }, resident);
+    assert.equal(asked.status, 200);
+    const token = (asked.body as { confirmToken: string | null }).confirmToken;
+    assert.ok(token);
+    const after = (await rpc("smartHomeDevice", { deviceId: "dev_gate_siyanie" }, resident)).body as { device: { state?: { latch?: string } } };
+    assert.equal(after.device.state?.latch, before.device.state?.latch);
+    const confirmed = await rpc("confirm", { token }, resident);
+    assert.equal(confirmed.status, 200);
   });
 });
 

@@ -1,6 +1,6 @@
 import { isOpener } from "@/server/device-kinds";
 import { recordAudit } from "@/server/operations";
-import { newId, readOps, writeOps, type Device } from "@/server/ops-store";
+import { newId, normalizeDevice, readOps, writeOps, type Device } from "@/server/ops-store";
 import { can, objectFor, reaches, type StaffActor } from "@/server/rbac/decide";
 
 type Failure = { ok: false; status: number; message: string };
@@ -88,7 +88,7 @@ export function createAccessPoint(
   if (typeof name !== "string") return name;
   const endpoint = cleanApi(input.api);
   if (typeof endpoint !== "string") return endpoint;
-  const device: Device = {
+  const device = normalizeDevice({
     id: newId("dev"),
     companyId: object.value.companyId,
     objectId: object.value.id,
@@ -99,7 +99,7 @@ export function createAccessPoint(
     endpoint: endpoint || undefined,
     work: "ON",
     latch: "CLOSED",
-  };
+  });
   const file = readOps();
   file.devices.push(device);
   writeOps(file);

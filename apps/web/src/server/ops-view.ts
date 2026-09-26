@@ -116,13 +116,32 @@ export function deskFor(actor: StaffActor, section: DeskSection) {
   }
   if (section === "devices") {
     return {
-      devices: mine(file.devices).map((device) => ({
-        id: device.id,
-        objectId: device.objectId,
-        name: device.name,
-        kind: deviceLabel(device.kind),
-        state: deviceState(device, file.readings),
+      devices: mine(file.devices).map((device) => {
+        const gateway = device.gatewayId ? file.gateways.find((item) => item.id === device.gatewayId) : undefined;
+        return {
+          id: device.id,
+          objectId: device.objectId,
+          name: device.name,
+          kind: deviceLabel(device.kind),
+          state: deviceState(device, file.readings),
+          availability: device.availability ?? "UNKNOWN",
+          lastSeen: device.lastSeen,
+          adapter: device.adapter,
+          gatewayName: gateway?.name ?? null,
+          lastError: gateway?.lastError ?? null,
+        };
+      }),
+      gateways: mine(file.gateways).map((gateway) => ({
+        id: gateway.id,
+        objectId: gateway.objectId,
+        name: gateway.name,
+        adapter: gateway.adapter,
+        status: gateway.status,
+        lastSeen: gateway.lastSeen,
+        lastError: gateway.lastError,
+        connectedDevices: file.devices.filter((device) => device.gatewayId === gateway.id).length,
       })),
+      canCommand: can(actor, "devices.command"),
       meters: mine(file.meters).map((meter) => {
         const latest = file.meterReadings.filter((reading) => reading.meterId === meter.id).at(-1);
         return { objectId: meter.objectId, name: meter.name, value: latest ? String(latest.value).replace(".", ",") : "—", unit: meter.unit };

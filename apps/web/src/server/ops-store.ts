@@ -1,8 +1,9 @@
 import { createHash, randomBytes } from "crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
+import { capabilitiesFor, type Capability } from "@/server/device-capabilities";
 import { deviceLabel, isOpener, type DeviceKind } from "@/server/device-kinds";
-import { findObject } from "@/server/catalog-store";
+import { findObject, findRoom } from "@/server/catalog-store";
 import { boundValue, remember } from "@/server/store-bind";
 import type { AccessEvent } from "@/types/domain";
 import { timeZone } from "@/server/time-zone";
@@ -63,6 +64,23 @@ export type Invoice = {
 
 export type { DeviceKind };
 
+export const gatewayAdapters = ["wirenboard", "mqtt", "modbus", "matter", "http", "knx", "onvif", "local"] as const;
+export type GatewayAdapterKind = (typeof gatewayAdapters)[number];
+export type DeviceAvailability = "ONLINE" | "OFFLINE" | "UNKNOWN";
+export type GatewayStatus = "ONLINE" | "OFFLINE" | "DEGRADED";
+
+export type NormalizedState = {
+  on?: boolean;
+  brightness?: number;
+  temperatureC?: number;
+  humidityPercent?: number;
+  targetC?: number;
+  mode?: string;
+  position?: number;
+  latch?: "OPEN" | "CLOSED";
+  detected?: boolean;
+};
+
 export type Device = {
   id: string;
   companyId: string;
@@ -74,6 +92,33 @@ export type Device = {
   endpoint?: string;
   work?: "ON" | "OFF" | "FAULT";
   latch?: "OPEN" | "CLOSED";
+  displayName?: string;
+  gatewayId?: string | null;
+  roomId?: string | null;
+  externalId?: string | null;
+  manufacturer?: string | null;
+  model?: string | null;
+  capabilities?: Capability[];
+  availability?: DeviceAvailability;
+  lastSeen?: string | null;
+  state?: NormalizedState;
+  updatedAt?: string;
+  metadata?: Record<string, unknown>;
+};
+
+export type Gateway = {
+  id: string;
+  companyId: string;
+  objectId: string;
+  unitId: string | null;
+  name: string;
+  adapter: GatewayAdapterKind;
+  status: GatewayStatus;
+  version: string | null;
+  lastSeen: string | null;
+  lastError: string | null;
+  internalAddress: string | null;
+  metadata?: Record<string, unknown>;
 };
 
 export type DeviceReading = {
@@ -124,9 +169,64 @@ export type StoredAccessEvent = AccessEvent & {
 };
 
 export type PendingTool = {
-  name: "open_gate" | "create_pass" | "create_request" | "pay" | "switch_mode";
+  name: "open_gate" | "create_pass" | "create_request" | "pay" | "switch_mode" | "control_device" | "set_temperature";
   token: string;
   mode?: "HOME" | "WORK" | "VACATION";
+  deviceId?: string;
+  command?: string;
+  value?: unknown;
+};
+
+export type SmartEventKind = "command" | "state" | "availability" | "gateway";
+
+export type SmartEvent = {
+  id: string;
+  companyId: string;
+  objectId: string;
+  unitId: string | null;
+  deviceId: string | null;
+  gatewayId: string | null;
+  kind: SmartEventKind;
+  title: string;
+  result: "SUCCESS" | "ERROR" | "UNCONFIRMED";
+  at: string;
+  seq: number;
+};
+
+export type SmartHistoryPoint = {
+  id: string;
+  deviceId: string;
+  objectId: string;
+  at: string;
+  state: NormalizedState;
+};
+
+export type PendingSmartCommand = {
+  token: string;
+  userId: string;
+  deviceId: string;
+  command: string;
+  value: unknown;
+  createdAt: string;
+};
+
+export type ScenarioTrigger = "MANUAL" | "LIFE_MODE";
+
+export type ScenarioStep = {
+  deviceId: string;
+  command: string;
+  value?: unknown;
+};
+
+export type Scenario = {
+  id: string;
+  companyId: string;
+  objectId: string;
+  unitId: string | null;
+  name: string;
+  trigger: ScenarioTrigger;
+  lifeMode?: "HOME" | "WORK" | "VACATION";
+  steps: ScenarioStep[];
 };
 
 export type AiTurn = {
@@ -145,6 +245,7 @@ type OpsFile = {
   requests: ServiceRequest[];
   invoices: Invoice[];
   devices: Device[];
+  gateways: Gateway[];
   removedDeviceIds: string[];
   readings: DeviceReading[];
   alarms: Alarm[];
@@ -153,6 +254,11 @@ type OpsFile = {
   turns: AiTurn[];
   meters: Meter[];
   meterReadings: MeterReading[];
+  smartEvents: SmartEvent[];
+  smartHistory: SmartHistoryPoint[];
+  pendingSmart: PendingSmartCommand[];
+  scenarios: Scenario[];
+  liveSeq: Record<string, number>;
 };
 
 const filePath = path.join(process.cwd(), "data", "ops.json");
@@ -263,6 +369,27 @@ function seed(): OpsFile {
         kind: "CLIMATE",
         name: "Климат дома",
         adapter: "local",
+        roomId: "room_24_living",
+      },
+      {
+        id: "dev_light_24",
+        companyId: "cmp_star",
+        objectId: "obj_siyanie",
+        unitId: "unit_24",
+        kind: "LIGHTING",
+        name: "Свет в гостиной",
+        adapter: "local",
+        roomId: "room_24_living",
+      },
+      {
+        id: "dev_curtain_24",
+        companyId: "cmp_star",
+        objectId: "obj_siyanie",
+        unitId: "unit_24",
+        kind: "CURTAIN",
+        name: "Шторы спальни",
+        adapter: "local",
+        roomId: "room_24_bedroom",
       },
       {
         id: "dev_climate_84",
@@ -341,6 +468,7 @@ function seed(): OpsFile {
         adapter: "local",
       },
     ],
+    gateways: [],
     removedDeviceIds: [],
     readings: [
       { deviceId: "dev_climate_24", temperatureC: 22.4, humidityPercent: 48 },
@@ -358,6 +486,11 @@ function seed(): OpsFile {
       { id: "read_24_water", meterId: "meter_24_water", value: 128.4, at: "01.09" },
       { id: "read_84_water", meterId: "meter_84_water", value: 86.2, at: "01.09" },
     ],
+    smartEvents: [],
+    smartHistory: [],
+    pendingSmart: [],
+    scenarios: [],
+    liveSeq: {},
   };
 }
 
@@ -365,12 +498,45 @@ function catalogDevices(): Device[] {
   return seed().devices;
 }
 
+export function isGatewayAdapter(value: unknown): value is GatewayAdapterKind {
+  return typeof value === "string" && (gatewayAdapters as readonly string[]).includes(value);
+}
+
+export function normalizeDevice(device: Device, reading?: DeviceReading): Device {
+  device.displayName ??= device.name;
+  device.gatewayId ??= null;
+  device.roomId ??= null;
+  device.externalId ??= null;
+  device.manufacturer ??= null;
+  device.model ??= null;
+  device.capabilities = device.capabilities?.length ? device.capabilities : capabilitiesFor(device.kind);
+  device.availability ??= "UNKNOWN";
+  device.lastSeen ??= null;
+  device.metadata ??= {};
+  if (!device.work) device.work = "ON";
+  if (isOpener(device.kind)) device.latch ??= "CLOSED";
+  if (reading && (device.kind === "CLIMATE" || device.capabilities?.includes("temperature") || device.capabilities?.includes("humidity"))) {
+    device.state = {
+      ...device.state,
+      temperatureC: reading.temperatureC,
+      humidityPercent: reading.humidityPercent,
+    };
+  }
+  return device;
+}
+
 function normalize(file: OpsFile): OpsFile {
   file.meters ??= [];
   file.meterReadings ??= [];
   file.passes ??= [];
   file.devices ??= [];
+  file.gateways ??= [];
   file.removedDeviceIds ??= [];
+  file.smartEvents ??= [];
+  file.smartHistory ??= [];
+  file.pendingSmart ??= [];
+  file.scenarios ??= [];
+  file.liveSeq ??= {};
   for (const request of file.requests ?? []) {
     if ((request.status as string) === "NEW") request.status = "CREATED";
   }
@@ -389,7 +555,17 @@ function normalize(file: OpsFile): OpsFile {
       const seeded = catalogDevices().find((item) => item.id === device.id);
       device.work = seeded?.work ?? "ON";
     }
-    if (isOpener(device.kind)) device.latch ??= "CLOSED";
+    const reading = file.readings.find((item) => item.deviceId === device.id);
+    normalizeDevice(device, reading);
+  }
+  for (const gateway of file.gateways) {
+    gateway.unitId ??= null;
+    gateway.status ??= "OFFLINE";
+    gateway.version ??= null;
+    gateway.lastSeen ??= null;
+    gateway.lastError ??= null;
+    gateway.internalAddress ??= null;
+    gateway.metadata ??= {};
   }
   return file;
 }
@@ -405,7 +581,7 @@ function load(): OpsFile {
     globalStore.__starHomeOps = normalize(JSON.parse(readFileSync(filePath, "utf8")) as OpsFile);
     return globalStore.__starHomeOps;
   }
-  const file = seed();
+  const file = normalize(seed());
   persist(file);
   return file;
 }
@@ -461,6 +637,18 @@ export function devicesForObject(objectId: string): Device[] {
   return load().devices.filter((device) => device.objectId === objectId);
 }
 
+export function gatewaysForObject(objectId: string): Gateway[] {
+  return load().gateways.filter((gateway) => gateway.objectId === objectId);
+}
+
+export function findDevice(deviceId: string): Device | undefined {
+  return load().devices.find((device) => device.id === deviceId);
+}
+
+export function findGateway(gatewayId: string): Gateway | undefined {
+  return load().gateways.find((gateway) => gateway.id === gatewayId);
+}
+
 export function alarmsForObject(objectId: string): Alarm[] {
   return load().alarms.filter((alarm) => alarm.objectId === objectId);
 }
@@ -487,7 +675,7 @@ export function homeSignals(unitId: string, objectId: string): {
   payments: { title: string; amount: number; currency: string }[];
   categories: string[];
   cameras: { name: string; state: string }[];
-  devices: { name: string; label: string; state: "ON" | "OFF" | "FAULT" }[];
+  devices: { id: string; name: string; label: string; state: "ON" | "OFF" | "FAULT"; stale?: boolean; roomName?: string | null }[];
 } {
   const file = load();
   const climateDevice = file.devices.find((device) => device.kind === "CLIMATE" && device.unitId === unitId);
@@ -528,6 +716,13 @@ export function homeSignals(unitId: string, objectId: string): {
       .map((device) => ({ name: device.name, state: device.work === "OFF" ? "Отключено" : device.work === "FAULT" ? "Неисправно" : "На связи" })),
     devices: file.devices
       .filter((device) => device.objectId === objectId && (device.unitId === unitId || device.unitId === null))
-      .map((device) => ({ name: device.name, label: deviceLabel(device.kind), state: device.work === "OFF" ? "OFF" : device.work === "FAULT" ? "FAULT" : "ON" })),
+      .map((device) => ({
+        id: device.id,
+        name: device.name,
+        label: deviceLabel(device.kind),
+        state: device.work === "OFF" ? "OFF" : device.work === "FAULT" ? "FAULT" : "ON",
+        stale: device.availability === "OFFLINE",
+        roomName: device.roomId ? findRoom(device.roomId)?.name ?? null : null,
+      })),
   };
 }

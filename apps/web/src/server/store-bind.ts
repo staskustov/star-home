@@ -3,10 +3,14 @@ export type StoreBinder = {
   save: (name: string, value: unknown) => void | Promise<void>;
 };
 
-type LiveEvent = {
+export type LiveEvent = {
   objectId: string;
   kind: string;
   title: string;
+  seq?: number;
+  at?: string;
+  deviceId?: string;
+  gatewayId?: string;
 };
 
 const runtime = globalThis as typeof globalThis & {

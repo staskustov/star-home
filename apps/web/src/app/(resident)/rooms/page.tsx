@@ -49,14 +49,18 @@ export default async function RoomsPage() {
         <p className="panel mt-4 px-5 py-5 text-[15px] text-muted">Помещения для этого объекта пока не добавлены.</p>
       ) : (
         <ul className="panel mt-4 overflow-hidden">
-          {home.rooms.map((room) => (
-            <li key={room.name} className="list-row">
-              <span className="tile-icon">
-                <Icon name="rooms" className="h-[18px] w-[18px]" />
-              </span>
-              <span className="flex-1 text-[16px] text-ink">{room.name}</span>
-            </li>
-          ))}
+          {home.rooms.map((room) => {
+            const count = home.devices.filter((device) => device.roomName === room.name).length;
+            return (
+              <li key={room.id ?? room.name} className="list-row">
+                <span className="tile-icon">
+                  <Icon name="rooms" className="h-[18px] w-[18px]" />
+                </span>
+                <span className="flex-1 text-[16px] text-ink">{room.name}</span>
+                <span className="text-[13px] text-muted">{count ? `Устройств: ${count}` : "Пусто"}</span>
+              </li>
+            );
+          })}
         </ul>
       )}
     </section>

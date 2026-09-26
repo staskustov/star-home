@@ -47,11 +47,25 @@ export type CatalogUnit = {
   plans: FloorPlan[];
 };
 
+export const roomKinds = ["LIVING", "BEDROOM", "KITCHEN", "STUDY", "BOILER", "BATH", "HALL", "TERRACE", "STREET", "OTHER"] as const;
+export type RoomKind = (typeof roomKinds)[number];
+
+export type CatalogRoom = {
+  id: string;
+  objectId: string;
+  unitId: string;
+  floor: number | null;
+  name: string;
+  kind: RoomKind;
+  sort: number;
+};
+
 type Catalog = {
   companies: CatalogCompany[];
   objects: CatalogObject[];
   buildings: CatalogBuilding[];
   units: CatalogUnit[];
+  rooms: CatalogRoom[];
 };
 
 const filePath = path.join(process.cwd(), "data", "catalog.json");
@@ -177,6 +191,12 @@ function seed(): Catalog {
     ],
     buildings,
     units,
+    rooms: [
+      { id: "room_24_living", objectId: "obj_siyanie", unitId: "unit_24", floor: 1, name: "Гостиная", kind: "LIVING", sort: 0 },
+      { id: "room_24_bedroom", objectId: "obj_siyanie", unitId: "unit_24", floor: 1, name: "Спальня", kind: "BEDROOM", sort: 1 },
+      { id: "room_24_kitchen", objectId: "obj_siyanie", unitId: "unit_24", floor: 1, name: "Кухня", kind: "KITCHEN", sort: 2 },
+      { id: "room_24_street", objectId: "obj_siyanie", unitId: "unit_24", floor: null, name: "Улица", kind: "STREET", sort: 3 },
+    ],
   };
 }
 
@@ -194,15 +214,28 @@ function withScale(catalog: Catalog): Catalog {
     catalog.units.push(unit);
     changed = true;
   }
+  catalog.rooms ??= [];
+  const unitIds = new Set(catalog.units.map((unit) => unit.id));
+  for (const room of extra.rooms ?? []) {
+    if (!kept.has(room.objectId) || !unitIds.has(room.unitId) || catalog.rooms.some((item) => item.id === room.id)) continue;
+    catalog.rooms.push(room);
+    changed = true;
+  }
   if (changed) persist(catalog);
   return normalizeUnits(catalog);
 }
 
 function normalizeUnits(catalog: Catalog): Catalog {
+  catalog.rooms ??= [];
   for (const unit of catalog.units) {
     unit.areaM2 ??= null;
     unit.floors ??= 1;
     unit.plans ??= [];
+  }
+  for (const room of catalog.rooms) {
+    room.floor ??= null;
+    room.kind ??= "OTHER";
+    room.sort ??= 0;
   }
   return catalog;
 }
@@ -330,6 +363,7 @@ export function deleteCatalogObject(objectId: string): void {
   catalog.objects = catalog.objects.filter((object) => object.id !== objectId);
   catalog.buildings = catalog.buildings.filter((building) => building.objectId !== objectId);
   catalog.units = catalog.units.filter((unit) => unit.objectId !== objectId);
+  catalog.rooms = (catalog.rooms ?? []).filter((room) => room.objectId !== objectId);
   persist(catalog);
 }
 
@@ -358,8 +392,10 @@ export function updateCatalogBuilding(buildingId: string, name: string): Catalog
 
 export function deleteCatalogBuilding(buildingId: string): void {
   const catalog = load();
+  const unitIds = new Set(catalog.units.filter((unit) => unit.buildingId === buildingId).map((unit) => unit.id));
   catalog.buildings = catalog.buildings.filter((building) => building.id !== buildingId);
   catalog.units = catalog.units.filter((unit) => unit.buildingId !== buildingId);
+  catalog.rooms = (catalog.rooms ?? []).filter((room) => !unitIds.has(room.unitId));
   persist(catalog);
 }
 
@@ -408,6 +444,65 @@ export function updateCatalogUnit(
 export function deleteCatalogUnit(unitId: string): void {
   const catalog = load();
   catalog.units = catalog.units.filter((unit) => unit.id !== unitId);
+  catalog.rooms = (catalog.rooms ?? []).filter((room) => room.unitId !== unitId);
+  persist(catalog);
+}
+
+export function isRoomKind(value: unknown): value is RoomKind {
+  return typeof value === "string" && (roomKinds as readonly string[]).includes(value);
+}
+
+export function findRoom(roomId: string): CatalogRoom | undefined {
+  return load().rooms.find((room) => room.id === roomId);
+}
+
+export function roomsOf(unitId: string): CatalogRoom[] {
+  return load()
+    .rooms.filter((room) => room.unitId === unitId)
+    .slice()
+    .sort((left, right) => left.sort - right.sort || left.name.localeCompare(right.name, "ru"));
+}
+
+export function createCatalogRoom(input: {
+  objectId: string;
+  unitId: string;
+  name: string;
+  kind: RoomKind;
+  floor: number | null;
+}): CatalogRoom {
+  const catalog = load();
+  const siblings = catalog.rooms.filter((room) => room.unitId === input.unitId);
+  const room: CatalogRoom = {
+    id: newId("room"),
+    objectId: input.objectId,
+    unitId: input.unitId,
+    floor: input.floor,
+    name: input.name,
+    kind: input.kind,
+    sort: siblings.length,
+  };
+  catalog.rooms.push(room);
+  persist(catalog);
+  return room;
+}
+
+export function updateCatalogRoom(
+  roomId: string,
+  patch: { name?: string; kind?: RoomKind; floor?: number | null },
+): CatalogRoom | undefined {
+  const catalog = load();
+  const room = catalog.rooms.find((item) => item.id === roomId);
+  if (!room) return undefined;
+  if (typeof patch.name === "string") room.name = patch.name;
+  if (patch.kind) room.kind = patch.kind;
+  if (patch.floor !== undefined) room.floor = patch.floor;
+  persist(catalog);
+  return room;
+}
+
+export function deleteCatalogRoom(roomId: string): void {
+  const catalog = load();
+  catalog.rooms = catalog.rooms.filter((room) => room.id !== roomId);
   persist(catalog);
 }
 

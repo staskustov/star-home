@@ -1,5 +1,12 @@
 import type { ObjectType } from "@/types/domain";
 
+export type CatalogRoomNode = {
+  id: string;
+  name: string;
+  kind: string;
+  floor: number | null;
+};
+
 export type CatalogUnitNode = {
   id: string;
   name: string;
@@ -7,6 +14,7 @@ export type CatalogUnitNode = {
   areaM2: number | null;
   floors: number;
   planFloors: number[];
+  roomCount: number;
   canDelete: boolean;
 };
 

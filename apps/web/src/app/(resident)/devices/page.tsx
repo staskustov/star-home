@@ -1,4 +1,6 @@
+import Link from "next/link";
 import { Icon, type IconName } from "@/components/icons";
+import { LiveRefresh } from "@/components/pwa/LiveRefresh";
 import { requireHome } from "@/server/access";
 
 const stateLabel = { ON: "Включено", OFF: "Отключено", FAULT: "Неисправно" } as const;
@@ -13,6 +15,8 @@ const kindIcon: Record<string, IconName> = {
   Климат: "climate",
   Камера: "camera",
   Протечка: "leak",
+  Освещение: "devices",
+  Шторы: "rooms",
 };
 
 export default async function DevicesPage() {
@@ -22,6 +26,7 @@ export default async function DevicesPage() {
 
   return (
     <section>
+      <LiveRefresh />
       <h1 className="text-[28px] tracking-[-0.035em] text-ink sm:text-[34px]">Устройства</h1>
       <p className="mt-2 text-[15px] text-muted">
         {home.object.name} · {home.unit.name}
@@ -45,21 +50,35 @@ export default async function DevicesPage() {
         {devices.length === 0 ? (
           <li className="list-row text-[15px] text-muted">Устройств нет.</li>
         ) : (
-          devices.map((device) => (
-            <li key={`${device.label}-${device.name}`} className="list-row">
-              <span className="tile-icon">
-                <Icon name={kindIcon[device.label] ?? "devices"} className="h-[18px] w-[18px]" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-[15px] text-ink">{device.name}</p>
-                <p className="mt-0.5 text-[13px] text-muted">{device.label}</p>
-              </div>
-              <p className={`flex shrink-0 items-center gap-2 text-[14px] ${stateText[device.state]}`}>
-                <span className={`h-1.5 w-1.5 rounded-full ${stateDot[device.state]}`} aria-hidden />
-                {stateLabel[device.state]}
-              </p>
-            </li>
-          ))
+          devices.map((device) => {
+            const row = (
+              <>
+                <span className="tile-icon">
+                  <Icon name={kindIcon[device.label] ?? "devices"} className="h-[18px] w-[18px]" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[15px] text-ink">{device.name}</p>
+                  <p className="mt-0.5 text-[13px] text-muted">{device.stale ? "Нет свежих данных" : device.label}</p>
+                </div>
+                <p className={`flex shrink-0 items-center gap-2 text-[14px] ${device.stale ? "text-warning" : stateText[device.state]}`}>
+                  <span className={`h-1.5 w-1.5 rounded-full ${device.stale ? "bg-warning" : stateDot[device.state]}`} aria-hidden />
+                  {device.stale ? "Нет связи" : stateLabel[device.state]}
+                </p>
+              </>
+            );
+            return device.id ? (
+              <li key={device.id} className="list-row">
+                <Link href={`/devices/${device.id}`} className="-my-1 flex min-w-0 flex-1 items-center gap-[14px] py-1">
+                  {row}
+                  <Icon name="chevron" className="h-4 w-4 shrink-0 text-muted" />
+                </Link>
+              </li>
+            ) : (
+              <li key={`${device.label}-${device.name}`} className="list-row">
+                {row}
+              </li>
+            );
+          })
         )}
       </ul>
     </section>

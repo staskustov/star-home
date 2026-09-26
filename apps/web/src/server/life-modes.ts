@@ -23,7 +23,7 @@ function text(value: unknown, empty: string, limit = 160): string | Failure {
   return cleaned;
 }
 
-export function switchModeFor(session: { userId: string; membershipId: string | null } | null, mode: unknown): Success<{ mode: string }> | Failure {
+export async function switchModeFor(session: { userId: string; membershipId: string | null } | null, mode: unknown): Promise<Success<{ mode: string }> | Failure> {
   if (!session) return { ok: false, status: 401, message: "Нужно войти" };
   const membership = session.membershipId ? findMembership(session.userId, session.membershipId) : undefined;
   if (!membership || !householdCan(membership.role, "home.mode.switch") || !membership.unitId) {
@@ -41,6 +41,8 @@ export function switchModeFor(session: { userId: string; membershipId: string | 
     targetId: membership.unitId,
     target: mode === "HOME" ? "Дома" : mode === "WORK" ? "На работе" : "В отпуске",
   });
+  const { runLifeModeScenarios } = await import("@/server/scenarios");
+  await runLifeModeScenarios(session, membership.unitId, mode);
   return { ok: true, value: { mode } };
 }
 

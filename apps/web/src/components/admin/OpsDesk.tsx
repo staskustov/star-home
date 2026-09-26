@@ -345,19 +345,76 @@ export function PaymentDesk({
   );
 }
 
+type DeskDevice = {
+  id?: string;
+  objectId: string;
+  name: string;
+  kind: string;
+  state: string;
+  availability?: string;
+  lastSeen?: string | null;
+  adapter?: string;
+  gatewayName?: string | null;
+  lastError?: string | null;
+};
+
 export function DeviceDesk({
   devices,
   meters = [],
+  gateways = [],
+  canCommand = false,
 }: {
-  devices: { id?: string; objectId: string; name: string; kind: string; state: string }[];
+  devices: DeskDevice[];
   meters?: { objectId: string; name: string; value: string; unit: string }[];
+  gateways?: { id: string; objectId: string; name: string; adapter: string; status: string; lastSeen: string | null; lastError: string | null; connectedDevices: number }[];
+  canCommand?: boolean;
 }) {
   const [view, setView] = useViewMode("devices");
+  const router = useRouter();
   const rows = useObjectRows(devices);
   const readings = useObjectRows(meters);
+  const hubs = useObjectRows(gateways);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [token, setToken] = useState<string | null>(null);
+  const [pending, setPending] = useState<{ id: string; command: string } | null>(null);
+
+  async function testCommand(deviceId: string, command: string, confirmToken?: string) {
+    setNotice(null);
+    const result = await runCommand(() =>
+      fetch(`/api/smart-home/devices/${deviceId}/command`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ command, value: command === "setPower" ? true : undefined, confirmToken }),
+      }),
+    );
+    if (result.payload?.needsConfirm && typeof result.payload.token === "string") {
+      setToken(result.payload.token);
+      setPending({ id: deviceId, command });
+      setNotice("Подтвердите команду.");
+      return;
+    }
+    setToken(null);
+    setPending(null);
+    setNotice(commandMessage(result.payload));
+    if (result.ok) router.refresh();
+  }
+
   return (
     <Shell title="Устройства">
       <ViewToggle value={view} onChange={setView} />
+      <List empty="Шлюзов нет.">
+        {hubs.map((gateway) => (
+          <li key={gateway.id} className="px-5 py-4">
+            <p className="text-[16px] text-ink">{gateway.name}</p>
+            <p className="text-sm text-muted">
+              {gateway.adapter} · {gateway.status}
+              {gateway.lastSeen ? ` · ${gateway.lastSeen}` : ""}
+              {gateway.connectedDevices ? ` · устройств ${gateway.connectedDevices}` : ""}
+            </p>
+            {gateway.lastError ? <p className="mt-1 text-sm text-danger">{gateway.lastError}</p> : null}
+          </li>
+        ))}
+      </List>
       {view === "blocks" ? (
         <ul className="grid gap-3 sm:grid-cols-2">
           {rows.length === 0 ? (
@@ -368,7 +425,18 @@ export function DeviceDesk({
                 <p className="text-[16px] text-ink">{device.name}</p>
                 <p className="mt-2 text-sm text-muted">
                   {device.kind} · {device.state}
+                  {device.availability ? ` · ${device.availability}` : ""}
                 </p>
+                <p className="mt-1 text-sm text-muted">
+                  {device.gatewayName ?? device.adapter ?? "локально"}
+                  {device.lastSeen ? ` · ${device.lastSeen}` : ""}
+                </p>
+                {device.lastError ? <p className="mt-1 text-sm text-danger">{device.lastError}</p> : null}
+                {canCommand && device.id ? (
+                  <button type="button" className="btn btn-secondary btn-compact mt-3" onClick={() => void testCommand(device.id as string, "setPower")}>
+                    Тест
+                  </button>
+                ) : null}
               </li>
             ))
           )}
@@ -380,11 +448,24 @@ export function DeviceDesk({
               <p className="text-[16px] text-ink">{device.name}</p>
               <p className="text-sm text-muted">
                 {device.kind} · {device.state}
+                {device.lastSeen ? ` · ${device.lastSeen}` : ""}
               </p>
+              {device.lastError ? <p className="mt-1 text-sm text-danger">{device.lastError}</p> : null}
+              {canCommand && device.id ? (
+                <button type="button" className="btn btn-secondary btn-compact mt-3" onClick={() => void testCommand(device.id as string, "setPower")}>
+                  Тест
+                </button>
+              ) : null}
             </li>
           ))}
         </List>
       )}
+      {token && pending ? (
+        <button type="button" className="btn btn-primary btn-compact" onClick={() => void testCommand(pending.id, pending.command, token)}>
+          Подтвердить команду
+        </button>
+      ) : null}
+      {notice ? <p className="text-[15px] text-muted">{notice}</p> : null}
       <List empty="Счётчиков нет.">
         {readings.map((meter) => (
           <li key={`${meter.objectId}-${meter.name}`} className="px-5 py-4">

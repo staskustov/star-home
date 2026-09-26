@@ -134,6 +134,47 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
         ) : null}
       </div>
 
+      <section aria-label="Дом">
+        <h2 className="mb-3 text-[19px] tracking-[-0.02em] text-ink">Дом</h2>
+        {data.devices.length === 0 ? (
+          <p className="panel px-5 py-5 text-[15px] text-muted">Устройства ещё не подключены.</p>
+        ) : (
+          <ul className="panel overflow-hidden">
+            {data.devices.slice(0, 4).map((device) => (
+              <li key={device.id ?? device.name} className="list-row">
+                {device.id ? (
+                  <Link href={`/devices/${device.id}`} className="-my-1 flex min-w-0 flex-1 items-center gap-[14px] py-1">
+                    <span className="tile-icon">
+                      <Icon name="devices" className="h-[18px] w-[18px]" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[15px] text-ink">{device.name}</span>
+                      <span className="mt-0.5 block truncate text-[13px] text-muted">
+                        {device.stale ? "Нет свежих данных" : device.label}
+                      </span>
+                    </span>
+                    <Icon name="chevron" className="h-4 w-4 shrink-0 text-muted" />
+                  </Link>
+                ) : (
+                  <>
+                    <span className="tile-icon">
+                      <Icon name="devices" className="h-[18px] w-[18px]" />
+                    </span>
+                    <span className="text-[15px] text-ink">{device.name}</span>
+                  </>
+                )}
+              </li>
+            ))}
+            <li className="list-row">
+              <Link href="/devices" className="-my-1 flex min-w-0 flex-1 items-center gap-[14px] py-1 text-[15px] text-muted">
+                Все устройства
+                <Icon name="chevron" className="ml-auto h-4 w-4 shrink-0 text-muted" />
+              </Link>
+            </li>
+          </ul>
+        )}
+      </section>
+
       <section aria-label="Сегодня">
         <h2 className="mb-3 text-[19px] tracking-[-0.02em] text-ink">Сегодня</h2>
         {today.length > 0 ? (

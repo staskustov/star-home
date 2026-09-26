@@ -117,6 +117,27 @@ export async function requireSettings<T>(): Promise<T> {
   return result.body;
 }
 
+export async function requireSmartDevice(deviceId: string): Promise<{
+  device: {
+    id: string;
+    name: string;
+    typeLabel: string;
+    roomName: string | null;
+    availability: string;
+    stale: boolean;
+    lastSeen: string | null;
+    capabilities: string[];
+    state: Record<string, unknown>;
+    canCommand: boolean;
+    commands: import("@/server/smart-commands").SmartCommandName[];
+  };
+}> {
+  const result = await rpc<{ device?: { id: string } | null; message?: string; redirect?: string }>("smartHomeDevice", { deviceId });
+  if (result.status === 401) redirect("/");
+  if (result.status !== 200 || !result.body.device) redirect("/devices");
+  return result.body as unknown as { device: Awaited<ReturnType<typeof requireSmartDevice>>["device"] };
+}
+
 export async function requireGuest(): Promise<{ name: string; pass: { guestName: string; detail: string; code?: string } | null }> {
   const result = await rpc<{ name?: string; pass: { guestName: string; detail: string; code?: string } | null; redirect?: string }>("guest");
   if (result.status === 401 || result.body.redirect || !result.body.name) await go(result);

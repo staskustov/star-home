@@ -1,7 +1,7 @@
 import { askFor, confirmFor } from "@/server/ai";
 import type { AuditAction } from "@/server/audit-actions";
 import { clientInfo, noteActor, withRequest } from "@/server/audit-context";
-import { findObject } from "@/server/catalog-store";
+import { findObject, roomsOf } from "@/server/catalog-store";
 import type { Membership } from "@/types/domain";
 import type { SessionRef } from "@/server/actor";
 import {
@@ -18,6 +18,17 @@ import {
   updateUnit,
 } from "@/server/catalog";
 import { createAccessPoint, removeAccessPoint, updateAccessPoint } from "@/server/access-points";
+import {
+  createGateway,
+  listRegistryDevices,
+  listRegistryGateways,
+  registerDevice,
+  removeGateway,
+  removeRegistryDevice,
+  updateGateway,
+  updateRegistryDevice,
+} from "@/server/device-registry";
+import { createRoom, removeRoom, updateRoom } from "@/server/rooms";
 import {
   adminMemberships,
   companyName,
@@ -151,6 +162,19 @@ const methodPolicy: Record<string, Route> = {
   ask: household((current, input) => askFor(current, input.prompt)),
   confirm: household((current, input) => confirmFor(current, input.token)),
   switchMode: household((current, input) => switchModeFor(current, input.mode)),
+  smartHomeStatus: session(async (current, input) => asReply((await import("./smart-home")).smartHomeStatus(current, input.objectId))),
+  smartHomeDevices: session(async (current, input) => asReply((await import("./smart-home")).smartHomeDevices(current, input.objectId))),
+  smartHomeDevice: session(async (current, input) => asReply((await import("./smart-home")).smartHomeDevice(current, input.deviceId))),
+  commandDeviceSmart: session(async (current, input) => asReply(await (await import("./smart-home")).commandDeviceSmart(current, input))),
+  smartHomeRooms: session(async (current, input) => asReply((await import("./smart-home")).smartHomeRooms(current, input.objectId))),
+  smartHomeRoomDevices: session(async (current, input) => asReply((await import("./smart-home")).smartHomeRoomDevices(current, input.roomId))),
+  smartHomeEvents: session(async (current, input) => asReply((await import("./smart-home")).smartHomeEvents(current, input.objectId))),
+  smartHomeHistory: session(async (current, input) => asReply((await import("./smart-home")).smartHomeHistory(current, input.deviceId))),
+  listScenarios: session(async (current, input) => asReply((await import("./scenarios")).listScenarios(current, input.objectId))),
+  createScenario: session(async (current, input) => asReply((await import("./scenarios")).createScenario(current, input), 201)),
+  updateScenario: session(async (current, input) => asReply((await import("./scenarios")).updateScenario(current, input))),
+  removeScenario: session(async (current, input) => asReply((await import("./scenarios")).removeScenario(current, input.scenarioId))),
+  runScenario: session(async (current, input) => asReply(await (await import("./scenarios")).runScenario(current, input))),
 
   dashboard: staff("dashboard.view", (actor) => ({ ok: true, value: dashboardFor(actor) })),
   desk: staff("dashboard.view", desk),
@@ -177,6 +201,47 @@ const methodPolicy: Record<string, Route> = {
   createUnit: staff("objects.structure.edit", (actor, input) => createUnit(actor, text(input.objectId, 1, 80) ?? "", { name: input.name, buildingId: input.buildingId }), 201),
   updateUnit: staff("objects.structure.edit", (actor, input) => updateUnit(actor, text(input.unitId, 1, 80) ?? "", input)),
   removeUnit: staff("objects.structure.edit", (actor, input) => removeUnit(actor, text(input.unitId, 1, 80) ?? "")),
+  createRoom: staff("objects.structure.edit", (actor, input) => createRoom(actor, { unitId: input.unitId, name: input.name, kind: input.kind, floor: input.floor }), 201),
+  updateRoom: staff("objects.structure.edit", (actor, input) => updateRoom(actor, { roomId: input.roomId, name: input.name, kind: input.kind, floor: input.floor })),
+  removeRoom: staff("objects.structure.edit", (actor, input) => removeRoom(actor, input.roomId)),
+  listDevices: staff("devices.view", (actor, input) => listRegistryDevices(actor, input.objectId)),
+  registerDevice: staff(
+    "devices.create",
+    (actor, input) =>
+      registerDevice(actor, {
+        objectId: input.objectId,
+        unitId: input.unitId,
+        roomId: input.roomId,
+        gatewayId: input.gatewayId,
+        name: input.name,
+        kind: input.kind,
+        manufacturer: input.manufacturer,
+        model: input.model,
+        externalId: input.externalId,
+        capabilities: input.capabilities,
+      }),
+    201,
+  ),
+  updateDevice: staff(
+    "devices.edit",
+    (actor, input) =>
+      updateRegistryDevice(actor, {
+        deviceId: input.deviceId,
+        name: input.name,
+        roomId: input.roomId,
+        gatewayId: input.gatewayId,
+        unitId: input.unitId,
+        manufacturer: input.manufacturer,
+        model: input.model,
+        externalId: input.externalId,
+        capabilities: input.capabilities,
+      }),
+  ),
+  removeDevice: staff("devices.delete", (actor, input) => removeRegistryDevice(actor, input.deviceId)),
+  listGateways: staff("engineering.view", (actor, input) => listRegistryGateways(actor, input.objectId)),
+  createGateway: staff("devices.create", (actor, input) => createGateway(actor, { objectId: input.objectId, unitId: input.unitId, name: input.name, adapter: input.adapter }), 201),
+  updateGateway: staff("devices.edit", (actor, input) => updateGateway(actor, { gatewayId: input.gatewayId, name: input.name, adapter: input.adapter, unitId: input.unitId })),
+  removeGateway: staff("devices.delete", (actor, input) => removeGateway(actor, input.gatewayId)),
 
   residents: staff("residents.view", (actor) => ({ ok: true, value: residentBoard(actor) })),
   addResident: staff("residents.create", (actor, input) => addResident(actor, input as never), 201),
@@ -226,6 +291,15 @@ const guardedMethods: Partial<Record<string, AuditAction>> = {
   createUnit: "UNIT_CREATE",
   updateUnit: "UNIT_EDIT",
   removeUnit: "UNIT_DELETE",
+  createRoom: "ROOM_CREATE",
+  updateRoom: "ROOM_EDIT",
+  removeRoom: "ROOM_DELETE",
+  registerDevice: "DEVICE_CREATE",
+  updateDevice: "DEVICE_EDIT",
+  removeDevice: "DEVICE_DELETE",
+  createGateway: "GATEWAY_CREATE",
+  updateGateway: "GATEWAY_EDIT",
+  removeGateway: "GATEWAY_DELETE",
   createAccessPoint: "ACCESS_POINT_CREATE",
   updateAccessPoint: "ACCESS_POINT_EDIT",
   removeAccessPoint: "ACCESS_POINT_DELETE",
@@ -243,6 +317,11 @@ const guardedMethods: Partial<Record<string, AuditAction>> = {
   closeObjectPoint: "CLOSE_GATE",
   pollDevice: "DEVICE_POLL",
   setDeviceWork: "DEVICE_STATUS",
+  commandDeviceSmart: "DEVICE_COMMAND",
+  createScenario: "SCENARIO_CREATE",
+  updateScenario: "SCENARIO_EDIT",
+  removeScenario: "SCENARIO_DELETE",
+  runScenario: "SCENARIO_RUN",
   setRequestStatus: "UPDATE_REQUEST",
   addPass: "CREATE_PASS",
   pay: "PAY_INVOICE",
@@ -387,7 +466,7 @@ function home(session: SessionRef): Reply {
           : null,
       paymentHistory: bills ? signals.payments : [],
       categories: signals.categories,
-      rooms: base.unit.type === "HOUSE" ? [{ name: "Гостиная" }, { name: "Спальня" }, { name: "Детская" }, { name: "Кабинет" }, { name: "Котельная" }] : [],
+      rooms: roomsOf(base.unit.id).map((room) => ({ id: room.id, name: room.name })),
       cameras: signals.cameras,
       devices: signals.devices,
       meters: signals.meters,

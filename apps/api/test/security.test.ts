@@ -1,3 +1,4 @@
+import "./register-paths";
 import assert from "node:assert/strict";
 import { before, describe, it } from "node:test";
 import { bindStore } from "../../web/src/server/store-bind";
@@ -35,6 +36,7 @@ const householdNeeds: Record<string, string> = {
   ask: "ai.use",
   switchMode: "home.mode.switch",
   addRequest: "service.create",
+  commandDeviceSmart: "devices.command",
 };
 
 let rpc: Rpc;
@@ -189,6 +191,23 @@ describe("another company", () => {
       ["updateUnit", { unitId: rival.unitId, name: "Захват" }],
       ["unitDetails", { unitId: rival.unitId }],
       ["removeUnit", { unitId: rival.unitId }],
+      ["createRoom", { unitId: rival.unitId, name: "Захват" }],
+      ["updateRoom", { roomId: "room_rival", name: "Захват" }],
+      ["removeRoom", { roomId: "room_rival" }],
+      ["listDevices", { objectId: rival.objectId }],
+      ["registerDevice", { objectId: rival.objectId, name: "Захват", kind: "LIGHTING" }],
+      ["updateDevice", { deviceId: "dev_rival", name: "Захват" }],
+      ["removeDevice", { deviceId: "dev_rival" }],
+      ["listGateways", { objectId: rival.objectId }],
+      ["createGateway", { objectId: rival.objectId, name: "Захват" }],
+      ["updateGateway", { gatewayId: "gw_rival", name: "Захват" }],
+      ["removeGateway", { gatewayId: "gw_rival" }],
+      ["smartHomeStatus", { objectId: rival.objectId }],
+      ["smartHomeDevices", { objectId: rival.objectId }],
+      ["smartHomeDevice", { deviceId: "dev_rival" }],
+      ["commandDeviceSmart", { deviceId: "dev_rival", command: "setPower", value: true }],
+      ["createScenario", { objectId: rival.objectId, name: "Захват", steps: [{ deviceId: "dev_rival", command: "setPower", value: true }] }],
+      ["runScenario", { scenarioId: "scen_rival" }],
       ["createAccessPoint", { objectId: rival.objectId, name: "Захват", api: "" }],
       ["updateAccessPoint", { objectId: rival.objectId, pointId: "dev_gate_rival", name: "Захват" }],
       ["removeAccessPoint", { objectId: rival.objectId, pointId: "dev_gate_rival" }],

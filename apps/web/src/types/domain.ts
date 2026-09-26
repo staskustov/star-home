@@ -131,9 +131,9 @@ export type ResidentHome = {
   } | null;
   paymentHistory: { title: string; amount: number; currency: string }[];
   categories: string[];
-  rooms: { name: string }[];
+  rooms: { id?: string; name: string }[];
   cameras: { name: string; state: string }[];
-  devices: { name: string; label: string; state: "ON" | "OFF" | "FAULT" }[];
+  devices: { id?: string; name: string; label: string; state: "ON" | "OFF" | "FAULT"; stale?: boolean; roomName?: string | null }[];
   serviceCategories: string[];
   aiPrompt: string;
   meters: { name: string; value: string; unit: string }[];

@@ -286,6 +286,7 @@ function unitMeta(unit: CatalogUnitNode): string {
     unit.planFloors.length
       ? `планировки ${unit.planFloors.length} из ${unit.floors ?? 1}`
       : "без планировки",
+    unit.roomCount ? plural(unit.roomCount, ["помещение", "помещения", "помещений"]) : "без помещений",
   ].filter(Boolean);
   return parts.join(" · ");
 }
@@ -439,6 +440,9 @@ function UnitEditor({
   const [area, setArea] = useState(unit.areaM2 == null ? "" : String(unit.areaM2));
   const [floors, setFloors] = useState(unit.floors ?? 1);
   const [plans, setPlans] = useState<{ floor: number; image: string }[]>([]);
+  const [rooms, setRooms] = useState<{ id: string; name: string; kind: string; floor: number | null }[]>([]);
+  const [roomName, setRoomName] = useState("");
+  const [roomFloor, setRoomFloor] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -446,9 +450,10 @@ function UnitEditor({
     let alive = true;
     fetch(`/api/catalog/units/${unit.id}`)
       .then((response) => response.json().catch(() => null))
-      .then((payload: { plans?: { floor: number; image: string }[]; floors?: number; areaM2?: number | null; name?: string } | null) => {
+      .then((payload: { plans?: { floor: number; image: string }[]; floors?: number; areaM2?: number | null; name?: string; rooms?: { id: string; name: string; kind: string; floor: number | null }[] } | null) => {
         if (!alive || !payload) return;
         setPlans(Array.isArray(payload.plans) ? payload.plans : []);
+        setRooms(Array.isArray(payload.rooms) ? payload.rooms : []);
         if (typeof payload.floors === "number") setFloors(payload.floors);
         if (payload.areaM2 != null) setArea(String(payload.areaM2));
         if (payload.name) setName(payload.name);
@@ -545,6 +550,81 @@ function UnitEditor({
           </label>
         );
       })}
+      <div className="grid gap-3">
+        <p className="text-sm text-muted">Помещения</p>
+        {rooms.length ? (
+          <ul className="grid gap-2">
+            {rooms.map((room) => (
+              <li key={room.id} className="flex items-center justify-between gap-3 text-[15px]">
+                <span className="min-w-0 truncate text-ink">
+                  {room.name}
+                  {room.floor ? ` · ${room.floor} этаж` : ""}
+                </span>
+                <button
+                  type="button"
+                  className="text-sm text-muted"
+                  onClick={async () => {
+                    setError(null);
+                    const response = await fetch(`/api/catalog/rooms/${room.id}`, { method: "DELETE" });
+                    const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+                    if (!response.ok) {
+                      setError(payload?.message ?? "Не удалось удалить помещение");
+                      return;
+                    }
+                    setRooms((current) => current.filter((item) => item.id !== room.id));
+                  }}
+                >
+                  Удалить
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-muted">Помещений пока нет.</p>
+        )}
+        <div className="grid gap-2 sm:grid-cols-[1fr_7rem_auto]">
+          <input
+            value={roomName}
+            onChange={(event) => setRoomName(event.target.value)}
+            placeholder="Гостиная"
+            className="control"
+          />
+          {floors > 1 ? (
+            <select value={roomFloor} onChange={(event) => setRoomFloor(event.target.value)} className="control">
+              <option value="">Этаж</option>
+              {Array.from({ length: floors }, (_, index) => index + 1).map((floor) => (
+                <option key={floor} value={floor}>
+                  {floor}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <span />
+          )}
+          <button
+            type="button"
+            className="btn btn-secondary btn-compact"
+            onClick={async () => {
+              setError(null);
+              const response = await fetch(`/api/catalog/units/${unit.id}/rooms`, {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ name: roomName, floor: roomFloor ? Number(roomFloor) : null }),
+              });
+              const payload = (await response.json().catch(() => null)) as { id?: string; message?: string } | null;
+              if (!response.ok) {
+                setError(payload?.message ?? "Не удалось добавить помещение");
+                return;
+              }
+              setRooms((current) => [...current, { id: payload?.id ?? roomName, name: roomName, kind: "OTHER", floor: roomFloor ? Number(roomFloor) : null }]);
+              setRoomName("");
+              setRoomFloor("");
+            }}
+          >
+            Добавить
+          </button>
+        </div>
+      </div>
       {error ? <p className="text-sm text-danger">{error}</p> : null}
       <div className="flex flex-wrap items-center gap-2">
         <button type="submit" className="btn btn-primary btn-compact">

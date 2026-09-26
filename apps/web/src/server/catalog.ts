@@ -9,6 +9,7 @@ import {
   findBuilding,
   findObject,
   readTree,
+  roomsOf,
   unitIdsOf,
   unitIdsOfBuilding,
   updateCatalogBuilding,
@@ -66,6 +67,7 @@ function unitNode(unit: { id: string; name: string; number: string; areaM2?: num
     areaM2: unit.areaM2 ?? null,
     floors: unit.floors ?? 1,
     planFloors: (unit.plans ?? []).filter((plan) => plan.floor >= 1).map((plan) => plan.floor),
+    roomCount: roomsOf(unit.id).length,
     canDelete: !unitHasAssignment(unit.id),
   };
 }
@@ -278,6 +280,7 @@ export function unitDetails(actor: StaffActor, unitId: string): Success<{
   areaM2: number | null;
   floors: number;
   plans: { floor: number; image: string }[];
+  rooms: { id: string; name: string; kind: string; floor: number | null }[];
 }> | Failure {
   if (!can(actor, "objects.view")) return denied;
   const unit = unitFor(actor, unitId);
@@ -290,6 +293,7 @@ export function unitDetails(actor: StaffActor, unitId: string): Success<{
       areaM2: unit.value.areaM2 ?? null,
       floors: unit.value.floors ?? 1,
       plans: (unit.value.plans ?? []).map((plan) => ({ floor: plan.floor, image: plan.image })),
+      rooms: roomsOf(unitId).map((room) => ({ id: room.id, name: room.name, kind: room.kind, floor: room.floor })),
     },
   };
 }
