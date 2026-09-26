@@ -17,6 +17,7 @@ export type StoredUser = {
   status?: UserStatus;
   lastLoginAt?: string | null;
   sessionVersion?: number;
+  photo?: string | null;
 };
 
 export function personName(user: { name: string; surname?: string }): string {
@@ -269,7 +270,7 @@ export function deleteMembership(membershipId: string): void {
 
 export function updateUser(
   userId: string,
-  patch: Partial<Pick<StoredUser, "name" | "surname" | "login" | "email" | "phone" | "status" | "lastLoginAt" | "passwordHash">>,
+  patch: Partial<Pick<StoredUser, "name" | "surname" | "login" | "email" | "phone" | "status" | "lastLoginAt" | "passwordHash" | "photo">>,
 ): StoredUser | undefined {
   const people = load();
   const user = people.users.find((item) => item.id === userId);

@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { StarMark } from "@/components/brand/StarMark";
 import { HomeFacts } from "@/components/home/HomeFacts";
 import { HomeHero } from "@/components/home/HomeHero";
 import { InstantDevice } from "@/components/home/InstantDevice";
@@ -115,16 +114,7 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
     <div className="space-y-7">
       <LiveRefresh />
       <header>
-        <div className="flex items-center justify-between lg:hidden">
-          <p className="flex items-center gap-2 text-[12px] font-medium tracking-[0.26em] text-ink">
-            <StarMark className="h-4 w-4 text-accent" />
-            STAR HOME
-          </p>
-          <Link href="/profile" aria-label="Личный кабинет" className="avatar">
-            {data.residentName.slice(0, 1) || "·"}
-          </Link>
-        </div>
-        <h1 suppressHydrationWarning className="mt-6 text-[28px] leading-[1.1] tracking-[-0.035em] text-ink sm:text-[34px] lg:mt-0">
+        <h1 suppressHydrationWarning className="text-[28px] leading-[1.1] tracking-[-0.035em] text-ink sm:text-[34px]">
           {greeting}
         </h1>
         <p className="mt-2 text-[15px] text-muted">
@@ -137,17 +127,6 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
 
       {data.controller?.message ? (
         <p className="panel px-5 py-4 text-[15px] text-warning">{data.controller.message}</p>
-      ) : null}
-
-      {data.notices?.length ? (
-        <ul className="panel overflow-hidden">
-          {data.notices.map((item) => (
-            <li key={item.id} className="list-row">
-              <span className="flex-1 text-[15px] text-ink">{item.title}</span>
-              <span className="text-[13px] text-muted">{item.body}</span>
-            </li>
-          ))}
-        </ul>
       ) : null}
 
       <CameraBlock cameras={data.cameras} />

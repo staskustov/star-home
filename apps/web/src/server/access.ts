@@ -22,6 +22,7 @@ type ProfileBody = {
   choosePlaces: boolean;
   adminMembershipId: string | null;
   notices: { id: string; title: string; body: string; at: string }[];
+  photo: string | null;
 };
 type AccessBody = {
   place: string;

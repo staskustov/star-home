@@ -1312,6 +1312,17 @@ describe("self scope", () => {
     const access = (await rpc("access", null, guestSession)).body as { passes?: unknown[]; redirect?: string };
     assert.equal(access.passes, undefined, "a guest never sees the unit's other passes");
   });
+
+  it("lets a resident keep a cropped photo on their own account", async () => {
+    const photo = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const saved = await rpc("saveProfilePhoto", { photo }, resident);
+    assert.equal(saved.status, 200);
+    const profile = (await rpc("profile", null, resident)).body as { photo: string | null; notices?: unknown[] };
+    assert.equal(profile.photo, photo);
+    assert.equal((await rpc("saveProfilePhoto", { photo: "https://example.com/x.png" }, resident)).status, 400);
+    assert.equal((await rpc("saveProfilePhoto", { photo: null }, resident)).status, 200);
+    assert.equal(((await rpc("profile", null, resident)).body as { photo: string | null }).photo, null);
+  });
 });
 
 describe("security post", () => {

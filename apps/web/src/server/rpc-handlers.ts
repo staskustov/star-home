@@ -148,6 +148,7 @@ const methodPolicy: Record<string, Route> = {
   switch: session(switched),
   places: session(places),
   profile: session(profile),
+  saveProfilePhoto: session(saveProfilePhoto),
   admin: session(admin),
   subscribe: session(subscribe),
   liveToken: session(liveToken),
@@ -579,7 +580,22 @@ function profile(session: SessionRef): Reply {
     choosePlaces: homeMemberships(session.userId).length > 1,
     adminMembershipId: admin?.id ?? null,
     notices: residentNotices(session.userId),
+    photo: user.photo ?? null,
   });
+}
+
+function saveProfilePhoto(session: SessionRef, input: Input): Reply {
+  const raw = input.photo;
+  if (raw === null || raw === "") {
+    updateUser(session.userId, { photo: null });
+    return ok({ photo: null });
+  }
+  if (typeof raw !== "string") return fail(400, "Добавьте фото");
+  const photo = raw.trim();
+  if (!/^data:image\/(jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$/i.test(photo)) return fail(400, "Нужен снимок JPEG, PNG или WebP");
+  if (photo.length > 200_000) return fail(400, "Слишком большой файл. Обрежьте фото.");
+  updateUser(session.userId, { photo });
+  return ok({ photo });
 }
 
 function guest(session: SessionRef): Reply {

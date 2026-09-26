@@ -412,6 +412,7 @@ h3 {
   width: 36px;
   height: 36px;
   place-items: center;
+  overflow: hidden;
   border-radius: 999px;
   border: 1px solid var(--panel-line);
   background: color-mix(in srgb, var(--accent) 18%, var(--panel));
