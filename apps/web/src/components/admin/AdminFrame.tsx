@@ -7,6 +7,7 @@ import { useAdminPreview } from "@/components/admin/AdminPreview";
 import { Icon } from "@/components/icons";
 import { ObjectSwitcher } from "@/components/home/ObjectSwitcher";
 import { TopBarActions } from "@/components/shell/TopBarActions";
+import { SecuritySosWatch } from "@/components/security/SecuritySosWatch";
 import { AppShell } from "@/components/shell/AppShell";
 
 export function AdminFrame({ children }: { children: React.ReactNode }) {
@@ -48,6 +49,7 @@ export function AdminFrame({ children }: { children: React.ReactNode }) {
           <ObjectSwitcher objects={preview.objects} value={preview.selectedId} onChange={selectObject} />
         </div>
       </header>
+      <SecuritySosWatch />
       <div className="px-5 py-6 lg:px-10 lg:py-8">{children}</div>
       {menuOpen ? (
         <div className="fixed inset-0 z-40 md:hidden">

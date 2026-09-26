@@ -410,6 +410,9 @@ describe("security desk", () => {
     assert.equal(reply.status, 200);
     const desk = await rpc("securityDesk", {}, resident);
     assert.ok((desk.body as { messages: { body: string }[] }).messages.some((message) => message.body === "Выходим"));
+    const alerts = await rpc("securityAlerts", {}, staff.COMPANY_ADMIN ?? null);
+    assert.equal(alerts.status, 200);
+    assert.ok((alerts.body as { alarms: { kind: string; title: string }[] }).alarms.some((alarm) => alarm.kind === "SOS" && alarm.title.includes("SOS")));
   });
 
   it("closes SOS and chat to a guest", async () => {

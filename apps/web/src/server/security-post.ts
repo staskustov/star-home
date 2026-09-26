@@ -18,6 +18,10 @@ const closedShown = 10;
 const eventsShown = 20;
 const journalShown = 15;
 
+export function isSosAlarm(alarm: { kind?: string; title?: string }): boolean {
+  return alarm.kind === "SOS" || Boolean(alarm.title?.includes("SOS"));
+}
+
 export function placeName(unitId: string | null | undefined): string {
   if (!unitId) return "Общая территория";
   const unit = findUnit(unitId);
@@ -89,7 +93,7 @@ export function securityPost(actor: StaffActor, objectId: unknown): Success<Secu
         status: alarm.status,
         handledBy: handler(alarm.handledBy),
         handledAt: alarm.handledAt ?? null,
-        kind: alarm.kind === "SOS" ? "SOS" : "CALL",
+        kind: isSosAlarm(alarm) ? "SOS" : "CALL",
         callerName: alarm.callerName ?? handler(alarm.callerUserId),
       })),
       chats: securityChatsFor(actor, object.value.id),
@@ -114,6 +118,41 @@ export function securityPost(actor: StaffActor, objectId: unknown): Success<Secu
               return { id: row.id, time: shortTime(entry.at), actor: row.actor, action: row.action, target: row.target, result: row.result };
             })
         : [],
+    },
+  };
+}
+
+export function securityAlertsFor(actor: StaffActor): Success<{
+  objectId: string;
+  objectName: string;
+  can: { handle: boolean };
+  alarms: SecurityPostView["alarms"];
+}> | Failure {
+  if (!can(actor, "security.view")) return denied;
+  const file = readOps();
+  const alarms = file.alarms.filter(
+    (alarm) => alarm.companyId === actor.companyId && alarm.status !== "CLOSED" && isSosAlarm(alarm) && reaches(actor, alarm),
+  );
+  const first = alarms[0];
+  const object = first ? objectFor(actor, first.objectId) : { ok: true as const, value: objectsInScope(actor)[0] };
+  const current = object.ok ? object.value : undefined;
+  return {
+    ok: true,
+    value: {
+      objectId: current?.id ?? "",
+      objectName: current?.name ?? "",
+      can: { handle: can(actor, "security.alarm.handle") },
+      alarms: alarms.map((alarm) => ({
+        id: alarm.id,
+        title: alarm.title,
+        place: placeName(alarm.unitId),
+        at: alarm.at,
+        status: alarm.status,
+        handledBy: handler(alarm.handledBy),
+        handledAt: alarm.handledAt ?? null,
+        kind: "SOS" as const,
+        callerName: alarm.callerName ?? handler(alarm.callerUserId),
+      })),
     },
   };
 }

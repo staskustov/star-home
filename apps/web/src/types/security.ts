@@ -15,10 +15,10 @@ export type SecurityPostView = {
     status: SecurityAlarmStatus;
     handledBy: string | null;
     handledAt: string | null;
-    kind: "CALL" | "SOS";
-    callerName: string | null;
+    kind?: "CALL" | "SOS";
+    callerName?: string | null;
   }[];
-  chats: { id: string; unitId: string; place: string; actorName: string; role: string; body: string; at: string; mine: boolean }[];
+  chats?: { id: string; unitId: string; place: string; actorName: string; role: string; body: string; at: string; mine: boolean }[];
   points: { id: string; name: string; kind: string; state: string; ready: boolean }[];
   cameras: SecurityCamera[];
   passes: { id: string; guestName: string; place: string; detail: string; vehicle: string }[];

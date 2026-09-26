@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ObjectSwitcher } from "@/components/home/ObjectSwitcher";
 import { CameraTile } from "@/components/security/CameraTile";
-import { SecuritySosOverlay } from "@/components/security/SecuritySosOverlay";
 import { Clock } from "@/components/security/Clock";
 import { ThemeToggle } from "@/components/shell/ThemeToggle";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -332,9 +331,10 @@ function Journal({ view }: { view: SecurityPostView }) {
 }
 
 function Chat({ view, onDone }: { view: SecurityPostView; onDone: () => void }) {
+  const chats = view.chats ?? [];
   const threads = useMemo(() => {
     const map = new Map<string, { unitId: string; place: string; last: string }>();
-    for (const message of view.chats) {
+    for (const message of view.chats ?? []) {
       map.set(message.unitId, { unitId: message.unitId, place: message.place, last: message.body });
     }
     return [...map.values()];
@@ -342,7 +342,7 @@ function Chat({ view, onDone }: { view: SecurityPostView; onDone: () => void }) 
   const [unitId, setUnitId] = useState(threads[0]?.unitId ?? "");
   const [text, setText] = useState("");
   const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(null);
-  const messages = view.chats.filter((item) => item.unitId === unitId);
+  const messages = chats.filter((item) => item.unitId === unitId);
 
   useEffect(() => {
     if (!unitId && threads[0]) setUnitId(threads[0].unitId);
@@ -398,14 +398,8 @@ export function SecurityPost({ view }: { view: SecurityPostView }) {
   const router = useRouter();
   const refresh = () => router.refresh();
 
-  async function acceptSos(id: string) {
-    await post(`/api/security/alarms/${encodeURIComponent(id)}`, { step: "ACCEPT" });
-    refresh();
-  }
-
   return (
     <div className="min-h-dvh">
-      <SecuritySosOverlay view={view} onAccept={(id) => void acceptSos(id)} />
       <header className="sticky top-0 z-20 border-b border-line/60 bg-bg/50 px-5 py-4 backdrop-blur-xl lg:px-10">
         <div className="mx-auto flex max-w-[1440px] flex-wrap items-center gap-x-6 gap-y-3">
           <div className="min-w-0 flex-1">

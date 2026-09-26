@@ -3,6 +3,10 @@
 import { useEffect, useRef } from "react";
 import type { SecurityPostView } from "@/types/security";
 
+function isSos(alarm: SecurityPostView["alarms"][number]): boolean {
+  return alarm.kind === "SOS" || alarm.title.includes("SOS");
+}
+
 function beep(context: AudioContext) {
   const tone = context.createOscillator();
   const gain = context.createGain();
@@ -19,11 +23,12 @@ export function SecuritySosOverlay({
   view,
   onAccept,
 }: {
-  view: SecurityPostView;
+  view: Pick<SecurityPostView, "alarms" | "objectName" | "can">;
   onAccept: (id: string) => void;
 }) {
-  const open = view.alarms.filter((alarm) => alarm.kind === "SOS" && alarm.status === "OPEN");
-  const accepted = view.alarms.filter((alarm) => alarm.kind === "SOS" && alarm.status === "ACCEPTED");
+  const alarms = view.alarms ?? [];
+  const open = alarms.filter((alarm) => isSos(alarm) && alarm.status === "OPEN");
+  const accepted = alarms.filter((alarm) => isSos(alarm) && alarm.status === "ACCEPTED");
   const shown = open.length ? open : accepted.slice(0, 1);
   const flashing = open.length > 0;
   const audio = useRef<AudioContext | null>(null);

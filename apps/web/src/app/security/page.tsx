@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { LiveRefresh } from "@/components/pwa/LiveRefresh";
 import { SecurityPost } from "@/components/security/SecurityPost";
+import { SecuritySosWatch } from "@/components/security/SecuritySosWatch";
 import { rpc } from "@/server/rpc";
 import type { SecurityPostView } from "@/types/security";
 
@@ -12,7 +13,8 @@ export default async function SecurityPage({ searchParams }: { searchParams: Pro
   if (result.status !== 200) redirect("/no-access");
   return (
     <>
-      <LiveRefresh />
+      <LiveRefresh everyMs={2000} />
+      <SecuritySosWatch />
       <SecurityPost view={result.body} />
     </>
   );

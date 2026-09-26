@@ -46,15 +46,17 @@ function callerName(userId: string): string {
   return findUserById(userId)?.name?.trim() || "Житель";
 }
 
+const postRoles = new Set(["SUPER_ADMIN", "COMPANY_ADMIN", "OBJECT_ADMIN", "MANAGER", "SECURITY"]);
+
 function pushSecurityStaff(companyId: string, objectId: string, title: string, body: string): void {
   const ids = new Set(
     listMemberships()
       .filter(
         (membership) =>
           membership.companyId === companyId &&
-          membership.objectId === objectId &&
-          membership.role === "SECURITY" &&
-          membership.status !== "REVOKED",
+          membership.status !== "REVOKED" &&
+          postRoles.has(membership.role) &&
+          (membership.objectId === null || membership.objectId === objectId),
       )
       .map((membership) => membership.userId),
   );

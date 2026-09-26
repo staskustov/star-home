@@ -3,11 +3,9 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 
-const pollMs = 20_000;
-
 type Live = { token?: string; socket?: string | null };
 
-export function LiveRefresh() {
+export function LiveRefresh({ everyMs = 20_000 }: { everyMs?: number }) {
   const router = useRouter();
 
   useEffect(() => {
@@ -37,7 +35,7 @@ export function LiveRefresh() {
         check()
           .catch(() => undefined)
           .finally(poll);
-      }, pollMs);
+      }, everyMs);
     };
 
     const visible = () => {
@@ -66,7 +64,7 @@ export function LiveRefresh() {
       if (timer) clearTimeout(timer);
       document.removeEventListener("visibilitychange", visible);
     };
-  }, [router]);
+  }, [everyMs, router]);
 
   return null;
 }
