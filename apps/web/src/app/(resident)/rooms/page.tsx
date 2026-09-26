@@ -1,10 +1,14 @@
+import Link from "next/link";
+import { FloorPlan } from "@/components/home/FloorPlan";
 import { Icon } from "@/components/icons";
 import { formatHumidity, formatTemperature } from "@/lib/format";
 import { houseReadout } from "@/lib/house-status";
-import { requireHome } from "@/server/access";
+import { requireFloorPlan, requireHome, requireSmartRooms } from "@/server/access";
 
 export default async function RoomsPage() {
   const home = await requireHome();
+  const floors = await requireFloorPlan(home.unit.id);
+  const rooms = await requireSmartRooms();
   const mode = home.lifeModes.find((item) => item.mode === home.activeLifeMode) ?? home.lifeModes[0];
   const readout = mode ? houseReadout(home.devices, mode) : null;
   const problem = readout?.tone === "danger";
@@ -45,24 +49,41 @@ export default async function RoomsPage() {
         </div>
       </dl>
 
-      {home.rooms.length === 0 ? (
+      {rooms.length === 0 ? (
         <p className="panel mt-4 px-5 py-5 text-[15px] text-muted">Помещения для этого объекта пока не добавлены.</p>
       ) : (
         <ul className="panel mt-4 overflow-hidden">
-          {home.rooms.map((room) => {
-            const count = home.devices.filter((device) => device.roomName === room.name).length;
+          {rooms.map((room) => {
+            const facts = [
+              room.temperatureC != null ? formatTemperature(room.temperatureC) : null,
+              room.humidityPercent != null ? formatHumidity(room.humidityPercent) : null,
+              room.lights ? `Свет ${room.lights.on} из ${room.lights.total}` : null,
+              room.curtain != null ? `Шторы ${room.curtain}%` : null,
+            ]
+              .filter(Boolean)
+              .join(" · ");
             return (
-              <li key={room.id ?? room.name} className="list-row">
-                <span className="tile-icon">
-                  <Icon name="rooms" className="h-[18px] w-[18px]" />
-                </span>
-                <span className="flex-1 text-[16px] text-ink">{room.name}</span>
-                <span className="text-[13px] text-muted">{count ? `Устройств: ${count}` : "Пусто"}</span>
+              <li key={room.id} className="list-row">
+                <Link href={`/rooms/${room.id}`} className="-my-1 flex min-w-0 flex-1 items-center gap-[14px] py-1">
+                  <span className="tile-icon">
+                    <Icon name="rooms" className="h-[18px] w-[18px]" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[16px] text-ink">{room.name}</span>
+                    <span className="mt-0.5 block text-[13px] text-muted">
+                      {facts || (room.deviceCount ? `Устройств: ${room.deviceCount}` : "Пусто")}
+                    </span>
+                  </span>
+                  <Icon name="chevron" className="h-4 w-4 shrink-0 text-muted" />
+                </Link>
               </li>
             );
           })}
         </ul>
       )}
+
+      <h2 className="mt-8 text-[19px] tracking-[-0.02em] text-ink">План</h2>
+      <FloorPlan floors={floors} />
     </section>
   );
 }

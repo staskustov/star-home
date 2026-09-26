@@ -6,6 +6,9 @@ const icons: Record<string, IconName> = {
   guests: "guests",
   security: "security",
   pay: "payments",
+  "lights-off": "devices",
+  "curtains-close": "rooms",
+  night: "settings",
 };
 
 export function QuickActions({

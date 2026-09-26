@@ -133,10 +133,18 @@ export type ResidentHome = {
   categories: string[];
   rooms: { id?: string; name: string }[];
   cameras: { name: string; state: string }[];
-  devices: { id?: string; name: string; label: string; state: "ON" | "OFF" | "FAULT"; stale?: boolean; roomName?: string | null }[];
+  devices: { id?: string; name: string; label: string; state: "ON" | "OFF" | "FAULT"; stale?: boolean; roomId?: string | null; roomName?: string | null }[];
   serviceCategories: string[];
   aiPrompt: string;
   meters: { name: string; value: string; unit: string }[];
+  facts?: {
+    lights: { on: number; total: number } | null;
+    doors: { open: string[] } | null;
+    energy: { on: number; total: number } | null;
+    alerts: string[];
+  };
+  controller?: { status: string; lastSeen: string | null; stale: boolean; message: string | null } | null;
+  notices?: { id: string; title: string; body: string; at: string }[];
 };
 
 export type AccessEvent = {

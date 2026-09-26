@@ -356,27 +356,41 @@ type DeskDevice = {
   adapter?: string;
   gatewayName?: string | null;
   lastError?: string | null;
+  planFloor?: number | null;
+  planX?: number | null;
+  planY?: number | null;
 };
 
 export function DeviceDesk({
   devices,
   meters = [],
   gateways = [],
+  events = [],
+  rooms = [],
   canCommand = false,
+  canPair = false,
 }: {
   devices: DeskDevice[];
   meters?: { objectId: string; name: string; value: string; unit: string }[];
-  gateways?: { id: string; objectId: string; name: string; adapter: string; status: string; lastSeen: string | null; lastError: string | null; connectedDevices: number }[];
+  gateways?: { id: string; objectId: string; name: string; adapter: string; status: string; lastSeen: string | null; lastError: string | null; paired?: boolean; connectedDevices: number }[];
+  events?: { id: string; objectId: string; title: string; at: string; result: string }[];
+  rooms?: { id: string; objectId: string; name: string }[];
   canCommand?: boolean;
+  canPair?: boolean;
 }) {
   const [view, setView] = useViewMode("devices");
   const router = useRouter();
   const rows = useObjectRows(devices);
   const readings = useObjectRows(meters);
   const hubs = useObjectRows(gateways);
+  const log = useObjectRows(events);
+  const places = useObjectRows(rooms);
   const [notice, setNotice] = useState<string | null>(null);
   const [token, setToken] = useState<string | null>(null);
+  const [pairToken, setPairToken] = useState<string | null>(null);
   const [pending, setPending] = useState<{ id: string; command: string } | null>(null);
+  const [pin, setPin] = useState({ deviceId: "", floor: "1", x: "50", y: "50" });
+  const [bind, setBind] = useState({ deviceId: "", roomId: "" });
 
   async function testCommand(deviceId: string, command: string, confirmToken?: string) {
     setNotice(null);
@@ -399,6 +413,62 @@ export function DeviceDesk({
     if (result.ok) router.refresh();
   }
 
+  async function pair(gatewayId: string) {
+    setNotice(null);
+    const result = await runCommand(() => fetch(`/api/smart-home/gateways/${gatewayId}/pair`, { method: "POST" }));
+    const next = typeof result.payload?.token === "string" ? result.payload.token : null;
+    setPairToken(next);
+    setNotice(next ? "Токен покажите один раз. В приложение его не кладём." : commandMessage(result.payload));
+    if (result.ok) router.refresh();
+  }
+
+  async function rotate(gatewayId: string) {
+    setNotice(null);
+    const result = await runCommand(() => fetch(`/api/smart-home/gateways/${gatewayId}/rotate`, { method: "POST" }));
+    const next = typeof result.payload?.token === "string" ? result.payload.token : null;
+    setPairToken(next);
+    setNotice(next ? "Старый токен больше не действует." : commandMessage(result.payload));
+    if (result.ok) router.refresh();
+  }
+
+  async function revoke(gatewayId: string) {
+    setNotice(null);
+    const result = await runCommand(() => fetch(`/api/smart-home/gateways/${gatewayId}/revoke`, { method: "POST" }));
+    setPairToken(null);
+    setNotice(result.ok ? "Канал отозван." : commandMessage(result.payload));
+    if (result.ok) router.refresh();
+  }
+
+  async function place(event: React.FormEvent) {
+    event.preventDefault();
+    if (!pin.deviceId) return;
+    setNotice(null);
+    const result = await runCommand(() =>
+      fetch(`/api/smart-home/devices/${pin.deviceId}/place`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ planFloor: Number(pin.floor), planX: Number(pin.x), planY: Number(pin.y) }),
+      }),
+    );
+    setNotice(result.ok ? "Метка на плане сохранена." : commandMessage(result.payload));
+    if (result.ok) router.refresh();
+  }
+
+  async function bindRoom(event: React.FormEvent) {
+    event.preventDefault();
+    if (!bind.deviceId) return;
+    setNotice(null);
+    const result = await runCommand(() =>
+      fetch(`/api/smart-home/devices/${bind.deviceId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ roomId: bind.roomId || null }),
+      }),
+    );
+    setNotice(result.ok ? "Помещение сохранено." : commandMessage(result.payload));
+    if (result.ok) router.refresh();
+  }
+
   return (
     <Shell title="Устройства">
       <ViewToggle value={view} onChange={setView} />
@@ -412,9 +482,24 @@ export function DeviceDesk({
               {gateway.connectedDevices ? ` · устройств ${gateway.connectedDevices}` : ""}
             </p>
             {gateway.lastError ? <p className="mt-1 text-sm text-danger">{gateway.lastError}</p> : null}
+            <p className="mt-1 text-sm text-muted">{gateway.paired ? "Канал выдан" : "Канал не выдан"}</p>
+            {canPair ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button type="button" className="btn btn-secondary btn-compact" onClick={() => void pair(gateway.id)}>
+                  Выдать токен
+                </button>
+                <button type="button" className="btn btn-secondary btn-compact" onClick={() => void rotate(gateway.id)}>
+                  Сменить
+                </button>
+                <button type="button" className="btn btn-secondary btn-compact" onClick={() => void revoke(gateway.id)}>
+                  Отозвать
+                </button>
+              </div>
+            ) : null}
           </li>
         ))}
       </List>
+      {pairToken ? <p className="break-all text-[13px] text-muted">{pairToken}</p> : null}
       {view === "blocks" ? (
         <ul className="grid gap-3 sm:grid-cols-2">
           {rows.length === 0 ? (
@@ -466,6 +551,58 @@ export function DeviceDesk({
         </button>
       ) : null}
       {notice ? <p className="text-[15px] text-muted">{notice}</p> : null}
+      {canPair ? (
+        <form onSubmit={place} className="panel grid gap-3 px-5 py-5 sm:grid-cols-4">
+          <select value={pin.deviceId} onChange={(event) => setPin((current) => ({ ...current, deviceId: event.target.value }))} className="control sm:col-span-4">
+            <option value="">Устройство на плане</option>
+            {rows.filter((device) => device.id).map((device) => (
+              <option key={device.id} value={device.id}>
+                {device.name}
+                {device.planX != null ? ` · ${device.planFloor}эт` : ""}
+              </option>
+            ))}
+          </select>
+          <input value={pin.floor} onChange={(event) => setPin((current) => ({ ...current, floor: event.target.value }))} className="control" placeholder="Этаж" />
+          <input value={pin.x} onChange={(event) => setPin((current) => ({ ...current, x: event.target.value }))} className="control" placeholder="X %" />
+          <input value={pin.y} onChange={(event) => setPin((current) => ({ ...current, y: event.target.value }))} className="control" placeholder="Y %" />
+          <button type="submit" className="btn btn-secondary btn-compact">
+            Поставить
+          </button>
+        </form>
+      ) : null}
+      {canPair ? (
+        <form onSubmit={bindRoom} className="panel grid gap-3 px-5 py-5 sm:grid-cols-3">
+          <select value={bind.deviceId} onChange={(event) => setBind((current) => ({ ...current, deviceId: event.target.value }))} className="control">
+            <option value="">Устройство</option>
+            {rows.filter((device) => device.id).map((device) => (
+              <option key={device.id} value={device.id}>
+                {device.name}
+              </option>
+            ))}
+          </select>
+          <select value={bind.roomId} onChange={(event) => setBind((current) => ({ ...current, roomId: event.target.value }))} className="control">
+            <option value="">Без помещения</option>
+            {places.map((room) => (
+              <option key={room.id} value={room.id}>
+                {room.name}
+              </option>
+            ))}
+          </select>
+          <button type="submit" className="btn btn-secondary btn-compact">
+            Привязать
+          </button>
+        </form>
+      ) : null}
+      <List empty="Событий нет.">
+        {log.map((event) => (
+          <li key={event.id} className="px-5 py-4">
+            <p className="text-[16px] text-ink">{event.title}</p>
+            <p className="text-sm text-muted">
+              {event.at} · {event.result}
+            </p>
+          </li>
+        ))}
+      </List>
       <List empty="Счётчиков нет.">
         {readings.map((meter) => (
           <li key={`${meter.objectId}-${meter.name}`} className="px-5 py-4">

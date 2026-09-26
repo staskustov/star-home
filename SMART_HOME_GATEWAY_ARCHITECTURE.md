@@ -71,13 +71,17 @@ Cloud вызывает адаптер **только** у Local Gateway (или 
 
 Направление: **исходящее с объекта** (шлюз сам держит сессию). Входящий MQTT/порты контроллера в интернет не публикуем.
 
-Минимум канала:
+Сейчас:
 
-- взаимная аутентификация (токен шлюза на объект, не логин жителя)
-- heartbeat
-- push состояния / событий
-- pull/push команд с идемпотентным `commandId`
-- reconnect: retry, backoff, timeout
+- Staff `devices.edit` выдаёт / меняет / отзывает токен. В снимке только `tokenHash`
+- Heartbeat, inbound, pull, ack: `/api/smart-home/gateways/channel` + `x-star-home-gateway`
+- Очередь `commandId`: повторный ack идемпотентен
+- Агент: `apps/gateway/agent.ts` — не подтверждает то, что не применил
+
+Ещё впереди:
+
+- взаимный TLS
+- полный Local Gateway binary
 
 При reconnect:
 

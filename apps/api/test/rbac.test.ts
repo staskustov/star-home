@@ -370,6 +370,210 @@ describe("smart home commands", () => {
     const confirmed = await rpc("confirm", { token }, resident);
     assert.equal(confirmed.status, 200);
   });
+
+  it("shows home facts from stored device state", async () => {
+    await rpc("commandDeviceSmart", { deviceId: "dev_light_24", command: "setPower", value: true }, resident);
+    const home = (await rpc("home", null, resident)).body as { home: { facts?: { lights?: { on: number; total: number } | null }; quickActions: { id: string }[] } };
+    assert.ok(home.home.facts?.lights);
+    assert.ok((home.home.facts.lights.on ?? 0) >= 1);
+    assert.ok(home.home.quickActions.some((action) => action.id === "night"));
+    assert.ok(home.home.quickActions.some((action) => action.id === "lights-off"));
+  });
+
+  it("runs lights-off and keeps the night scenario", async () => {
+    const list = (await rpc("listScenarios", {}, resident)).body as { scenarios: { name: string }[] };
+    assert.ok(list.scenarios.some((scenario) => scenario.name === "Ночь"));
+    const action = await rpc("runHomeAction", { action: "lights-off" }, resident);
+    assert.equal(action.status, 200, JSON.stringify(action.body));
+    assert.equal((action.body as { confirmed: boolean }).confirmed, true);
+    const device = (await rpc("smartHomeDevice", { deviceId: "dev_light_24" }, resident)).body as { device: { state?: { on?: boolean } } };
+    assert.equal(device.device.state?.on, false);
+  });
+
+  it("places a pin on an uploaded plan and hides it from the resident editor", async () => {
+    const plan = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    assert.equal((await rpc("updateUnit", { unitId: "unit_24", name: "Дом №24", floors: 1, plans: [{ floor: 1, image: plan }] }, objectAdmin)).status, 200);
+    assert.equal((await rpc("placeDevice", { deviceId: "dev_light_24", planFloor: 1, planX: 40, planY: 60 }, resident)).status, 403);
+    assert.equal((await rpc("placeDevice", { deviceId: "dev_light_24", planFloor: 1, planX: 40, planY: 60 }, objectAdmin)).status, 200);
+    const floors = ((await rpc("floorPlan", {}, resident)).body as { floors: { pins: { deviceId: string; x: number }[] }[] }).floors;
+    assert.ok(floors.some((floor) => floor.pins.some((pin) => pin.deviceId === "dev_light_24" && pin.x === 40)));
+  });
+
+  it("runs EVENT steps except HIGH", async () => {
+    const created = await rpc(
+      "createScenario",
+      {
+        name: "Свет погас",
+        trigger: "EVENT",
+        conditions: [{ deviceId: "dev_light_24", field: "on", value: false }],
+        steps: [
+          { deviceId: "dev_curtain_24", command: "setPosition", value: 0 },
+          { deviceId: "dev_gate_siyanie", command: "open" },
+        ],
+      },
+      resident,
+    );
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    await rpc("commandDeviceSmart", { deviceId: "dev_curtain_24", command: "setPosition", value: 80 }, resident);
+    const close = await rpc("commandDeviceSmart", { deviceId: "dev_gate_siyanie", command: "close" }, resident);
+    const closeToken = (close.body as { token?: string }).token;
+    if (closeToken) await rpc("commandDeviceSmart", { deviceId: "dev_gate_siyanie", command: "close", confirmToken: closeToken }, resident);
+    await rpc("commandDeviceSmart", { deviceId: "dev_light_24", command: "setPower", value: false }, resident);
+    const curtain = (await rpc("smartHomeDevice", { deviceId: "dev_curtain_24" }, resident)).body as { device: { state?: { position?: number } } };
+    assert.equal(curtain.device.state?.position, 0);
+    const gate = (await rpc("smartHomeDevice", { deviceId: "dev_gate_siyanie" }, resident)).body as { device: { state?: { latch?: string } } };
+    assert.notEqual(gate.device.state?.latch, "OPEN");
+  });
+
+  it("runs a due schedule once per calendar day", async () => {
+    const timeZone = "Europe/Moscow";
+    const now = new Date();
+    const hour = Number(new Intl.DateTimeFormat("en-GB", { hour: "2-digit", hourCycle: "h23", timeZone }).format(now));
+    const minute = Number(new Intl.DateTimeFormat("en-GB", { minute: "2-digit", timeZone }).format(now));
+    const created = await rpc(
+      "createScenario",
+      {
+        name: "По времени",
+        trigger: "SCHEDULE",
+        scheduleHour: hour,
+        scheduleMinute: minute,
+        steps: [{ deviceId: "dev_light_24", command: "setPower", value: true }],
+      },
+      resident,
+    );
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    await rpc("commandDeviceSmart", { deviceId: "dev_light_24", command: "setPower", value: false }, resident);
+    assert.equal((await rpc("smartHomeStatus", {}, resident)).status, 200);
+    const first = (await rpc("smartHomeDevice", { deviceId: "dev_light_24" }, resident)).body as { device: { state?: { on?: boolean } } };
+    assert.equal(first.device.state?.on, true);
+    await rpc("commandDeviceSmart", { deviceId: "dev_light_24", command: "setPower", value: false }, resident);
+    assert.equal((await rpc("smartHomeStatus", {}, resident)).status, 200);
+    const second = (await rpc("smartHomeDevice", { deviceId: "dev_light_24" }, resident)).body as { device: { state?: { on?: boolean } } };
+    assert.equal(second.device.state?.on, false);
+  });
+
+  it("issues a pairing token once and never stores the plaintext", async () => {
+    const created = await rpc("createGateway", { objectId: "obj_siyanie", name: "Канал теста", adapter: "local" }, admin);
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    const gatewayId = (created.body as { id: string }).id;
+    const paired = await rpc("pairGateway", { gatewayId }, admin);
+    assert.equal(paired.status, 200, JSON.stringify(paired.body));
+    const token = (paired.body as { token: string }).token;
+    assert.match(token, /^[a-f0-9]{48}$/);
+    const desk = JSON.stringify((await rpc("desk", { section: "devices" }, admin)).body);
+    assert.ok(!desk.includes(token));
+    assert.equal((await rpc("pairGateway", { gatewayId }, resident)).status, 403);
+  });
+
+  it("shows room cards from stored device state", async () => {
+    const rooms = (await rpc("smartHomeRooms", {}, resident)).body as {
+      rooms: { id: string; name: string; temperatureC: number | null; lights: { on: number; total: number } | null }[];
+    };
+    const living = rooms.rooms.find((room) => room.name === "Гостиная");
+    assert.ok(living);
+    assert.equal(living.temperatureC, 22.4);
+    const room = await rpc("smartHomeRoomDevices", { roomId: living.id }, resident);
+    assert.equal(room.status, 200);
+    assert.ok(((room.body as { devices: { id: string }[] }).devices).some((device) => device.id === "dev_light_24"));
+  });
+
+  it("edits EVENT and SCHEDULE scenarios and can disable them", async () => {
+    const created = await rpc(
+      "createScenario",
+      {
+        name: "Вечер",
+        trigger: "SCHEDULE",
+        scheduleHour: 21,
+        scheduleMinute: 30,
+        steps: [{ deviceId: "dev_light_24", command: "setPower", value: false }],
+      },
+      resident,
+    );
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    const id = (created.body as { id: string }).id;
+    const updated = await rpc("updateScenario", { scenarioId: id, enabled: false, trigger: "EVENT", conditions: [{ deviceId: "dev_light_24", field: "on", value: false }] }, resident);
+    assert.equal(updated.status, 200);
+    const list = (await rpc("listScenarios", {}, resident)).body as { scenarios: { id: string; enabled: boolean; trigger: string }[] };
+    const row = list.scenarios.find((item) => item.id === id);
+    assert.equal(row?.enabled, false);
+    assert.equal(row?.trigger, "EVENT");
+  });
+
+  it("queues a remote command and acks it once", async () => {
+    const people = await import("../../web/src/server/people-store");
+    const person = people.createPerson({ login: "queue.resident", name: "Очередь", passwordHash: "x" });
+    const membership = people.createResidentMembership({ userId: person.id, companyId: "cmp_star", objectId: "obj_siyanie", unitId: "unit_24" });
+    const actor = { userId: person.id, membershipId: membership.id };
+    const created = await rpc("createGateway", { objectId: "obj_siyanie", name: "Очередь", adapter: "wirenboard" }, admin);
+    const gatewayId = (created.body as { id: string }).id;
+    const bound = await rpc("updateDevice", { deviceId: "dev_light_24", gatewayId }, admin);
+    assert.equal(bound.status, 200, JSON.stringify(bound.body));
+    const ops = await import("../../web/src/server/ops-store");
+    const file = ops.readOps();
+    const gateway = file.gateways.find((item) => item.id === gatewayId);
+    assert.ok(gateway);
+    gateway.status = "OFFLINE";
+    ops.writeOps(file);
+    const sent = await rpc("commandDeviceSmart", { deviceId: "dev_light_24", command: "setPower", value: true }, actor);
+    assert.equal(sent.status, 200, JSON.stringify(sent.body));
+    const commandId = (sent.body as { commandId?: string; status?: string }).commandId;
+    assert.ok(commandId);
+    assert.equal((sent.body as { status?: string }).status, "QUEUED");
+    const paired = await rpc("pairGateway", { gatewayId }, admin);
+    const token = (paired.body as { token: string }).token;
+    const channel = await import("../../web/src/server/gateway-channel");
+    const pulled = channel.pullGateway(token);
+    assert.equal(pulled.ok, true);
+    if (pulled.ok) assert.ok(pulled.value.commands.some((item) => item.id === commandId));
+    const first = channel.ackGateway(token, { commandId, confirmed: true, state: { on: true } });
+    const second = channel.ackGateway(token, { commandId, confirmed: true, state: { on: false } });
+    assert.equal(first.ok && first.value.applied, true);
+    assert.equal(second.ok && second.value.applied, false);
+    const device = (await rpc("smartHomeDevice", { deviceId: "dev_light_24" }, resident)).body as { device: { state?: { on?: boolean } } };
+    assert.equal(device.device.state?.on, true);
+    await rpc("updateDevice", { deviceId: "dev_light_24", gatewayId: null }, admin);
+  });
+
+  it("rotates and revokes a gateway token", async () => {
+    const created = await rpc("createGateway", { objectId: "obj_siyanie", name: "Ротация", adapter: "local" }, admin);
+    const gatewayId = (created.body as { id: string }).id;
+    const first = await rpc("pairGateway", { gatewayId }, admin);
+    const oldToken = (first.body as { token: string }).token;
+    const rotated = await rpc("rotateGateway", { gatewayId }, admin);
+    assert.equal(rotated.status, 200);
+    const next = (rotated.body as { token: string }).token;
+    assert.notEqual(next, oldToken);
+    const channel = await import("../../web/src/server/gateway-channel");
+    assert.equal(channel.heartbeatGateway(oldToken, {}).ok, false);
+    assert.equal(channel.heartbeatGateway(next, {}).ok, true);
+    assert.equal((await rpc("revokeGateway", { gatewayId }, admin)).status, 200);
+    assert.equal(channel.heartbeatGateway(next, {}).ok, false);
+  });
+
+  it("writes a household notice only when a sensor raises", async () => {
+    const created = await rpc("createGateway", { objectId: "obj_siyanie", name: "Датчик", adapter: "local" }, admin);
+    const gatewayId = (created.body as { id: string }).id;
+    await rpc("updateDevice", { deviceId: "dev_light_24", gatewayId }, admin);
+    const paired = await rpc("pairGateway", { gatewayId }, admin);
+    const token = (paired.body as { token: string }).token;
+    const channel = await import("../../web/src/server/gateway-channel");
+    const before = ((await rpc("home", null, resident)).body as { home: { notices?: { body: string }[] } }).home.notices ?? [];
+    channel.ingestGatewayState(token, { deviceId: "dev_light_24", state: { detected: true } });
+    const after = ((await rpc("home", null, resident)).body as { home: { notices?: { body: string }[] } }).home.notices ?? [];
+    assert.ok(after.length >= before.length);
+    assert.ok(after.some((item) => item.body.includes("сигнал")));
+    await rpc("updateDevice", { deviceId: "dev_light_24", gatewayId: null }, admin);
+  });
+
+  it("filters history by since and does not invent points", async () => {
+    await rpc("commandDeviceSmart", { deviceId: "dev_light_24", command: "setPower", value: true }, resident);
+    await rpc("commandDeviceSmart", { deviceId: "dev_light_24", command: "setPower", value: false }, resident);
+    const all = (await rpc("smartHomeHistory", { deviceId: "dev_light_24" }, resident)).body as { points: { at: string }[] };
+    assert.ok(all.points.length >= 1);
+    const future = await rpc("smartHomeHistory", { deviceId: "dev_light_24", since: "2999-01-01T00:00:00.000Z" }, resident);
+    assert.equal(future.status, 200);
+    assert.equal(((future.body as { points: unknown[] }).points).length, 0);
+  });
 });
 
 describe("houses", () => {

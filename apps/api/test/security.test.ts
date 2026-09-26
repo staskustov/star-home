@@ -37,6 +37,7 @@ const householdNeeds: Record<string, string> = {
   switchMode: "home.mode.switch",
   addRequest: "service.create",
   commandDeviceSmart: "devices.command",
+  runHomeAction: "devices.command",
 };
 
 let rpc: Rpc;
@@ -208,6 +209,11 @@ describe("another company", () => {
       ["commandDeviceSmart", { deviceId: "dev_rival", command: "setPower", value: true }],
       ["createScenario", { objectId: rival.objectId, name: "Захват", steps: [{ deviceId: "dev_rival", command: "setPower", value: true }] }],
       ["runScenario", { scenarioId: "scen_rival" }],
+      ["pairGateway", { gatewayId: "gw_rival" }],
+      ["placeDevice", { deviceId: "dev_rival", planFloor: 1, planX: 10, planY: 10 }],
+      ["floorPlan", { unitId: rival.unitId }],
+      ["rotateGateway", { gatewayId: "gw_rival" }],
+      ["revokeGateway", { gatewayId: "gw_rival" }],
       ["createAccessPoint", { objectId: rival.objectId, name: "Захват", api: "" }],
       ["updateAccessPoint", { objectId: rival.objectId, pointId: "dev_gate_rival", name: "Захват" }],
       ["removeAccessPoint", { objectId: rival.objectId, pointId: "dev_gate_rival" }],

@@ -2,7 +2,8 @@ import type { SessionRef } from "@/server/actor";
 import { findObject } from "@/server/catalog-store";
 import { commandDeviceSmart, smartViewer, viewerReaches } from "@/server/smart-home";
 import { recordAudit } from "@/server/operations";
-import { findDevice, newId, readOps, writeOps, type Scenario, type ScenarioStep, type ScenarioTrigger } from "@/server/ops-store";
+import { timeZone } from "@/server/time-zone";
+import { findDevice, newId, readOps, writeOps, type Scenario, type ScenarioCondition, type ScenarioStep, type ScenarioTrigger } from "@/server/ops-store";
 import { can } from "@/server/rbac/decide";
 import { householdCan } from "@/server/rbac/policy";
 import { commandRisk, isSmartCommand } from "@/server/smart-commands";
@@ -55,6 +56,10 @@ function asPublic(scenario: Scenario) {
     name: scenario.name,
     trigger: scenario.trigger,
     lifeMode: scenario.lifeMode ?? null,
+    enabled: scenario.enabled !== false,
+    conditions: scenario.conditions ?? [],
+    scheduleHour: scenario.scheduleHour ?? null,
+    scheduleMinute: scenario.scheduleMinute ?? null,
     steps: scenario.steps,
   };
 }
@@ -86,7 +91,17 @@ export function listScenarios(session: SessionRef | null, objectId?: unknown): R
 
 export function createScenario(
   session: SessionRef | null,
-  input: { objectId?: unknown; unitId?: unknown; name?: unknown; trigger?: unknown; lifeMode?: unknown; steps?: unknown },
+  input: {
+    objectId?: unknown;
+    unitId?: unknown;
+    name?: unknown;
+    trigger?: unknown;
+    lifeMode?: unknown;
+    steps?: unknown;
+    conditions?: unknown;
+    scheduleHour?: unknown;
+    scheduleMinute?: unknown;
+  },
 ): Result<{ id: string }> {
   const viewer = smartViewer(session);
   if (!viewer.ok) return viewer;
@@ -101,9 +116,13 @@ export function createScenario(
   if (!viewerReaches(viewer.value, { companyId, objectId, unitId: typeof input.unitId === "string" ? input.unitId : null })) return denied();
   const steps = cleanSteps(input.steps, companyId, objectId);
   if (!Array.isArray(steps)) return steps;
-  const trigger: ScenarioTrigger = input.trigger === "LIFE_MODE" ? "LIFE_MODE" : "MANUAL";
+  const trigger = asTrigger(input.trigger);
   const lifeMode = input.lifeMode === "HOME" || input.lifeMode === "WORK" || input.lifeMode === "VACATION" ? input.lifeMode : undefined;
   if (trigger === "LIFE_MODE" && !lifeMode) return { ok: false, status: 400, message: "Выберите режим" };
+  const conditions = cleanConditions(input.conditions, companyId, objectId);
+  if (!Array.isArray(conditions)) return conditions;
+  const schedule = cleanSchedule(trigger, input.scheduleHour, input.scheduleMinute);
+  if (!schedule.ok) return schedule;
   const scenario: Scenario = {
     id: newId("scen"),
     companyId,
@@ -112,6 +131,10 @@ export function createScenario(
     name,
     trigger,
     lifeMode,
+    enabled: true,
+    conditions,
+    scheduleHour: schedule.value.hour,
+    scheduleMinute: schedule.value.minute,
     steps,
   };
   const file = readOps();
@@ -132,7 +155,17 @@ export function createScenario(
 
 export function updateScenario(
   session: SessionRef | null,
-  input: { scenarioId?: unknown; name?: unknown; trigger?: unknown; lifeMode?: unknown; steps?: unknown },
+  input: {
+    scenarioId?: unknown;
+    name?: unknown;
+    trigger?: unknown;
+    lifeMode?: unknown;
+    steps?: unknown;
+    conditions?: unknown;
+    scheduleHour?: unknown;
+    scheduleMinute?: unknown;
+    enabled?: unknown;
+  },
 ): Result<{ id: string }> {
   const found = scopedScenario(session, input.scenarioId);
   if (!found.ok) return found;
@@ -147,9 +180,23 @@ export function updateScenario(
     if (typeof name !== "string") return name;
     current.name = name;
   }
-  if (input.trigger === "LIFE_MODE" || input.trigger === "MANUAL") current.trigger = input.trigger;
+  if (input.trigger === "LIFE_MODE" || input.trigger === "MANUAL" || input.trigger === "EVENT" || input.trigger === "SCHEDULE") {
+    current.trigger = input.trigger;
+  }
   if (input.lifeMode === "HOME" || input.lifeMode === "WORK" || input.lifeMode === "VACATION" || input.lifeMode === null) {
     current.lifeMode = input.lifeMode ?? undefined;
+  }
+  if (input.enabled === true || input.enabled === false) current.enabled = input.enabled;
+  if (input.conditions !== undefined) {
+    const conditions = cleanConditions(input.conditions, current.companyId, current.objectId);
+    if (!Array.isArray(conditions)) return conditions;
+    current.conditions = conditions;
+  }
+  if (input.scheduleHour !== undefined || input.scheduleMinute !== undefined) {
+    const schedule = cleanSchedule(current.trigger, input.scheduleHour ?? current.scheduleHour, input.scheduleMinute ?? current.scheduleMinute);
+    if (!schedule.ok) return schedule;
+    current.scheduleHour = schedule.value.hour;
+    current.scheduleMinute = schedule.value.minute;
   }
   if (input.steps !== undefined) {
     const steps = cleanSteps(input.steps, current.companyId, current.objectId);
@@ -213,6 +260,7 @@ export async function runScenario(
       command: step.command,
       value: step.value,
       confirmToken: input.confirmToken,
+      source: "scenario",
     });
     if (!result.ok) return result;
     if (result.value.needsConfirm) return { ok: true, value: { confirmed: false, needsConfirm: true, token: result.value.token, message: result.value.message, ran } };
@@ -232,6 +280,96 @@ export async function runScenario(
     target: scenario.name,
   });
   return { ok: true, value: { confirmed: true, message: ran ? "Сценарий выполнен." : "Нет безопасных шагов.", ran } };
+}
+
+function asTrigger(value: unknown): ScenarioTrigger {
+  if (value === "LIFE_MODE" || value === "EVENT" || value === "SCHEDULE") return value;
+  return "MANUAL";
+}
+
+function cleanConditions(value: unknown, companyId: string, objectId: string): ScenarioCondition[] | Failure {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) return { ok: false, status: 400, message: "Проверьте условия" };
+  if (value.length > 8) return { ok: false, status: 400, message: "Слишком много условий" };
+  const rows: ScenarioCondition[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") return { ok: false, status: 400, message: "Проверьте условие" };
+    const row = item as { deviceId?: unknown; field?: unknown; value?: unknown };
+    if (typeof row.deviceId !== "string" || !row.deviceId) return { ok: false, status: 400, message: "Устройство не найдено" };
+    if (row.field !== "on" && row.field !== "latch" && row.field !== "detected" && row.field !== "brightness") {
+      return { ok: false, status: 400, message: "Неизвестное условие" };
+    }
+    const device = findDevice(row.deviceId);
+    if (!device || device.companyId !== companyId || device.objectId !== objectId) return { ok: false, status: 404, message: "Устройство не найдено" };
+    rows.push({ deviceId: device.id, field: row.field, op: "eq", value: row.value });
+  }
+  return rows;
+}
+
+function cleanSchedule(
+  trigger: ScenarioTrigger,
+  hour: unknown,
+  minute: unknown,
+): Result<{ hour?: number; minute?: number }> {
+  if (trigger !== "SCHEDULE") return { ok: true, value: {} };
+  const h = Number(hour);
+  const m = Number(minute);
+  if (!Number.isInteger(h) || h < 0 || h > 23 || !Number.isInteger(m) || m < 0 || m > 59) {
+    return { ok: false, status: 400, message: "Укажите время" };
+  }
+  return { ok: true, value: { hour: h, minute: m } };
+}
+
+function conditionMet(condition: ScenarioCondition): boolean {
+  const device = findDevice(condition.deviceId);
+  if (!device) return false;
+  const state = device.state ?? {};
+  if (condition.field === "on") return state.on === condition.value;
+  if (condition.field === "latch") return (state.latch ?? device.latch) === condition.value;
+  if (condition.field === "detected") return state.detected === condition.value;
+  if (condition.field === "brightness") return state.brightness === condition.value;
+  return false;
+}
+
+export async function runEventScenarios(session: SessionRef | null, deviceId: string): Promise<void> {
+  const viewer = smartViewer(session);
+  if (!viewer.ok) return;
+  const rows = readOps().scenarios.filter(
+    (scenario) =>
+      scenario.trigger === "EVENT" &&
+      scenario.enabled !== false &&
+      viewerReaches(viewer.value, scenario) &&
+      (scenario.conditions ?? []).some((item) => item.deviceId === deviceId) &&
+      (scenario.conditions ?? []).every(conditionMet),
+  );
+  for (const scenario of rows) {
+    await runScenario(session, { scenarioId: scenario.id }, { skipHigh: true });
+  }
+}
+
+export async function runDueSchedules(session: SessionRef | null): Promise<void> {
+  const viewer = smartViewer(session);
+  if (!viewer.ok) return;
+  const now = new Date();
+  const hour = Number(new Intl.DateTimeFormat("en-GB", { hour: "2-digit", hourCycle: "h23", timeZone }).format(now));
+  const minute = Number(new Intl.DateTimeFormat("en-GB", { minute: "2-digit", timeZone }).format(now));
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone }).format(now);
+  const file = readOps();
+  const due = file.scenarios.filter(
+    (scenario) =>
+      scenario.trigger === "SCHEDULE" &&
+      scenario.enabled !== false &&
+      scenario.scheduleHour === hour &&
+      scenario.scheduleMinute === minute &&
+      scenario.lastRunAt !== today &&
+      viewerReaches(viewer.value, scenario),
+  );
+  for (const scenario of due) {
+    const current = file.scenarios.find((item) => item.id === scenario.id);
+    if (current) current.lastRunAt = today;
+    writeOps(file);
+    await runScenario(session, { scenarioId: scenario.id }, { skipHigh: true });
+  }
 }
 
 export async function runLifeModeScenarios(session: SessionRef | null, unitId: string, mode: "HOME" | "WORK" | "VACATION"): Promise<void> {

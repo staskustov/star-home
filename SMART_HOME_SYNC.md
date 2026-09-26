@@ -4,9 +4,10 @@ Cloud — UX, права, аудит, очередь команд. Дом раб
 
 ## Канал
 
-- Исходящее: команда в адаптер шлюза (local / http / wirenboard mapping).
-- Входящее: `mapInbound` адаптера → NormalizedState, если канал есть.
-- Нет канала — `confirmed: false`, UI показывает stale / CONTROLLER_UNAVAILABLE.
+- Исходящее: local выполняется сразу; не-local кладётся в очередь `gatewayCommands` с `commandId`.
+- Шлюз забирает очередь (`kind: pull`) и подтверждает (`kind: ack`). Повторный ack не меняет state.
+- Входящее: `kind: state` → NormalizedState. MQTT в интернет не открываем.
+- Нет канала — `confirmed: false`, команда может быть `QUEUED`.
 
 ## Конфликт
 

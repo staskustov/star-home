@@ -7,6 +7,7 @@ import { StarMark } from "@/components/brand/StarMark";
 import { CameraBlock } from "@/components/home/CameraBlock";
 import { HomeHero } from "@/components/home/HomeHero";
 import { LifeModeSwitcher } from "@/components/home/LifeModeSwitcher";
+import { HomeFacts } from "@/components/home/HomeFacts";
 import { QuickActions } from "@/components/home/QuickActions";
 import { Icon, type IconName } from "@/components/icons";
 import { LiveRefresh } from "@/components/pwa/LiveRefresh";
@@ -56,6 +57,20 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
   async function onAction(id: string) {
     if (id === "guests") {
       router.push("/access");
+      return;
+    }
+    if (id === "lights-off" || id === "curtains-close" || id === "night") {
+      setNotice(null);
+      const result = await runCommand(() =>
+        fetch("/api/smart-home/actions", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: id }),
+        }),
+      );
+      const payload = result.payload;
+      setNotice(payload?.needsConfirm ? "Подтвердите команду в карточке устройства." : commandMessage(payload));
+      if (result.ok && payload?.confirmed) router.refresh();
       return;
     }
     const path = id === "open-gate" ? "/api/access/gate" : id === "security" ? "/api/security/call" : id === "pay" ? "/api/payments/pay" : "";
@@ -112,6 +127,21 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
 
       <LifeModeSwitcher modes={data.lifeModes} value={current.mode} onChange={changeMode} />
 
+      {data.controller?.message ? (
+        <p className="panel px-5 py-4 text-[15px] text-warning">{data.controller.message}</p>
+      ) : null}
+
+      {data.notices?.length ? (
+        <ul className="panel overflow-hidden">
+          {data.notices.map((item) => (
+            <li key={item.id} className="list-row">
+              <span className="flex-1 text-[15px] text-ink">{item.title}</span>
+              <span className="text-[13px] text-muted">{item.body}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
       <CameraBlock cameras={data.cameras} />
 
       <HomeHero
@@ -124,6 +154,8 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
         temperatureC={data.climate?.temperatureC ?? null}
         humidityPercent={data.climate?.humidityPercent ?? null}
       />
+
+      <HomeFacts facts={data.facts} />
 
       <div className="space-y-3">
         <QuickActions actions={data.quickActions} onSelect={onAction} />

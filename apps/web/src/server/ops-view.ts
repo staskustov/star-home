@@ -1,5 +1,5 @@
 import { formatHumidity, formatTemperature } from "@/lib/format";
-import { findUnit } from "@/server/catalog-store";
+import { findUnit, roomsOf, unitIdsOf } from "@/server/catalog-store";
 import { deviceLabel, isOpener } from "@/server/device-kinds";
 import { listAudit } from "@/server/audit-store";
 import { auditRow, auditVisible, shortTime } from "@/server/audit-view";
@@ -129,6 +129,9 @@ export function deskFor(actor: StaffActor, section: DeskSection) {
           adapter: device.adapter,
           gatewayName: gateway?.name ?? null,
           lastError: gateway?.lastError ?? null,
+          planFloor: device.planFloor ?? null,
+          planX: device.planX ?? null,
+          planY: device.planY ?? null,
         };
       }),
       gateways: mine(file.gateways).map((gateway) => ({
@@ -139,9 +142,19 @@ export function deskFor(actor: StaffActor, section: DeskSection) {
         status: gateway.status,
         lastSeen: gateway.lastSeen,
         lastError: gateway.lastError,
+        paired: Boolean(gateway.tokenHash),
         connectedDevices: file.devices.filter((device) => device.gatewayId === gateway.id).length,
       })),
+      events: mine(file.smartEvents)
+        .slice(0, 12)
+        .map((event) => ({ id: event.id, objectId: event.objectId, title: event.title, at: event.at, result: event.result })),
+      rooms: [...new Set(mine(file.devices).map((device) => device.objectId))].flatMap((objectId) =>
+        unitIdsOf(objectId).flatMap((unitId) =>
+          roomsOf(unitId).map((room) => ({ id: room.id, objectId: room.objectId, name: room.name })),
+        ),
+      ),
       canCommand: can(actor, "devices.command"),
+      canPair: can(actor, "devices.edit"),
       meters: mine(file.meters).map((meter) => {
         const latest = file.meterReadings.filter((reading) => reading.meterId === meter.id).at(-1);
         return { objectId: meter.objectId, name: meter.name, value: latest ? String(latest.value).replace(".", ",") : "—", unit: meter.unit };

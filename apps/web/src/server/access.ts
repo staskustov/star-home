@@ -138,6 +138,57 @@ export async function requireSmartDevice(deviceId: string): Promise<{
   return result.body as unknown as { device: Awaited<ReturnType<typeof requireSmartDevice>>["device"] };
 }
 
+export async function requireFloorPlan(unitId?: string) {
+  const result = await rpc<{ floors?: { floor: number; image: string; pins: { deviceId: string; name: string; x: number; y: number }[] }[] }>("floorPlan", { unitId });
+  if (result.status === 401) redirect("/");
+  return result.body.floors ?? [];
+}
+
+export async function requireScenarios() {
+  const result = await rpc<{
+    scenarios?: {
+      id: string;
+      name: string;
+      trigger: string;
+      lifeMode: string | null;
+      enabled?: boolean;
+      scheduleHour?: number | null;
+      scheduleMinute?: number | null;
+      conditions?: { deviceId: string; field: string; value?: unknown }[];
+      steps: { deviceId: string; command: string; value?: unknown }[];
+    }[];
+  }>("listScenarios");
+  if (result.status === 401) redirect("/");
+  return result.body.scenarios ?? [];
+}
+
+export async function requireSmartRooms() {
+  const result = await rpc<{
+    rooms?: {
+      id: string;
+      name: string;
+      kind: string;
+      deviceCount: number;
+      temperatureC: number | null;
+      humidityPercent: number | null;
+      lights: { on: number; total: number } | null;
+      curtain: number | null;
+    }[];
+  }>("smartHomeRooms");
+  if (result.status === 401) redirect("/");
+  return result.body.rooms ?? [];
+}
+
+export async function requireRoom(roomId: string) {
+  const result = await rpc<{ room?: { id: string; name: string }; devices?: { id: string; name: string; typeLabel: string; stale: boolean; availability: "ONLINE" | "OFFLINE" | "UNKNOWN" }[] }>(
+    "smartHomeRoomDevices",
+    { roomId },
+  );
+  if (result.status === 401) redirect("/");
+  if (result.status !== 200 || !result.body.room) redirect("/rooms");
+  return { room: result.body.room, devices: result.body.devices ?? [] };
+}
+
 export async function requireGuest(): Promise<{ name: string; pass: { guestName: string; detail: string; code?: string } | null }> {
   const result = await rpc<{ name?: string; pass: { guestName: string; detail: string; code?: string } | null; redirect?: string }>("guest");
   if (result.status === 401 || result.body.redirect || !result.body.name) await go(result);

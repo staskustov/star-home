@@ -112,6 +112,99 @@ describe("gateway adapters", () => {
     const result = await executeOnAdapter(light, "explode", true);
     assert.equal(result.confirmed, false);
   });
+
+  it("keeps protocol stubs unconfirmed", async () => {
+    await import("../../web/src/server/adapters/protocol-stubs");
+    for (const kind of ["matter", "modbus", "knx", "zigbee", "onvif", "rs485"] as const) {
+      assert.ok(knownGatewayAdapters().includes(kind), kind);
+      const gateway = {
+        id: `gw_${kind}`,
+        companyId: "cmp_star",
+        objectId: "obj_siyanie",
+        unitId: null,
+        name: kind,
+        adapter: kind,
+        status: "ONLINE" as const,
+        version: null,
+        lastSeen: null,
+        lastError: null,
+        internalAddress: null,
+      };
+      const result = await adapterFor(light, gateway).execute(light, "setPower", true);
+      assert.equal(result.confirmed, false, kind);
+      assert.equal(result.error, "adapter-unconfigured", kind);
+    }
+  });
+});
+
+describe("gateway channel", () => {
+  it("accepts heartbeat and inbound state only with the pairing token", async () => {
+    const { createHash } = await import("crypto");
+    const ops = await import("../../web/src/server/ops-store");
+    const channel = await import("../../web/src/server/gateway-channel");
+    const token = "a".repeat(48);
+    const file = ops.readOps();
+    file.gateways.push({
+      id: "gw_channel",
+      companyId: "cmp_star",
+      objectId: "obj_siyanie",
+      unitId: null,
+      name: "Канал",
+      adapter: "local",
+      status: "OFFLINE",
+      version: null,
+      lastSeen: null,
+      lastError: null,
+      internalAddress: null,
+      tokenHash: createHash("sha256").update(token).digest("hex"),
+    });
+    file.devices.push({ ...light, id: "dev_channel_light", gatewayId: "gw_channel", state: { on: false } });
+    ops.writeOps(file);
+    assert.equal((await channel.heartbeatGateway(null, {})).ok, false);
+    assert.equal((await channel.heartbeatGateway("wrong", {})).ok, false);
+    const beat = channel.heartbeatGateway(token, { status: "ONLINE", version: "1.0" });
+    assert.equal(beat.ok, true);
+    assert.equal(ops.readOps().gateways.find((item) => item.id === "gw_channel")?.status, "ONLINE");
+    const ingested = channel.ingestGatewayState(token, { deviceId: "dev_channel_light", state: { on: true } });
+    assert.equal(ingested.ok, true);
+    assert.equal(ops.readOps().devices.find((item) => item.id === "dev_channel_light")?.state?.on, true);
+    assert.ok(ops.readOps().smartHistory.some((point) => point.deviceId === "dev_channel_light"));
+  });
+
+  it("pulls a queued command once and ignores a second ack", async () => {
+    const { createHash } = await import("crypto");
+    const ops = await import("../../web/src/server/ops-store");
+    const queue = await import("../../web/src/server/gateway-queue");
+    const channel = await import("../../web/src/server/gateway-channel");
+    const token = "b".repeat(48);
+    const file = ops.readOps();
+    file.gateways.push({
+      id: "gw_queue",
+      companyId: "cmp_star",
+      objectId: "obj_siyanie",
+      unitId: null,
+      name: "Очередь",
+      adapter: "wirenboard",
+      status: "ONLINE",
+      version: null,
+      lastSeen: null,
+      lastError: null,
+      internalAddress: null,
+      tokenHash: createHash("sha256").update(token).digest("hex"),
+    });
+    file.devices.push({ ...light, id: "dev_queue_light", gatewayId: "gw_queue", state: { on: false } });
+    ops.writeOps(file);
+    const first = queue.enqueueGatewayCommand({ gatewayId: "gw_queue", deviceId: "dev_queue_light", command: "setPower", value: true });
+    const again = queue.enqueueGatewayCommand({ gatewayId: "gw_queue", deviceId: "dev_queue_light", command: "setPower", value: true });
+    assert.equal(first.id, again.id);
+    const pulled = channel.pullGateway(token);
+    assert.equal(pulled.ok, true);
+    const acked = channel.ackGateway(token, { commandId: first.id, confirmed: true, state: { on: true } });
+    const replay = channel.ackGateway(token, { commandId: first.id, confirmed: true, state: { on: false } });
+    assert.equal(acked.ok && acked.value.applied, true);
+    assert.equal(replay.ok && replay.value.applied, false);
+    assert.equal(ops.readOps().devices.find((item) => item.id === "dev_queue_light")?.state?.on, true);
+  });
 });
 
 describe("live sequence", () => {

@@ -6,6 +6,7 @@ export const residentNav: NavItem[] = [
   { href: "/rooms", label: "Помещения", icon: "rooms" },
   { href: "/devices", label: "Устройства", icon: "devices" },
   { href: "/service", label: "Сервис", icon: "service" },
+  { href: "/scenarios", label: "Сценарии", icon: "settings" },
   { href: "/profile", label: "Профиль", icon: "profile" },
 ];
 

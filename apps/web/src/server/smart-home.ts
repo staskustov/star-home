@@ -1,8 +1,11 @@
 import { placeFromSession, type Place, type SessionRef } from "@/server/actor";
-import { findObject, findRoom, roomsOf } from "@/server/catalog-store";
+import { findObject, findRoom, findUnit, roomsOf } from "@/server/catalog-store";
 import { deviceLabel, isOpener } from "@/server/device-kinds";
 import "./adapters/wirenboard";
+import "./adapters/protocol-stubs";
 import { executeOnAdapter } from "@/server/gateway-adapter";
+import { enqueueGatewayCommand, markGatewayCommand } from "@/server/gateway-queue";
+import { notifyIfAlert } from "@/server/smart-notices";
 import { emitLive } from "@/server/live-bus";
 import { recordAudit } from "@/server/operations";
 import {
@@ -144,6 +147,9 @@ export type SmartDeviceCard = {
     gatewayStatus: string | null;
     lastError: string | null;
   };
+  planFloor?: number | null;
+  planX?: number | null;
+  planY?: number | null;
 };
 
 function asCard(device: Device, viewer: Viewer): SmartDeviceCard {
@@ -163,6 +169,9 @@ function asCard(device: Device, viewer: Viewer): SmartDeviceCard {
     state: knownState(device.state),
     canCommand: canPreviewCommand(viewer, device),
     commands: commandsFor(device),
+    planFloor: device.planFloor ?? null,
+    planX: device.planX ?? null,
+    planY: device.planY ?? null,
   };
   if (viewer.kind === "staff" && viewerCan(viewer, "engineering.view")) {
     card.technical = {
@@ -245,14 +254,15 @@ function storePending(row: PendingSmartCommand): void {
   writeOps(file);
 }
 
-export function smartHomeStatus(session: SessionRef | null, objectId?: unknown): Result<{
+export async function smartHomeStatus(session: SessionRef | null, objectId?: unknown): Promise<Result<{
   climate: { temperatureC: number; humidityPercent: number } | null;
   rooms: { id: string; name: string }[];
   devices: { total: number; online: number; stale: number; fault: number };
   gateway: { status: string; lastSeen: string | null; message?: string } | null;
-}> {
+}>> {
   const viewer = smartViewer(session);
   if (!viewer.ok) return viewer;
+  await (await import("./scenarios")).runDueSchedules(session);
   const object = objectIdFor(viewer.value, objectId);
   if (!object.ok) return object;
   const devices = scopedDevices(viewer.value, object.value);
@@ -303,7 +313,18 @@ export function smartHomeDevice(session: SessionRef | null, deviceId: unknown): 
   return { ok: true, value: { device: asCard(device.value, viewer.value) } };
 }
 
-export function smartHomeRooms(session: SessionRef | null, objectId?: unknown): Result<{ rooms: { id: string; name: string; kind: string; deviceCount: number }[] }> {
+export function smartHomeRooms(session: SessionRef | null, objectId?: unknown): Result<{
+  rooms: {
+    id: string;
+    name: string;
+    kind: string;
+    deviceCount: number;
+    temperatureC: number | null;
+    humidityPercent: number | null;
+    lights: { on: number; total: number } | null;
+    curtain: number | null;
+  }[];
+}> {
   const viewer = smartViewer(session);
   if (!viewer.ok) return viewer;
   const unitId = viewer.value.kind === "home" ? viewer.value.place.unitId : undefined;
@@ -316,17 +337,27 @@ export function smartHomeRooms(session: SessionRef | null, objectId?: unknown): 
   return {
     ok: true,
     value: {
-      rooms: roomsOf(unitId).map((room) => ({
-        id: room.id,
-        name: room.name,
-        kind: room.kind,
-        deviceCount: devices.filter((device) => device.roomId === room.id).length,
-      })),
+      rooms: roomsOf(unitId).map((room) => {
+        const inRoom = devices.filter((device) => device.roomId === room.id);
+        const climate = inRoom.find((device) => typeof device.state?.temperatureC === "number");
+        const lights = inRoom.filter((device) => device.kind === "LIGHTING");
+        const curtain = inRoom.find((device) => device.kind === "CURTAIN" && typeof device.state?.position === "number");
+        return {
+          id: room.id,
+          name: room.name,
+          kind: room.kind,
+          deviceCount: inRoom.length,
+          temperatureC: typeof climate?.state?.temperatureC === "number" ? climate.state.temperatureC : null,
+          humidityPercent: typeof climate?.state?.humidityPercent === "number" ? climate.state.humidityPercent : null,
+          lights: lights.length ? { on: lights.filter((device) => device.state?.on === true).length, total: lights.length } : null,
+          curtain: typeof curtain?.state?.position === "number" ? curtain.state.position : null,
+        };
+      }),
     },
   };
 }
 
-export function smartHomeRoomDevices(session: SessionRef | null, roomId: unknown): Result<{ devices: SmartDeviceCard[] }> {
+export function smartHomeRoomDevices(session: SessionRef | null, roomId: unknown): Result<{ room: { id: string; name: string }; devices: SmartDeviceCard[] }> {
   const viewer = smartViewer(session);
   if (!viewer.ok) return viewer;
   if (typeof roomId !== "string" || !roomId) return { ok: false, status: 400, message: "Помещение не найдено" };
@@ -337,7 +368,10 @@ export function smartHomeRoomDevices(session: SessionRef | null, roomId: unknown
   if (!viewerReaches(viewer.value, { companyId: company, objectId: room.objectId, unitId: room.unitId })) return denied();
   return {
     ok: true,
-    value: { devices: scopedDevices(viewer.value).filter((device) => device.roomId === room.id).map((device) => asCard(device, viewer.value)) },
+    value: {
+      room: { id: room.id, name: room.name },
+      devices: scopedDevices(viewer.value).filter((device) => device.roomId === room.id).map((device) => asCard(device, viewer.value)),
+    },
   };
 }
 
@@ -357,23 +391,25 @@ export function smartHomeEvents(session: SessionRef | null, objectId?: unknown):
   };
 }
 
-export function smartHomeHistory(session: SessionRef | null, deviceId: unknown): Result<{ points: { at: string; state: Device["state"] }[] }> {
+export function smartHomeHistory(session: SessionRef | null, deviceId: unknown, since?: unknown): Result<{ points: { at: string; state: Device["state"] }[] }> {
   const viewer = smartViewer(session);
   if (!viewer.ok) return viewer;
   const device = findScopedDevice(viewer.value, deviceId);
   if (!device.ok) return device;
+  const keep = viewer.value.kind === "staff" ? 200 : 80;
+  const from = typeof since === "string" && since ? Date.parse(since) : NaN;
   return {
     ok: true,
     value: {
       points: readOps()
-        .smartHistory.filter((point) => point.deviceId === device.value.id)
-        .slice(-80)
+        .smartHistory.filter((point) => point.deviceId === device.value.id && (!Number.isFinite(from) || Date.parse(point.at) >= from))
+        .slice(-keep)
         .map((point) => ({ at: point.at, state: point.state })),
     },
   };
 }
 
-export type CommandInput = { deviceId?: unknown; command?: unknown; value?: unknown; confirmToken?: unknown };
+export type CommandInput = { deviceId?: unknown; command?: unknown; value?: unknown; confirmToken?: unknown; source?: unknown };
 
 export async function commandDeviceSmart(session: SessionRef | null, input: CommandInput): Promise<Result<{
   confirmed: boolean;
@@ -381,6 +417,7 @@ export async function commandDeviceSmart(session: SessionRef | null, input: Comm
   token?: string;
   message: string;
   status?: string;
+  commandId?: string;
   lastSeen?: string | null;
   device?: SmartDeviceCard;
 }>> {
@@ -419,13 +456,18 @@ export async function commandDeviceSmart(session: SessionRef | null, input: Comm
   }
 
   const gateway = device.gatewayId ? findGateway(device.gatewayId) : undefined;
+  const queued =
+    gateway && gateway.adapter !== "local"
+      ? enqueueGatewayCommand({ gatewayId: gateway.id, deviceId: device.id, command, value })
+      : undefined;
   if (gateway?.status === "OFFLINE" && gateway.adapter !== "local") {
     return {
       ok: true,
       value: {
         confirmed: false,
-        status: "CONTROLLER_UNAVAILABLE",
-        message: "Контроллер недоступен.",
+        status: "QUEUED",
+        commandId: queued?.id,
+        message: "Контроллер недоступен. Команда в очереди.",
         lastSeen: gateway.lastSeen,
       },
     };
@@ -435,14 +477,26 @@ export async function commandDeviceSmart(session: SessionRef | null, input: Comm
   const file = readOps();
   const current = file.devices.find((item) => item.id === device.id);
   const now = new Date().toISOString();
+  const before = current ? { work: current.work, detected: current.state?.detected } : undefined;
   if (result.confirmed && current && result.state) {
     current.state = { ...current.state, ...result.state };
     if (result.state.latch) current.latch = result.state.latch;
     current.lastSeen = now;
     current.availability = "ONLINE";
     current.updatedAt = now;
+    if (queued) markGatewayCommand(queued.id, "ACKED");
   }
   writeOps(file);
+  if (result.confirmed && current) {
+    notifyIfAlert({
+      companyId: current.companyId,
+      objectId: current.objectId,
+      unitId: current.unitId,
+      name: current.name,
+      before,
+      after: { work: current.work, detected: current.state?.detected },
+    });
+  }
 
   const live = emitLive({
     objectId: device.objectId,
@@ -464,6 +518,10 @@ export async function commandDeviceSmart(session: SessionRef | null, input: Comm
   });
   if (result.confirmed && result.state) {
     rememberHistory({ deviceId: device.id, objectId: device.objectId, at: now, state: result.state });
+    if (input.source !== "scenario") {
+      const { runEventScenarios } = await import("./scenarios");
+      await runEventScenarios(session, device.id);
+    }
   }
   recordAudit({
     actorUserId: userId,
@@ -483,10 +541,111 @@ export async function commandDeviceSmart(session: SessionRef | null, input: Comm
     ok: true,
     value: {
       confirmed: result.confirmed,
-      message: result.confirmed ? "Команда выполнена." : result.error === "gateway-offline" ? "Контроллер недоступен." : "Не удалось подтвердить выполнение.",
-      status: result.confirmed ? "OK" : result.error === "gateway-offline" ? "CONTROLLER_UNAVAILABLE" : "UNCONFIRMED",
+      message: result.confirmed ? "Команда выполнена." : result.error === "gateway-offline" ? "Контроллер недоступен. Команда в очереди." : "Не удалось подтвердить выполнение.",
+      status: result.confirmed ? "OK" : queued ? "QUEUED" : result.error === "gateway-offline" ? "CONTROLLER_UNAVAILABLE" : "UNCONFIRMED",
+      commandId: queued?.id,
       lastSeen: fresh?.lastSeen ?? null,
       device: fresh ? asCard(fresh, viewer.value) : undefined,
     },
   };
+}
+
+export function placeDevice(
+  session: SessionRef | null,
+  input: { deviceId?: unknown; planFloor?: unknown; planX?: unknown; planY?: unknown },
+): Result<{ id: string }> {
+  const viewer = smartViewer(session);
+  if (!viewer.ok) return viewer;
+  if (viewer.value.kind !== "staff" || !can(viewer.value.actor, "devices.edit")) return denied();
+  const found = findScopedDevice(viewer.value, input.deviceId);
+  if (!found.ok) return found;
+  const floor = Number(input.planFloor);
+  const x = Number(input.planX);
+  const y = Number(input.planY);
+  if (!Number.isFinite(floor) || floor < 1 || !Number.isFinite(x) || !Number.isFinite(y)) {
+    return { ok: false, status: 400, message: "Укажите место на плане" };
+  }
+  const file = readOps();
+  const current = file.devices.find((item) => item.id === found.value.id);
+  if (!current) return { ok: false, status: 404, message: "Устройство не найдено" };
+  current.planFloor = Math.round(floor);
+  current.planX = Math.min(100, Math.max(0, Math.round(x)));
+  current.planY = Math.min(100, Math.max(0, Math.round(y)));
+  writeOps(file);
+  return { ok: true, value: { id: current.id } };
+}
+
+export function floorPlanFor(session: SessionRef | null, unitId?: unknown): Result<{
+  floors: { floor: number; image: string; pins: { deviceId: string; name: string; x: number; y: number }[] }[];
+}> {
+  const viewer = smartViewer(session);
+  if (!viewer.ok) return viewer;
+  const id = viewer.value.kind === "home" ? viewer.value.place.unitId : typeof unitId === "string" ? unitId : "";
+  if (!id) return { ok: false, status: 400, message: "Единица не найдена" };
+  const unit = findUnit(id);
+  const object = unit ? findObject(unit.objectId) : undefined;
+  if (!unit || !object || object.companyId !== viewerCompany(viewer.value)) {
+    return { ok: false, status: 404, message: "Единица не найдена" };
+  }
+  if (viewer.value.kind === "home" && unit.objectId !== viewer.value.place.objectId) {
+    return { ok: false, status: 404, message: "Единица не найдена" };
+  }
+  if (viewer.value.kind === "staff" && !reaches(viewer.value.actor, { companyId: object.companyId, objectId: unit.objectId, unitId: unit.id })) {
+    return denied();
+  }
+  const devices = scopedDevices(viewer.value).filter((device) => device.unitId === unit.id || device.unitId === null);
+  return {
+    ok: true,
+    value: {
+      floors: (unit.plans ?? []).map((plan) => ({
+        floor: plan.floor,
+        image: plan.image,
+        pins: devices
+          .filter((device) => device.planFloor === plan.floor && device.planX != null && device.planY != null)
+          .map((device) => ({ deviceId: device.id, name: device.displayName ?? device.name, x: device.planX as number, y: device.planY as number })),
+      })),
+    },
+  };
+}
+
+export async function runHomeAction(
+  session: SessionRef | null,
+  input: { action?: unknown; confirmToken?: unknown },
+): Promise<Result<{ confirmed: boolean; needsConfirm?: boolean; token?: string; message: string }>> {
+  const viewer = smartViewer(session);
+  if (!viewer.ok) return viewer;
+  if (viewer.value.kind !== "home") return denied();
+  if (!viewerCan(viewer.value, "devices.command")) return denied();
+  const place = viewer.value.place;
+  const action = input.action;
+  if (action === "night") {
+    const { runScenario } = await import("./scenarios");
+    const night = readOps().scenarios.find(
+      (scenario) => scenario.name === "Ночь" && scenario.unitId === place.unitId && viewerReaches(viewer.value, scenario),
+    );
+    if (!night) return { ok: false, status: 404, message: "Сценарий не найден" };
+    const result = await runScenario(session, { scenarioId: night.id, confirmToken: input.confirmToken });
+    if (!result.ok) return result;
+    return { ok: true, value: { confirmed: result.value.confirmed, needsConfirm: result.value.needsConfirm, token: result.value.token, message: result.value.message } };
+  }
+  const devices = scopedDevices(viewer.value);
+  const targets =
+    action === "lights-off"
+      ? devices.filter((device) => device.kind === "LIGHTING")
+      : action === "curtains-close"
+        ? devices.filter((device) => device.kind === "CURTAIN")
+        : [];
+  if (!targets.length) return { ok: false, status: 400, message: "Нет таких устройств" };
+  for (const device of targets) {
+    const result = await commandDeviceSmart(session, {
+      deviceId: device.id,
+      command: action === "lights-off" ? "setPower" : "setPosition",
+      value: action === "lights-off" ? false : 0,
+      confirmToken: input.confirmToken,
+    });
+    if (!result.ok) return result;
+    if (result.value.needsConfirm) return { ok: true, value: { confirmed: false, needsConfirm: true, token: result.value.token, message: result.value.message } };
+    if (!result.value.confirmed) return { ok: true, value: { confirmed: false, message: result.value.message } };
+  }
+  return { ok: true, value: { confirmed: true, message: "Готово." } };
 }
