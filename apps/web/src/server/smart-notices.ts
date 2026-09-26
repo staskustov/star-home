@@ -1,5 +1,6 @@
 import { newId, readOps, writeOps } from "@/server/ops-store";
 import { listMemberships } from "@/server/people-store";
+import { pushNotice } from "@/server/store-bind";
 
 export function notifyHousehold(input: {
   companyId: string;
@@ -32,6 +33,7 @@ export function notifyHousehold(input: {
       at: stamp,
       severity: input.severity ?? "INFO",
     });
+    pushNotice(membership.userId, input.body, input.title);
   }
   file.notices = file.notices.slice(0, 200);
   writeOps(file);

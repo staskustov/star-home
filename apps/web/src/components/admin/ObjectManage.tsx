@@ -9,13 +9,14 @@ export function EditObjectButton({
   object,
   compact = false,
 }: {
-  object: { id: string; name: string; address: string };
+  object: { id: string; name: string; address: string; securityPhone?: string | null };
   compact?: boolean;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(object.name);
   const [address, setAddress] = useState(object.address);
+  const [securityPhone, setSecurityPhone] = useState(object.securityPhone ?? "");
   const [error, setError] = useState<string | null>(null);
 
   function close() {
@@ -23,6 +24,7 @@ export function EditObjectButton({
     setError(null);
     setName(object.name);
     setAddress(object.address);
+    setSecurityPhone(object.securityPhone ?? "");
   }
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -31,7 +33,7 @@ export function EditObjectButton({
     const response = await fetch(`/api/catalog/objects/${object.id}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name, address }),
+      body: JSON.stringify({ name, address, securityPhone }),
     });
     const payload = (await response.json().catch(() => null)) as { message?: string } | null;
     if (!response.ok) {
@@ -50,6 +52,7 @@ export function EditObjectButton({
         onClick={() => {
           setName(object.name);
           setAddress(object.address);
+          setSecurityPhone(object.securityPhone ?? "");
           setError(null);
           setOpen(true);
         }}
@@ -81,6 +84,10 @@ export function EditObjectButton({
               <label className="mt-4 block">
                 <span className="text-sm text-muted">Адрес</span>
                 <input value={address} onChange={(event) => setAddress(event.target.value)} className="control mt-2" />
+              </label>
+              <label className="mt-4 block">
+                <span className="text-sm text-muted">Телефон охраны</span>
+                <input value={securityPhone} onChange={(event) => setSecurityPhone(event.target.value)} className="control mt-2" type="tel" inputMode="tel" placeholder="+7…" />
               </label>
               {error ? (
                 <p role="alert" className="mt-3 text-sm text-danger">

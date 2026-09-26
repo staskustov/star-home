@@ -43,6 +43,15 @@ function cleanAddress(value: unknown): string | Failure {
   return text;
 }
 
+function cleanPhone(value: unknown): string | Failure {
+  if (value === undefined || value === null || value === "") return "";
+  if (typeof value !== "string") return { ok: false, status: 400, message: "Проверьте телефон охраны" };
+  const text = value.trim().replace(/[^\d+]/g, "");
+  if (!text) return "";
+  if (text.length < 10 || text.length > 16) return { ok: false, status: 400, message: "Введите телефон охраны" };
+  return text;
+}
+
 const denied: Failure = { ok: false, status: 403, message: "Нет доступа" };
 
 function note(actor: StaffActor, action: string, entry: Omit<AuditInput, "actorUserId" | "companyId" | "action">): void {
@@ -84,6 +93,7 @@ export function treeFor(actor: StaffActor, objectId: string): Success<CatalogTre
       name: tree.object.name,
       type: tree.object.type,
       address: tree.object.address,
+      securityPhone: tree.object.securityPhone ?? null,
       canDelete: whole && can(actor, "objects.delete") && !objectHasAssignments(objectId, unitIdsOf(objectId)),
     },
     buildings: tree.buildings
@@ -132,7 +142,7 @@ export function createObject(
 export function updateObject(
   actor: StaffActor,
   objectId: string,
-  input: { name: unknown; address: unknown },
+  input: { name: unknown; address: unknown; securityPhone?: unknown },
 ): Success<{ id: string }> | Failure {
   const owned = ownObject(actor, objectId, "objects.edit");
   if (!owned.ok) return owned;
@@ -140,11 +150,14 @@ export function updateObject(
   if (typeof name !== "string") return name;
   const address = cleanAddress(input.address);
   if (typeof address !== "string") return address;
+  const phone = cleanPhone(input.securityPhone);
+  if (typeof phone !== "string") return phone;
   const changes = [
     ...(owned.value.name !== name ? [{ field: "Название", from: owned.value.name, to: name }] : []),
     ...(owned.value.address !== address ? [{ field: "Адрес", from: owned.value.address, to: address }] : []),
+    ...( (owned.value.securityPhone ?? "") !== phone ? [{ field: "Телефон охраны", from: owned.value.securityPhone ?? "", to: phone }] : []),
   ];
-  updateCatalogObject(objectId, { name, address });
+  updateCatalogObject(objectId, { name, address, securityPhone: phone || null });
   if (changes.length) note(actor, "OBJECT_EDIT", { objectId, targetType: "object", targetId: objectId, target: name, changes });
   return { ok: true, value: { id: objectId } };
 }

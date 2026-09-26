@@ -138,6 +138,7 @@ export function homeFor(user: DirectoryUser, membership: Membership): ResidentHo
       name: object.name,
       type: object.type,
       address: object.address,
+      securityPhone: object.securityPhone ?? null,
     },
     unit: {
       id: unit.id,

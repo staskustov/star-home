@@ -211,6 +211,7 @@ function objectDashboard(actor: StaffActor, object: CatalogObject): DashboardObj
     name: object.name,
     typeLabel: [objectPresentation[object.type].label, actor.scope.buildingId ? findBuilding(actor.scope.buildingId)?.name : null].filter(Boolean).join(" · "),
     address: object.address,
+    securityPhone: object.securityPhone ?? null,
     canDelete: wholeObject(actor) && can(actor, "objects.delete") && !objectHasAssignments(object.id, unitIdsOf(object.id)),
     status: statusFor(actor, attention),
     attention: attention.slice(0, attentionLimit),

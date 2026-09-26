@@ -110,7 +110,7 @@ describe("navigation", () => {
       body.objects.map((object) => object.id),
       ["obj_siyanie"],
     );
-    assert.deepEqual(Object.keys(body.objects[0] ?? {}).sort(), ["address", "buildings", "canDelete", "companyId", "id", "name", "type", "units"]);
+    assert.deepEqual(Object.keys(body.objects[0] ?? {}).sort(), ["address", "buildings", "canDelete", "companyId", "id", "name", "securityPhone", "type", "units"]);
   });
 
   it("sends residents away from the admin console", async () => {

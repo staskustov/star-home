@@ -16,7 +16,7 @@ export type LiveEvent = {
 const runtime = globalThis as typeof globalThis & {
   __starBind?: StoreBinder;
   __starPublish?: (event: LiveEvent) => void;
-  __starPush?: (userId: string, body: string) => Promise<void> | void;
+  __starPush?: (userId: string, body: string, title?: string) => Promise<void> | void;
   __starFiles?: (input: { companyId: string; name: string; bytes: Buffer }) => Promise<string> | string;
   __starFlush?: Promise<void>;
 };
@@ -70,11 +70,11 @@ export function bindLive(publish: (event: LiveEvent) => void): void {
   runtime.__starPublish = publish;
 }
 
-export function pushNotice(userId: string, body: string): void {
-  void runtime.__starPush?.(userId, body);
+export function pushNotice(userId: string, body: string, title = "STAR HOME"): void {
+  void runtime.__starPush?.(userId, body, title);
 }
 
-export function bindPush(push: (userId: string, body: string) => Promise<void> | void): void {
+export function bindPush(push: (userId: string, body: string, title?: string) => Promise<void> | void): void {
   runtime.__starPush = push;
 }
 

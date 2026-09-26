@@ -144,6 +144,30 @@ export type Alarm = {
   at: string;
   handledBy?: string;
   handledAt?: string;
+  kind?: "CALL" | "SOS";
+  callerUserId?: string;
+  callerName?: string;
+};
+
+export type SecurityChatMessage = {
+  id: string;
+  companyId: string;
+  objectId: string;
+  unitId: string;
+  actorUserId: string;
+  actorName: string;
+  role: string;
+  body: string;
+  at: string;
+};
+
+export type PushDevice = {
+  userId: string;
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  device?: string;
+  at: string;
 };
 
 export type AlarmStatus = "OPEN" | "ACCEPTED" | "CLOSED";
@@ -332,6 +356,8 @@ type OpsFile = {
   favorites: DeviceFavorite[];
   scenarios: Scenario[];
   liveSeq: Record<string, number>;
+  chats: SecurityChatMessage[];
+  pushDevices: PushDevice[];
 };
 
 const filePath = path.join(process.cwd(), "data", "ops.json");
@@ -567,6 +593,8 @@ function seed(): OpsFile {
     favorites: [],
     scenarios: [],
     liveSeq: {},
+    chats: [],
+    pushDevices: [],
   };
 }
 
@@ -662,6 +690,8 @@ function normalize(file: OpsFile): OpsFile {
   file.favorites ??= [];
   file.scenarios ??= [];
   file.liveSeq ??= {};
+  file.chats ??= [];
+  file.pushDevices ??= [];
   for (const request of file.requests ?? []) {
     if ((request.status as string) === "NEW") request.status = "CREATED";
   }

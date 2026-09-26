@@ -31,6 +31,7 @@ export type CatalogTree = {
     name: string;
     type: ObjectType;
     address: string;
+    securityPhone?: string | null;
     canDelete: boolean;
   };
   buildings: CatalogBuildingNode[] | null;

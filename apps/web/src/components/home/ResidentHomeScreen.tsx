@@ -9,6 +9,7 @@ import { HomeHero } from "@/components/home/HomeHero";
 import { LifeModeSwitcher } from "@/components/home/LifeModeSwitcher";
 import { HomeFacts } from "@/components/home/HomeFacts";
 import { QuickActions } from "@/components/home/QuickActions";
+import { SecuritySheet } from "@/components/home/SecuritySheet";
 import { Icon, type IconName } from "@/components/icons";
 import { LiveRefresh } from "@/components/pwa/LiveRefresh";
 import { formatMoney } from "@/lib/format";
@@ -23,6 +24,7 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
   const router = useRouter();
   const [mode, setMode] = useState<LifeMode>(data.activeLifeMode);
   const [notice, setNotice] = useState<string | null>(null);
+  const [securityOpen, setSecurityOpen] = useState(false);
   const current = data.lifeModes.find((item) => item.mode === mode) ?? data.lifeModes[0];
   const greeting = greetingForHour(new Date().getHours(), data.residentName);
 
@@ -59,6 +61,10 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
       router.push("/access");
       return;
     }
+    if (id === "security") {
+      setSecurityOpen(true);
+      return;
+    }
     if (id === "lights-off" || id === "curtains-close" || id === "night") {
       setNotice(null);
       const result = await runCommand(() =>
@@ -73,7 +79,7 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
       if (result.ok && payload?.confirmed) router.refresh();
       return;
     }
-    const path = id === "open-gate" ? "/api/access/gate" : id === "security" ? "/api/security/call" : id === "pay" ? "/api/payments/pay" : "";
+    const path = id === "open-gate" ? "/api/access/gate" : id === "pay" ? "/api/payments/pay" : "";
     if (!path) {
       setNotice(unconfirmed);
       return;
@@ -125,6 +131,7 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
         </p>
       </header>
 
+      <SecuritySheet open={securityOpen} onClose={() => setSecurityOpen(false)} />
       <LifeModeSwitcher modes={data.lifeModes} value={current.mode} onChange={changeMode} />
 
       {data.controller?.message ? (

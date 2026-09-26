@@ -7,7 +7,18 @@ export type SecurityPostView = {
   objectId: string;
   objectName: string;
   can: { handle: boolean; open: boolean; camera: boolean; passes: boolean; journal: boolean; console: boolean };
-  alarms: { id: string; title: string; place: string; at: string; status: SecurityAlarmStatus; handledBy: string | null; handledAt: string | null }[];
+  alarms: {
+    id: string;
+    title: string;
+    place: string;
+    at: string;
+    status: SecurityAlarmStatus;
+    handledBy: string | null;
+    handledAt: string | null;
+    kind: "CALL" | "SOS";
+    callerName: string | null;
+  }[];
+  chats: { id: string; unitId: string; place: string; actorName: string; role: string; body: string; at: string; mine: boolean }[];
   points: { id: string; name: string; kind: string; state: string; ready: boolean }[];
   cameras: SecurityCamera[];
   passes: { id: string; guestName: string; place: string; detail: string; vehicle: string }[];

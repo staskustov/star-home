@@ -18,7 +18,8 @@ export type IconName =
   | "lock"
   | "climate"
   | "meter"
-  | "event";
+  | "event"
+  | "phone";
 
 const paths: Record<IconName, ReactNode> = {
   home: (
@@ -228,6 +229,11 @@ const paths: Record<IconName, ReactNode> = {
     <>
       <rect x="4" y="5.5" width="16" height="14" rx="2" />
       <path d="M4 10h16M8.5 3.5v4M15.5 3.5v4" />
+    </>
+  ),
+  phone: (
+    <>
+      <path d="M8.2 4.8c.4-.4 1-.5 1.5-.3l1.8.6c.5.2.8.7.8 1.3v1.6c0 .4-.2.8-.5 1.1L10.5 11c.6 1.3 1.7 2.4 3 3l1.9-1.3c.3-.2.7-.3 1.1-.2h1.6c.6 0 1.1.3 1.3.8l.6 1.8c.2.5.1 1.1-.3 1.5l-1 1c-.5.5-1.2.7-1.9.5C12.4 18.3 5.7 11.6 5.2 7.2c-.2-.7 0-1.4.5-1.9l2.5-.5Z" />
     </>
   ),
 };

@@ -18,6 +18,7 @@ export type CatalogObject = {
   type: ObjectType;
   address: string;
   description: string;
+  securityPhone?: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -227,6 +228,9 @@ function withScale(catalog: Catalog): Catalog {
 
 function normalizeUnits(catalog: Catalog): Catalog {
   catalog.rooms ??= [];
+  for (const object of catalog.objects) {
+    object.securityPhone ??= null;
+  }
   for (const unit of catalog.units) {
     unit.areaM2 ??= null;
     unit.floors ??= 1;
@@ -347,12 +351,13 @@ export function createCatalogObject(input: {
   return object;
 }
 
-export function updateCatalogObject(objectId: string, input: { name: string; address: string }): CatalogObject | undefined {
+export function updateCatalogObject(objectId: string, input: { name: string; address: string; securityPhone?: string | null }): CatalogObject | undefined {
   const catalog = load();
   const object = catalog.objects.find((item) => item.id === objectId);
   if (!object) return undefined;
   object.name = input.name;
   object.address = input.address;
+  if (input.securityPhone !== undefined) object.securityPhone = input.securityPhone;
   object.updatedAt = now();
   persist(catalog);
   return object;

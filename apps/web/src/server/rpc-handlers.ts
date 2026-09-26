@@ -66,6 +66,8 @@ import type { Permission } from "@/server/rbac/permissions";
 import { householdCan, selfOnlyOf } from "@/server/rbac/policy";
 import { signLiveToken } from "@/server/live-token";
 import { rolesBoard, saveRole } from "@/server/roles";
+import { raiseSosFor, securityDeskFor, sendSecurityMessageFor, sendSecurityReplyFor } from "@/server/security-desk";
+import { savePushDevice } from "@/server/push-devices";
 import { checkPassFor, handleAlarmFor, securityCameras, securityPost } from "@/server/security-post";
 import { engineeringBoard, pollDeviceFor, setDeviceWorkFor } from "@/server/engineering";
 import { auditBoard, auditExport } from "@/server/audit-view";
@@ -159,6 +161,10 @@ const methodPolicy: Record<string, Route> = {
   addPass: household((current, input) => addPassFor(current, input.guestName, input.detail, input.vehicle)),
   pay: household((current) => payFor(current)),
   alarm: household((current) => alarmFor(current)),
+  securityDesk: session(securityDesk),
+  sendSecurityMessage: household((current, input) => sendSecurityMessageFor(current, input.body)),
+  raiseSos: household((current) => raiseSosFor(current)),
+  sendSecurityReply: staff("security.view", (actor, input) => sendSecurityReplyFor(actor, input)),
   ask: household((current, input) => askFor(current, input.prompt)),
   confirm: household((current, input) => confirmFor(current, input.token)),
   switchMode: household((current, input) => switchModeFor(current, input.mode)),
@@ -201,7 +207,7 @@ const methodPolicy: Record<string, Route> = {
   tree: staff("objects.view", tree),
   unitDetails: staff("objects.view", (actor, input) => unitDetails(actor, text(input.unitId, 1, 80) ?? "")),
   createObject: staff("objects.create", (actor, input) => createObject(actor, { name: input.name, type: input.type, address: input.address }), 201),
-  updateObject: staff("objects.edit", (actor, input) => updateObject(actor, text(input.objectId, 1, 80) ?? "", { name: input.name, address: input.address })),
+  updateObject: staff("objects.edit", (actor, input) => updateObject(actor, text(input.objectId, 1, 80) ?? "", { name: input.name, address: input.address, securityPhone: input.securityPhone })),
   removeObject: staff("objects.delete", (actor, input) => removeObject(actor, text(input.objectId, 1, 80) ?? "")),
   createBuilding: staff("objects.structure.edit", (actor, input) => createBuilding(actor, text(input.objectId, 1, 80) ?? "", input.name), 201),
   updateBuilding: staff("objects.structure.edit", (actor, input) => updateBuilding(actor, text(input.buildingId, 1, 80) ?? "", input.name)),
@@ -341,6 +347,9 @@ const guardedMethods: Partial<Record<string, AuditAction>> = {
   addPass: "CREATE_PASS",
   pay: "PAY_INVOICE",
   alarm: "RAISE_ALARM",
+  raiseSos: "RAISE_SOS",
+  sendSecurityMessage: "SECURITY_CHAT",
+  sendSecurityReply: "SECURITY_CHAT",
   auditExport: "AUDIT_EXPORT",
 };
 
@@ -492,6 +501,8 @@ function home(session: SessionRef): Reply {
       facts: signals.facts,
       controller: signals.controller,
       notices: residentNotices(session.userId).slice(0, 3),
+      securityPhone: findObject(base.object.id)?.securityPhone ?? null,
+      canSecurity: householdCan(membership.role, "security.alarm.raise"),
       quickActions: [
         ...base.quickActions.filter((action) => pays || action.id !== "pay"),
         { id: "lights-off", label: "Выключить свет" },
@@ -602,8 +613,14 @@ async function subscribe(session: SessionRef, input: Input): Promise<Reply> {
   if (typeof input.endpoint !== "string" || typeof input.p256dh !== "string" || typeof input.auth !== "string") {
     return fail(400, "Не удалось сохранить уведомление");
   }
+  const device = typeof input.device === "string" ? input.device.trim().slice(0, 80) : "";
+  savePushDevice({ userId: session.userId, endpoint: input.endpoint, p256dh: input.p256dh, auth: input.auth, device });
   await runtime.__starSavePush?.({ userId: session.userId, endpoint: input.endpoint, p256dh: input.p256dh, auth: input.auth });
   return ok({ saved: true });
+}
+
+function securityDesk(session: SessionRef): Reply {
+  return asReply(securityDeskFor(session));
 }
 
 function liveToken(session: SessionRef, input: Input): Reply {

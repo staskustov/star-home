@@ -60,6 +60,7 @@ export function adminObjectsFor(actor: StaffActor): AdminObjectSnapshot[] {
       name: object.name,
       type: object.type,
       address: object.address,
+      securityPhone: object.securityPhone ?? null,
       buildings: counts.buildings,
       units: counts.units,
       canDelete: wholeObject(actor) && can(actor, "objects.delete") && !objectHasAssignments(object.id, unitIdsOf(object.id)),

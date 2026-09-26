@@ -410,14 +410,16 @@ async function main(): Promise<void> {
       update: { userId: row.userId, p256dh: row.p256dh, auth: row.auth },
     });
   };
-  bindPush(async (userId, body) => {
+  bindPush(async (userId, body, title) => {
     const subscriptions = await prisma.pushSubscription.findMany({ where: { userId } });
+    const heading = title || "STAR HOME";
+    const sos = heading === "SOS";
     await Promise.all(
       subscriptions.map((subscription) =>
         webpush
           .sendNotification(
             { endpoint: subscription.endpoint, keys: { p256dh: subscription.p256dh, auth: subscription.auth } },
-            JSON.stringify({ title: "STAR HOME", body }),
+            JSON.stringify({ title: heading, body, url: sos ? "/security" : "/", sos }),
           )
           .catch(() => undefined),
       ),

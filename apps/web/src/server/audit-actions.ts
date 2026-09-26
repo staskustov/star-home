@@ -27,6 +27,8 @@ export const auditActions = {
   RESIDENT_EDIT: { label: "Данные жителя", category: "ACCESS" },
   RESIDENT_REMOVE: { label: "Доступ жителя отозван", category: "ACCESS" },
   RAISE_ALARM: { label: "Вызов охраны", category: "SECURITY" },
+  RAISE_SOS: { label: "SOS", category: "SECURITY" },
+  SECURITY_CHAT: { label: "Сообщение охране", category: "SECURITY" },
   CAMERA_VIEW: { label: "Кадр с камеры", category: "SECURITY" },
   ALARM_ACCEPT: { label: "Тревога принята", category: "SECURITY" },
   ALARM_CLOSE: { label: "Тревога закрыта", category: "SECURITY" },

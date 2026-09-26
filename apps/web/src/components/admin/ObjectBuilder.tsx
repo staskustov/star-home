@@ -20,6 +20,7 @@ export function ObjectBuilder({ tree }: { tree: CatalogTree }) {
   const presentation = objectPresentation[tree.object.type];
   const [name, setName] = useState(tree.object.name);
   const [address, setAddress] = useState(tree.object.address);
+  const [securityPhone, setSecurityPhone] = useState(tree.object.securityPhone ?? "");
   const [unitName, setUnitName] = useState("");
   const [buildingName, setBuildingName] = useState("");
   const [unitNames, setUnitNames] = useState<Record<string, string>>({});
@@ -50,7 +51,7 @@ export function ObjectBuilder({ tree }: { tree: CatalogTree }) {
 
   async function saveObject(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await send(`/api/catalog/objects/${tree.object.id}`, "PATCH", { name, address });
+    await send(`/api/catalog/objects/${tree.object.id}`, "PATCH", { name, address, securityPhone });
   }
 
   async function addUnit(event: React.FormEvent<HTMLFormElement>, buildingId?: string) {
@@ -108,6 +109,17 @@ export function ObjectBuilder({ tree }: { tree: CatalogTree }) {
               value={address}
               onChange={(event) => setAddress(event.target.value)}
               className="control mt-2"
+            />
+          </label>
+          <label className="mt-4 block">
+            <span className="text-sm text-muted">Телефон охраны</span>
+            <input
+              value={securityPhone}
+              onChange={(event) => setSecurityPhone(event.target.value)}
+              className="control mt-2"
+              type="tel"
+              inputMode="tel"
+              placeholder="+7…"
             />
           </label>
           <button type="submit" className="mt-5 btn btn-primary">

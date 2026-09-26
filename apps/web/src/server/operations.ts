@@ -1,4 +1,5 @@
 import { placeFromSession, type Place, type SessionRef } from "@/server/actor";
+import { findUserById } from "@/server/directory";
 import { can, objectFor, reaches, type StaffActor } from "@/server/rbac/decide";
 import { appendAudit, type AuditInput } from "@/server/audit-store";
 import { publishLive, pushNotice } from "@/server/store-bind";
@@ -211,6 +212,7 @@ export async function payOldest(place: Place): Promise<{ confirmed: boolean; mes
 
 export function raiseAlarm(place: Place): { message: string } {
   const file = readOps();
+  const caller = findUserById(place.userId)?.name?.trim() || "Житель";
   file.alarms.unshift({
     id: newId("alarm"),
     companyId: place.companyId,
@@ -219,6 +221,9 @@ export function raiseAlarm(place: Place): { message: string } {
     title: "Вызов охраны",
     status: "OPEN",
     at: clock(),
+    kind: "CALL",
+    callerUserId: place.userId,
+    callerName: caller,
   });
   file.notices.unshift({
     id: newId("note"),
@@ -239,7 +244,7 @@ export function raiseAlarm(place: Place): { message: string } {
     target: "Охрана",
   });
   publishLive({ objectId: place.objectId, kind: "alarm", title: "Вызов охраны" });
-  pushNotice(place.userId, "Вызов принят и записан.");
+  pushNotice(place.userId, "Вызов принят и записан.", "Охрана");
   return { message: "Вызов передан охране." };
 }
 

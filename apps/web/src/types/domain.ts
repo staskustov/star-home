@@ -58,6 +58,7 @@ export type ResidentialObject = {
   name: string;
   type: ObjectType;
   address: string;
+  securityPhone?: string | null;
 };
 
 export type Unit = {
@@ -137,6 +138,8 @@ export type ResidentHome = {
   serviceCategories: string[];
   aiPrompt: string;
   meters: { name: string; value: string; unit: string }[];
+  securityPhone?: string | null;
+  canSecurity?: boolean;
   facts?: {
     lights: { on: number; total: number } | null;
     doors: { open: string[] } | null;
@@ -166,6 +169,7 @@ export type AdminObjectSnapshot = {
   name: string;
   type: ObjectType;
   address: string;
+  securityPhone?: string | null;
   buildings: number | null;
   units: number;
   canDelete: boolean;

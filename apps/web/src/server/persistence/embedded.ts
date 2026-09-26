@@ -91,15 +91,17 @@ function embedded(): Embedded {
       update: { userId: row.userId, p256dh: row.p256dh, auth: row.auth },
     });
   };
-  bindPush((userId, body) => {
+  bindPush((userId, body, title) => {
     if (!publicKey || !privateKey) return;
+    const heading = title || "STAR HOME";
+    const sos = heading === "SOS";
     const delivery = runtime.prisma.pushSubscription.findMany({ where: { userId } }).then((subscriptions) =>
       Promise.all(
         subscriptions.map((subscription) =>
           webpush
             .sendNotification(
               { endpoint: subscription.endpoint, keys: { p256dh: subscription.p256dh, auth: subscription.auth } },
-              JSON.stringify({ title: "STAR HOME", body }),
+              JSON.stringify({ title: heading, body, url: sos ? "/security" : "/", sos }),
             )
             .catch(() => undefined),
         ),

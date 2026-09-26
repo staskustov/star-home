@@ -33,6 +33,8 @@ const householdNeeds: Record<string, string> = {
   addPass: "access.pass.create",
   pay: "payments.pay",
   alarm: "security.alarm.raise",
+  raiseSos: "security.alarm.raise",
+  sendSecurityMessage: "security.alarm.raise",
   ask: "ai.use",
   switchMode: "home.mode.switch",
   addRequest: "service.create",
@@ -134,7 +136,7 @@ describe("role × method matrix", () => {
       for (const [method, permission] of Object.entries(householdNeeds)) {
         if (householdCan(role, permission as never)) continue;
         const before = state();
-        const reply = await rpc(method, { mode: "WORK", guestName: "Тест", detail: "Сегодня", pointId: "gate", prompt: "открой ворота", category: "Сантехника", text: "Тест" }, session);
+        const reply = await rpc(method, { mode: "WORK", guestName: "Тест", detail: "Сегодня", pointId: "gate", prompt: "открой ворота", category: "Сантехника", text: "Тест", body: "Тест" }, session);
         assert.ok(reply.status === 403 || (reply.body as { redirect?: string } | null)?.redirect, `${role} → ${method}: ${reply.status}`);
         assert.equal(state(), before, `${role} → ${method} left the stores untouched`);
       }
@@ -142,7 +144,7 @@ describe("role × method matrix", () => {
   });
 
   it("closes household actions to staff without a home", async () => {
-    for (const method of ["openGate", "openPoint", "addPass", "pay", "alarm", "switchMode"]) {
+    for (const method of ["openGate", "openPoint", "addPass", "pay", "alarm", "raiseSos", "sendSecurityMessage", "switchMode"]) {
       const before = state();
       const reply = await rpc(method, { mode: "WORK", guestName: "Тест", detail: "Сегодня", pointId: "gate" }, staff.COMPANY_ADMIN ?? null);
       assert.equal(reply.status, 403, method);
@@ -233,6 +235,8 @@ describe("another company", () => {
       ["openObjectGate", { objectId: rival.objectId }],
       ["cameraFrame", { objectId: rival.objectId, deviceId: "dev_camera_rival" }],
       ["securityCameras", { objectId: rival.objectId }],
+      ["securityPost", { objectId: rival.objectId }],
+      ["sendSecurityReply", { objectId: rival.objectId, unitId: rival.unitId, body: "Захват" }],
       ["setRequestStatus", { id: rival.requestId, status: "DONE", objectId: rival.objectId }],
     ];
     for (const [method, input] of calls) {
@@ -316,7 +320,7 @@ describe("dead sessions", () => {
     const session = { userId: person.id, membershipId: membership.id };
     for (const method of [...Object.keys(householdNeeds), "liveToken"]) {
       const before = state();
-      const reply = await rpc(method, { mode: "WORK", guestName: "Тест", detail: "Сегодня", pointId: "gate", prompt: "открой ворота", category: "Сантехника", text: "Тест" }, session);
+      const reply = await rpc(method, { mode: "WORK", guestName: "Тест", detail: "Сегодня", pointId: "gate", prompt: "открой ворота", category: "Сантехника", text: "Тест", body: "Тест" }, session);
       assert.ok(reply.status === 403 || (reply.body as { redirect?: string } | null)?.redirect, `expired → ${method}: ${reply.status}`);
       assert.equal(state(), before, `expired → ${method} left the stores untouched`);
     }
@@ -376,6 +380,54 @@ describe("internal channel", () => {
     env.NODE_ENV = saved.node;
     if (saved.secret === undefined) delete env.STAR_HOME_INTERNAL_SECRET;
     else env.STAR_HOME_INTERNAL_SECRET = saved.secret;
+  });
+});
+
+describe("security desk", () => {
+  it("stores the object security phone in the snapshot", async () => {
+    const saved = await rpc("updateObject", { objectId: "obj_siyanie", name: "КП Сияние", address: "Московская область", securityPhone: "+79991234567" }, staff.COMPANY_ADMIN ?? null);
+    assert.equal(saved.status, 200);
+    const tree = await rpc("tree", { objectId: "obj_siyanie" }, staff.COMPANY_ADMIN ?? null);
+    assert.equal(tree.status, 200);
+    assert.equal((tree.body as { object: { securityPhone?: string } }).object.securityPhone, "+79991234567");
+    const desk = await rpc("securityDesk", {}, resident);
+    assert.equal(desk.status, 200);
+    assert.equal((desk.body as { phone: string | null; canCall: boolean }).phone, "+79991234567");
+    assert.equal((desk.body as { canCall: boolean }).canCall, true);
+  });
+
+  it("lets a resident write and raise SOS, then shows it on the post", async () => {
+    const chat = await rpc("sendSecurityMessage", { body: "Нужна помощь у калитки" }, resident);
+    assert.equal(chat.status, 200);
+    const sos = await rpc("raiseSos", {}, resident);
+    assert.equal(sos.status, 200);
+    const post = await rpc("securityPost", { objectId: "obj_siyanie" }, staff.SECURITY ?? null);
+    assert.equal(post.status, 200);
+    const view = post.body as { alarms: { kind: string; title: string; callerName: string | null }[]; chats: { body: string }[] };
+    assert.ok(view.alarms.some((alarm) => alarm.kind === "SOS" && alarm.title.includes("SOS") && alarm.callerName));
+    assert.ok(view.chats.some((message) => message.body === "Нужна помощь у калитки"));
+    const reply = await rpc("sendSecurityReply", { objectId: "obj_siyanie", unitId: "unit_24", body: "Выходим" }, staff.SECURITY ?? null);
+    assert.equal(reply.status, 200);
+    const desk = await rpc("securityDesk", {}, resident);
+    assert.ok((desk.body as { messages: { body: string }[] }).messages.some((message) => message.body === "Выходим"));
+  });
+
+  it("closes SOS and chat to a guest", async () => {
+    const people = await import("../../web/src/server/people-store");
+    const visitor = people.createPerson({ login: "desk.guest", name: "Гость поста", passwordHash: "x" });
+    const guest = people.createResidentMembership({
+      userId: visitor.id,
+      companyId: "cmp_star",
+      objectId: "obj_siyanie",
+      unitId: "unit_24",
+      role: "GUEST",
+      expiresAt: "2999-01-01T00:00:00",
+    });
+    const session = { userId: visitor.id, membershipId: guest.id };
+    const before = state();
+    assert.equal((await rpc("raiseSos", {}, session)).status, 403);
+    assert.equal((await rpc("sendSecurityMessage", { body: "Привет" }, session)).status, 403);
+    assert.equal(state(), before);
   });
 });
 

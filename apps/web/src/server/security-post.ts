@@ -6,6 +6,7 @@ import { findUserById } from "@/server/directory";
 import { recordAudit } from "@/server/operations";
 import { clock, readOps, writeOps, type Alarm, type Device } from "@/server/ops-store";
 import { can, objectFor, objectsInScope, reaches, type StaffActor } from "@/server/rbac/decide";
+import { securityChatsFor } from "@/server/security-desk";
 import { publishLive } from "@/server/store-bind";
 import type { PassCheck, SecurityCamera, SecurityCameraWall, SecurityPostView } from "@/types/security";
 
@@ -88,7 +89,10 @@ export function securityPost(actor: StaffActor, objectId: unknown): Success<Secu
         status: alarm.status,
         handledBy: handler(alarm.handledBy),
         handledAt: alarm.handledAt ?? null,
+        kind: alarm.kind === "SOS" ? "SOS" : "CALL",
+        callerName: alarm.callerName ?? handler(alarm.callerUserId),
       })),
+      chats: securityChatsFor(actor, object.value.id),
       points: devices
         .filter((device) => isOpener(device.kind) && device.unitId === null)
         .map((device) => ({ id: device.id, name: device.name, kind: deviceLabel(device.kind), ...workState(device) })),

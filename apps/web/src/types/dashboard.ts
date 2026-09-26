@@ -38,6 +38,7 @@ export type DashboardObject = {
   name: string;
   typeLabel: string;
   address: string;
+  securityPhone?: string | null;
   canDelete: boolean;
   status: { tone: DashboardTone; title: string; detail: string };
   attention: DashboardAttention[];

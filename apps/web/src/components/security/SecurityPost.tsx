@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ObjectSwitcher } from "@/components/home/ObjectSwitcher";
 import { CameraTile } from "@/components/security/CameraTile";
+import { SecuritySosOverlay } from "@/components/security/SecuritySosOverlay";
 import { Clock } from "@/components/security/Clock";
 import { ThemeToggle } from "@/components/shell/ThemeToggle";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -79,6 +80,7 @@ function Alarms({ view, onDone }: { view: SecurityPostView; onDone: () => void }
               <div className="min-w-0">
                 <p className="text-[17px] text-ink">{alarm.title}</p>
                 <p className="mt-0.5 text-[14px] text-muted">
+                  {alarm.callerName ? `${alarm.callerName} · ` : ""}
                   {alarm.place} · {alarm.at}
                 </p>
                 <p className={`mt-1 text-[13px] ${alarm.status === "OPEN" ? "text-danger" : "text-warning"}`}>
@@ -329,12 +331,81 @@ function Journal({ view }: { view: SecurityPostView }) {
   );
 }
 
+function Chat({ view, onDone }: { view: SecurityPostView; onDone: () => void }) {
+  const threads = useMemo(() => {
+    const map = new Map<string, { unitId: string; place: string; last: string }>();
+    for (const message of view.chats) {
+      map.set(message.unitId, { unitId: message.unitId, place: message.place, last: message.body });
+    }
+    return [...map.values()];
+  }, [view.chats]);
+  const [unitId, setUnitId] = useState(threads[0]?.unitId ?? "");
+  const [text, setText] = useState("");
+  const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(null);
+  const messages = view.chats.filter((item) => item.unitId === unitId);
+
+  useEffect(() => {
+    if (!unitId && threads[0]) setUnitId(threads[0].unitId);
+  }, [threads, unitId]);
+
+  async function send(event: FormEvent) {
+    event.preventDefault();
+    if (!unitId || !text.trim()) return;
+    const result = await post("/api/security/chat", { objectId: view.objectId, unitId, body: text });
+    setNotice({ text: result.ok ? "Отправлено." : commandMessage(result.payload), ok: result.ok });
+    if (result.ok) setText("");
+    onDone();
+  }
+
+  return (
+    <Panel title="Чат с жителями" meta={threads.length || undefined}>
+      {threads.length === 0 ? <Empty>Пока никто не писал.</Empty> : null}
+      {threads.length > 0 ? (
+        <div className="mb-3 flex flex-wrap gap-2">
+          {threads.map((thread) => (
+            <button
+              key={thread.unitId}
+              type="button"
+              onClick={() => setUnitId(thread.unitId)}
+              className={`btn btn-compact ${unitId === thread.unitId ? "btn-primary" : "btn-secondary"}`}
+            >
+              {thread.place}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      <ul className="max-h-72 space-y-2 overflow-y-auto">
+        {messages.map((message) => (
+          <li key={message.id} className={`rounded-2xl px-3 py-2 ${message.mine ? "ml-8 bg-accent/15" : "mr-8 bg-surface-muted/50"}`}>
+            <p className="text-[12px] text-muted">{message.mine ? "Пост" : message.actorName}</p>
+            <p className="text-[15px] text-ink">{message.body}</p>
+            <p className="mt-1 text-[11px] text-muted">{message.at}</p>
+          </li>
+        ))}
+      </ul>
+      <form onSubmit={(event) => void send(event)} className="mt-3 flex gap-2">
+        <input value={text} onChange={(event) => setText(event.target.value)} className="control flex-1" placeholder="Ответ жителю" maxLength={400} disabled={!unitId} />
+        <button type="submit" className="btn btn-primary" disabled={!unitId || !text.trim()}>
+          Отправить
+        </button>
+      </form>
+      <Notice text={notice?.text ?? null} ok={notice?.ok ?? true} />
+    </Panel>
+  );
+}
+
 export function SecurityPost({ view }: { view: SecurityPostView }) {
   const router = useRouter();
   const refresh = () => router.refresh();
 
+  async function acceptSos(id: string) {
+    await post(`/api/security/alarms/${encodeURIComponent(id)}`, { step: "ACCEPT" });
+    refresh();
+  }
+
   return (
     <div className="min-h-dvh">
+      <SecuritySosOverlay view={view} onAccept={(id) => void acceptSos(id)} />
       <header className="sticky top-0 z-20 border-b border-line/60 bg-bg/50 px-5 py-4 backdrop-blur-xl lg:px-10">
         <div className="mx-auto flex max-w-[1440px] flex-wrap items-center gap-x-6 gap-y-3">
           <div className="min-w-0 flex-1">
@@ -362,6 +433,7 @@ export function SecurityPost({ view }: { view: SecurityPostView }) {
       <main className="fade-in mx-auto grid max-w-[1440px] gap-5 px-5 py-6 lg:grid-cols-[minmax(0,1fr)_380px] lg:px-10 lg:py-8">
         <div className="grid content-start gap-5">
           <Alarms view={view} onDone={refresh} />
+          <Chat view={view} onDone={refresh} />
           {view.can.camera ? <Cameras view={view} /> : null}
           {view.can.passes ? <Timeline view={view} /> : null}
         </div>

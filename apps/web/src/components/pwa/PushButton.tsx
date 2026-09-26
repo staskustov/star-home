@@ -31,7 +31,12 @@ export function PushButton() {
       const response = await fetch("/api/push", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ endpoint: subscription.endpoint, p256dh: json.keys?.p256dh, auth: json.keys?.auth }),
+        body: JSON.stringify({
+          endpoint: subscription.endpoint,
+          p256dh: json.keys?.p256dh,
+          auth: json.keys?.auth,
+          device: `${/Mobile|Android|iPhone|iPad/i.test(navigator.userAgent) ? "телефон" : "устройство"} · ${navigator.platform || "web"}`.slice(0, 80),
+        }),
       });
       setNotice(response.ok ? "Телефон сможет получать важные события." : unconfirmed);
     } catch {
