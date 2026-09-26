@@ -4,13 +4,15 @@
 
 ## Лента `smartEvents`
 
-Поля: device/gateway, kind (`command` / `state` / `availability` / `gateway`), title, result, at, seq.
+Поля: device/gateway, kind (`command` / `state` / `availability` / `gateway`), title, result, at, seq, severity, source.
 
-Горячий слой: последние 200. Житель видит только свою единицу / общие точки объекта.
+Горячий слой: 90 дней и не больше 200. Житель видит только свою единицу / общие точки объекта. Лента `/events`.
+
+Журнал команд `commandLogs`: SUCCESS / DENIED / UNCONFIRMED, staff only.
 
 ## История `smartHistory`
 
-Точки state после **подтверждённой** команды и inbound с канала шлюза. Последние 400. На карточке устройства — список и SVG, если есть хотя бы две числовые точки.
+Точки state после **подтверждённой** команды и inbound с канала шлюза. 30 дней hot, шаг ≥ 5 мин, не больше 400. Точки не синтезируем. На карточке устройства — список и SVG, если есть хотя бы две числовые точки.
 
 ## Триггеры сценария
 

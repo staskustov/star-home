@@ -79,6 +79,8 @@ export type NormalizedState = {
   position?: number;
   latch?: "OPEN" | "CLOSED";
   detected?: boolean;
+  watts?: number;
+  kwh?: number;
 };
 
 export type Device = {
@@ -153,6 +155,7 @@ export type Notice = {
   title: string;
   body: string;
   at: string;
+  severity?: "INFO" | "WARNING" | "ALERT";
 };
 
 export type AuditEntry = {
@@ -174,27 +177,35 @@ export type StoredAccessEvent = AccessEvent & {
 };
 
 export type PendingTool = {
-  name: "open_gate" | "create_pass" | "create_request" | "pay" | "switch_mode" | "control_device" | "set_temperature";
+  name: "open_gate" | "create_pass" | "create_request" | "pay" | "switch_mode" | "control_device" | "set_temperature" | "run_scenario";
   token: string;
   mode?: "HOME" | "WORK" | "VACATION";
   deviceId?: string;
   command?: string;
   value?: unknown;
+  scenarioId?: string;
 };
 
 export type SmartEventKind = "command" | "state" | "availability" | "gateway";
+
+export type SmartEventSeverity = "INFO" | "WARNING" | "ALERT";
+export type SmartEventSource = "USER" | "GATEWAY" | "SCENARIO" | "AI" | "SYSTEM";
 
 export type SmartEvent = {
   id: string;
   companyId: string;
   objectId: string;
   unitId: string | null;
+  roomId?: string | null;
   deviceId: string | null;
   gatewayId: string | null;
   kind: SmartEventKind;
   title: string;
   result: "SUCCESS" | "ERROR" | "UNCONFIRMED";
   at: string;
+  atIso?: string;
+  severity?: SmartEventSeverity;
+  source?: SmartEventSource;
   seq: number;
 };
 
@@ -215,6 +226,11 @@ export type PendingSmartCommand = {
   createdAt: string;
 };
 
+export const commandReplayMs = 15 * 60_000;
+export const eventKeepMs = 90 * 24 * 60 * 60 * 1000;
+export const seriesKeepMs = 30 * 24 * 60 * 60 * 1000;
+export const seriesStepMs = 5 * 60_000;
+
 export type GatewayCommand = {
   id: string;
   companyId: string;
@@ -223,9 +239,32 @@ export type GatewayCommand = {
   deviceId: string;
   command: string;
   value: unknown;
-  status: "PENDING" | "ACKED" | "FAILED";
+  status: "PENDING" | "ACKED" | "FAILED" | "EXPIRED";
   createdAt: string;
+  expiresAt?: string;
   ackedAt?: string;
+};
+
+export type DeviceCommandLog = {
+  id: string;
+  at: string;
+  actorUserId: string;
+  source: "APP" | "ADMIN" | "AI" | "SCENARIO";
+  companyId: string;
+  objectId: string;
+  unitId: string | null;
+  deviceId: string;
+  command: string;
+  value: unknown;
+  risk: "LOW" | "MEDIUM" | "HIGH";
+  result: "SUCCESS" | "DENIED" | "ERROR" | "UNCONFIRMED";
+  reason?: string;
+};
+
+export type DeviceFavorite = {
+  userId: string;
+  deviceId: string;
+  at: string;
 };
 
 export type ScenarioTrigger = "MANUAL" | "LIFE_MODE" | "EVENT" | "SCHEDULE";
@@ -249,6 +288,7 @@ export type Scenario = {
   objectId: string;
   unitId: string | null;
   name: string;
+  description?: string;
   trigger: ScenarioTrigger;
   lifeMode?: "HOME" | "WORK" | "VACATION";
   enabled?: boolean;
@@ -288,6 +328,8 @@ type OpsFile = {
   smartHistory: SmartHistoryPoint[];
   pendingSmart: PendingSmartCommand[];
   gatewayCommands: GatewayCommand[];
+  commandLogs: DeviceCommandLog[];
+  favorites: DeviceFavorite[];
   scenarios: Scenario[];
   liveSeq: Record<string, number>;
 };
@@ -521,6 +563,8 @@ function seed(): OpsFile {
     smartHistory: [],
     pendingSmart: [],
     gatewayCommands: [],
+    commandLogs: [],
+    favorites: [],
     scenarios: [],
     liveSeq: {},
   };
@@ -560,6 +604,49 @@ export function normalizeDevice(device: Device, reading?: DeviceReading): Device
   return device;
 }
 
+export function recordSmartHistory(file: OpsFile, point: Omit<SmartHistoryPoint, "id">): void {
+  const last = [...file.smartHistory].reverse().find((item) => item.deviceId === point.deviceId);
+  const nextAt = Date.parse(point.at);
+  const prevAt = last ? Date.parse(last.at) : NaN;
+  if (last && Number.isFinite(nextAt) && Number.isFinite(prevAt) && nextAt - prevAt < seriesStepMs) {
+    last.at = point.at;
+    last.state = point.state;
+  } else {
+    file.smartHistory.push({ ...point, id: newId("hist") });
+  }
+  trimSmartLayers(file);
+}
+
+export function expireGatewayCommands(file: OpsFile, now = Date.now()): void {
+  for (const command of file.gatewayCommands) {
+    if (command.status !== "PENDING") continue;
+    const deadline = Date.parse(command.expiresAt ?? "") || Date.parse(command.createdAt) + commandReplayMs;
+    if (Number.isFinite(deadline) && now > deadline) command.status = "EXPIRED";
+  }
+}
+
+export function trimSmartLayers(file: OpsFile, now = Date.now()): void {
+  file.smartEvents = file.smartEvents
+    .filter((event) => {
+      const at = event.atIso ? Date.parse(event.atIso) : NaN;
+      return !Number.isFinite(at) || now - at <= eventKeepMs;
+    })
+    .slice(0, 200);
+  file.smartHistory = file.smartHistory
+    .filter((point) => {
+      const at = Date.parse(point.at);
+      return !Number.isFinite(at) || now - at <= seriesKeepMs;
+    })
+    .slice(-400);
+  file.commandLogs = (file.commandLogs ?? []).slice(0, 400);
+}
+
+export function commandExpired(command: GatewayCommand, now = Date.now()): boolean {
+  if (command.status === "EXPIRED") return true;
+  const deadline = Date.parse(command.expiresAt ?? "") || Date.parse(command.createdAt) + commandReplayMs;
+  return Number.isFinite(deadline) && now > deadline;
+}
+
 function normalize(file: OpsFile): OpsFile {
   file.meters ??= [];
   file.meterReadings ??= [];
@@ -571,6 +658,8 @@ function normalize(file: OpsFile): OpsFile {
   file.smartHistory ??= [];
   file.pendingSmart ??= [];
   file.gatewayCommands ??= [];
+  file.commandLogs ??= [];
+  file.favorites ??= [];
   file.scenarios ??= [];
   file.liveSeq ??= {};
   for (const request of file.requests ?? []) {
@@ -608,7 +697,18 @@ function normalize(file: OpsFile): OpsFile {
   for (const scenario of file.scenarios) {
     scenario.enabled ??= true;
     scenario.conditions ??= [];
+    scenario.description ??= "";
   }
+  for (const event of file.smartEvents) {
+    event.severity ??= event.kind === "availability" ? "WARNING" : "INFO";
+    event.source ??= "SYSTEM";
+    event.atIso ??= undefined;
+  }
+  for (const command of file.gatewayCommands) {
+    command.expiresAt ??= new Date(Date.parse(command.createdAt) + commandReplayMs).toISOString();
+  }
+  expireGatewayCommands(file);
+  trimSmartLayers(file);
   if (!file.removedDeviceIds.includes("dev_light_24") && !file.scenarios.some((item) => item.id === "scen_night_24")) {
     file.scenarios.push({
       id: "scen_night_24",
@@ -616,6 +716,7 @@ function normalize(file: OpsFile): OpsFile {
       objectId: "obj_siyanie",
       unitId: "unit_24",
       name: "Ночь",
+      description: "Свет и шторы на ночь. Не отдельный режим жизни.",
       trigger: "MANUAL",
       enabled: true,
       steps: [
@@ -732,14 +833,20 @@ export function homeSignals(unitId: string, objectId: string): {
   payments: { title: string; amount: number; currency: string }[];
   categories: string[];
   cameras: { name: string; state: string }[];
-  devices: { id: string; name: string; label: string; state: "ON" | "OFF" | "FAULT"; stale?: boolean; roomId?: string | null; roomName?: string | null }[];
+  devices: { id: string; name: string; label: string; state: "ON" | "OFF" | "FAULT"; stale?: boolean; roomId?: string | null; roomName?: string | null; favorite?: boolean }[];
   facts: {
     lights: { on: number; total: number } | null;
     doors: { open: string[] } | null;
-    energy: { on: number; total: number } | null;
+    energy: { watts?: number; kwh?: number } | null;
     alerts: string[];
   };
-  controller: { status: string; lastSeen: string | null; stale: boolean; message: string | null } | null;
+  controller: {
+    status: string;
+    lastSeen: string | null;
+    stale: boolean;
+    message: string | null;
+    gateways?: { name: string; status: string; lastSeen: string | null; stale: boolean }[];
+  } | null;
 } {
   const file = load();
   const climateDevice = file.devices.find((device) => device.kind === "CLIMATE" && device.unitId === unitId);
@@ -796,30 +903,43 @@ export function homeSignals(unitId: string, objectId: string): {
   };
 }
 
-function homeController(gateways: Gateway[]): { status: string; lastSeen: string | null; stale: boolean; message: string | null } | null {
-  const remote = gateways.find((gateway) => gateway.adapter !== "local") ?? gateways[0];
-  if (!remote || remote.adapter === "local") return null;
-  const seen = remote.lastSeen ? Date.parse(remote.lastSeen) : NaN;
-  const stale = remote.status === "OFFLINE" || !Number.isFinite(seen) || Date.now() - seen > 5 * 60_000;
+function homeController(gateways: Gateway[]): {
+  status: string;
+  lastSeen: string | null;
+  stale: boolean;
+  message: string | null;
+  gateways: { name: string; status: string; lastSeen: string | null; stale: boolean }[];
+} | null {
+  const remote = gateways.filter((gateway) => gateway.adapter !== "local");
+  if (!remote.length) return null;
+  const rows = remote.map((gateway) => {
+    const seen = gateway.lastSeen ? Date.parse(gateway.lastSeen) : NaN;
+    const stale = gateway.status === "OFFLINE" || !Number.isFinite(seen) || Date.now() - seen > 5 * 60_000;
+    return { name: gateway.name, status: gateway.status, lastSeen: gateway.lastSeen, stale };
+  });
+  const stale = rows.some((row) => row.stale);
+  const first = rows.find((row) => row.stale) ?? rows[0];
   return {
-    status: remote.status,
-    lastSeen: remote.lastSeen,
+    status: stale ? "OFFLINE" : (first?.status ?? "ONLINE"),
+    lastSeen: first?.lastSeen ?? null,
     stale,
     message: stale ? "Контроллер недоступен." : null,
+    gateways: rows,
   };
 }
 
 function homeFacts(devices: Device[]) {
   const lights = devices.filter((device) => device.kind === "LIGHTING");
   const openers = devices.filter((device) => isOpener(device.kind));
-  const energy = devices.filter((device) => device.kind === "POWER" || device.capabilities?.includes("energy"));
+  const watts = devices.map((device) => device.state?.watts).find((value) => typeof value === "number");
+  const kwh = devices.map((device) => device.state?.kwh).find((value) => typeof value === "number");
   const alerts = devices.filter((device) => device.work === "FAULT" || device.state?.detected === true);
   return {
     lights: lights.length ? { on: lights.filter((device) => device.state?.on === true).length, total: lights.length } : null,
     doors: openers.length
       ? { open: openers.filter((device) => (device.state?.latch ?? device.latch) === "OPEN").map((device) => device.name) }
       : null,
-    energy: energy.length ? { on: energy.filter((device) => device.state?.on === true).length, total: energy.length } : null,
+    energy: watts !== undefined || kwh !== undefined ? { watts, kwh } : null,
     alerts: alerts.map((device) => device.name),
   };
 }

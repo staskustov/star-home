@@ -182,7 +182,8 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
                     <span className="min-w-0 flex-1">
                       <span className="block text-[15px] text-ink">{device.name}</span>
                       <span className="mt-0.5 block truncate text-[13px] text-muted">
-                        {device.stale ? "Нет свежих данных" : device.label}
+                        {device.favorite ? "На главной · " : ""}
+                        {device.stale ? "Последнее известное" : device.label}
                       </span>
                     </span>
                     <Icon name="chevron" className="h-4 w-4 shrink-0 text-muted" />
@@ -200,6 +201,12 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
             <li className="list-row">
               <Link href="/devices" className="-my-1 flex min-w-0 flex-1 items-center gap-[14px] py-1 text-[15px] text-muted">
                 Все устройства
+                <Icon name="chevron" className="ml-auto h-4 w-4 shrink-0 text-muted" />
+              </Link>
+            </li>
+            <li className="list-row">
+              <Link href="/events" className="-my-1 flex min-w-0 flex-1 items-center gap-[14px] py-1 text-[15px] text-muted">
+                События дома
                 <Icon name="chevron" className="ml-auto h-4 w-4 shrink-0 text-muted" />
               </Link>
             </li>

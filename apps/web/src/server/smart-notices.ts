@@ -1,7 +1,14 @@
 import { newId, readOps, writeOps } from "@/server/ops-store";
 import { listMemberships } from "@/server/people-store";
 
-export function notifyHousehold(input: { companyId: string; objectId: string; unitId: string | null; title: string; body: string }): void {
+export function notifyHousehold(input: {
+  companyId: string;
+  objectId: string;
+  unitId: string | null;
+  title: string;
+  body: string;
+  severity?: "INFO" | "WARNING" | "ALERT";
+}): void {
   if (!input.unitId) return;
   const file = readOps();
   const stamp = new Date().toISOString();
@@ -23,6 +30,7 @@ export function notifyHousehold(input: { companyId: string; objectId: string; un
       title: input.title,
       body: input.body,
       at: stamp,
+      severity: input.severity ?? "INFO",
     });
   }
   file.notices = file.notices.slice(0, 200);
@@ -45,6 +53,7 @@ export function notifyIfAlert(input: {
     unitId: input.unitId,
     title: "Тревога",
     body: `${input.name}: есть сигнал.`,
+    severity: "ALERT",
   });
 }
 

@@ -1,6 +1,6 @@
 # STAR HOME — Smart Home Security Model
 
-Статус: **Phase 0. Безопасность и RBAC. Код не писался.**
+Статус: **Phase 31–52. Replay window, journal, rate на устройство. TECHNICAL_ADMIN не вводили.**
 
 База: `ADMIN_SECURITY_MODEL.md`, `ADMIN_RBAC_ARCHITECTURE.md`, `ADMIN_PERMISSION_MATRIX.md`.
 Новую систему пользователей не создаём.

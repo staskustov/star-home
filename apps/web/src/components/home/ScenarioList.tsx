@@ -7,6 +7,7 @@ import { commandMessage, runCommand } from "@/lib/command";
 type Scenario = {
   id: string;
   name: string;
+  description?: string;
   trigger: string;
   lifeMode: string | null;
   enabled?: boolean;
@@ -21,6 +22,7 @@ export function ScenarioList({ scenarios, devices }: { scenarios: Scenario[]; de
   const router = useRouter();
   const [notice, setNotice] = useState<string | null>(null);
   const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
   const [deviceId, setDeviceId] = useState(devices.find((item) => item.id)?.id ?? "");
   const [command, setCommand] = useState("setPower");
   const [trigger, setTrigger] = useState("MANUAL");
@@ -42,6 +44,7 @@ export function ScenarioList({ scenarios, devices }: { scenarios: Scenario[]; de
     setNotice(null);
     const body: Record<string, unknown> = {
       name,
+      description,
       trigger,
       steps: [{ deviceId, command, value: command === "setPower" ? false : 0 }],
     };
@@ -58,6 +61,7 @@ export function ScenarioList({ scenarios, devices }: { scenarios: Scenario[]; de
     setNotice(result.ok ? "Сценарий сохранён." : commandMessage(result.payload));
     if (result.ok) {
       setName("");
+      setDescription("");
       router.refresh();
     }
   }
@@ -94,6 +98,7 @@ export function ScenarioList({ scenarios, devices }: { scenarios: Scenario[]; de
                 {label(scenario)}
                 {scenario.enabled === false ? " · выкл" : ""}
                 · шагов {scenario.steps.length}
+                {scenario.description ? ` · ${scenario.description}` : ""}
               </span>
             </span>
             <button type="button" className="btn btn-secondary btn-compact" onClick={() => void run(scenario.id)}>
@@ -111,6 +116,7 @@ export function ScenarioList({ scenarios, devices }: { scenarios: Scenario[]; de
       <form onSubmit={create} className="panel space-y-3 px-5 py-5">
         <p className="text-[16px] text-ink">Новый сценарий</p>
         <input value={name} onChange={(event) => setName(event.target.value)} className="control" placeholder="Название" />
+        <input value={description} onChange={(event) => setDescription(event.target.value)} className="control" placeholder="Описание, не обязательно" />
         <select value={trigger} onChange={(event) => setTrigger(event.target.value)} className="control">
           <option value="MANUAL">Вручную</option>
           <option value="EVENT">По событию</option>

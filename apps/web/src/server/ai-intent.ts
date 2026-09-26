@@ -1,4 +1,4 @@
-export type AiToolName = "open_gate" | "create_pass" | "create_request" | "pay" | "switch_mode" | "control_device" | "set_temperature";
+export type AiToolName = "open_gate" | "create_pass" | "create_request" | "pay" | "switch_mode" | "control_device" | "set_temperature" | "run_scenario";
 
 export type AiQuery =
   | "status"
@@ -20,6 +20,7 @@ export type AiIntent = {
   deviceHint?: string;
   command?: string;
   value?: unknown;
+  scenarioHint?: string;
 };
 
 const empty: AiIntent = { tool: null, query: null, mode: null, reply: "" };
@@ -77,6 +78,16 @@ export function intentFromPrompt(prompt: string): AiIntent {
       deviceHint: text.includes("штор") ? "curtain" : "light",
       command: text.includes("штор") ? (off || text.includes("закры") ? "close" : "open") : "setPower",
       value: text.includes("штор") ? undefined : !off,
+    };
+  }
+  if (text.includes("сценари") || text.includes("ночь") || (text.includes("запуст") && text.includes("дом"))) {
+    const named = text.match(/сценари[яй]\s+(.+)$/);
+    return {
+      tool: "run_scenario",
+      query: null,
+      mode: null,
+      reply: "Запустить сценарий? Подтвердите действие.",
+      scenarioHint: named?.[1]?.trim() || (text.includes("ночь") ? "ночь" : undefined),
     };
   }
   if (text.includes("комнат") || text.includes("помещен")) return { ...empty, query: "rooms" };

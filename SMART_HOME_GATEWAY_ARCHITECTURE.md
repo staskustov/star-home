@@ -78,6 +78,8 @@ Cloud вызывает адаптер **только** у Local Gateway (или 
 - Очередь `commandId`: повторный ack идемпотентен
 - Агент: `apps/gateway/agent.ts` — не подтверждает то, что не применил
 
+Агент: HTTPS вне localhost, `--once`, не ставит `confirmed: true`.
+
 Ещё впереди:
 
 - взаимный TLS

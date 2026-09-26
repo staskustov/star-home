@@ -170,6 +170,8 @@ const methodPolicy: Record<string, Route> = {
   smartHomeRoomDevices: session(async (current, input) => asReply((await import("./smart-home")).smartHomeRoomDevices(current, input.roomId))),
   smartHomeEvents: session(async (current, input) => asReply((await import("./smart-home")).smartHomeEvents(current, input.objectId))),
   smartHomeHistory: session(async (current, input) => asReply((await import("./smart-home")).smartHomeHistory(current, input.deviceId, input.since))),
+  smartHomeCommandLog: session(async (current, input) => asReply((await import("./smart-home")).smartHomeCommandLog(current, input.objectId))),
+  setDeviceFavorite: session(async (current, input) => asReply((await import("./smart-home")).setDeviceFavorite(current, input))),
   rotateGateway: staff("devices.edit", (actor, input) => import("./gateway-channel").then((mod) => mod.rotateGateway(actor, input.gatewayId))),
   revokeGateway: staff("devices.edit", (actor, input) => import("./gateway-channel").then((mod) => mod.revokeGateway(actor, input.gatewayId))),
   listScenarios: session(async (current, input) => asReply((await import("./scenarios")).listScenarios(current, input.objectId))),
@@ -330,6 +332,8 @@ const guardedMethods: Partial<Record<string, AuditAction>> = {
   runScenario: "SCENARIO_RUN",
   placeDevice: "DEVICE_COMMAND",
   runHomeAction: "DEVICE_COMMAND",
+  setDeviceFavorite: "DEVICE_COMMAND",
+  smartHomeCommandLog: "DEVICE_COMMAND",
   pairGateway: "GATEWAY_EDIT",
   rotateGateway: "GATEWAY_EDIT",
   revokeGateway: "GATEWAY_EDIT",
@@ -478,7 +482,12 @@ function home(session: SessionRef): Reply {
       categories: signals.categories,
       rooms: roomsOf(base.unit.id).map((room) => ({ id: room.id, name: room.name })),
       cameras: signals.cameras,
-      devices: signals.devices,
+      devices: (() => {
+        const pins = new Set(readOps().favorites.filter((item) => item.userId === session.userId).map((item) => item.deviceId));
+        return [...signals.devices]
+          .map((device) => ({ ...device, favorite: Boolean(device.id && pins.has(device.id)) }))
+          .sort((left, right) => Number(right.favorite) - Number(left.favorite));
+      })(),
       meters: signals.meters,
       facts: signals.facts,
       controller: signals.controller,

@@ -130,6 +130,8 @@ export async function requireSmartDevice(deviceId: string): Promise<{
     state: Record<string, unknown>;
     canCommand: boolean;
     commands: import("@/server/smart-commands").SmartCommandName[];
+    lastKnown?: boolean;
+    favorite?: boolean;
   };
 }> {
   const result = await rpc<{ device?: { id: string } | null; message?: string; redirect?: string }>("smartHomeDevice", { deviceId });
@@ -149,6 +151,7 @@ export async function requireScenarios() {
     scenarios?: {
       id: string;
       name: string;
+      description?: string;
       trigger: string;
       lifeMode: string | null;
       enabled?: boolean;
@@ -180,13 +183,30 @@ export async function requireSmartRooms() {
 }
 
 export async function requireRoom(roomId: string) {
-  const result = await rpc<{ room?: { id: string; name: string }; devices?: { id: string; name: string; typeLabel: string; stale: boolean; availability: "ONLINE" | "OFFLINE" | "UNKNOWN" }[] }>(
-    "smartHomeRoomDevices",
-    { roomId },
-  );
+  const result = await rpc<{
+    room?: { id: string; name: string };
+    devices?: {
+      id: string;
+      name: string;
+      typeLabel: string;
+      stale: boolean;
+      availability: "ONLINE" | "OFFLINE" | "UNKNOWN";
+      canCommand: boolean;
+      commands: import("@/server/smart-commands").SmartCommandName[];
+      state?: Record<string, unknown>;
+    }[];
+  }>("smartHomeRoomDevices", { roomId });
   if (result.status === 401) redirect("/");
   if (result.status !== 200 || !result.body.room) redirect("/rooms");
   return { room: result.body.room, devices: result.body.devices ?? [] };
+}
+
+export async function requireSmartEvents() {
+  const result = await rpc<{
+    events?: { id: string; title: string; at: string; result: string; deviceId: string | null; severity?: string; source?: string }[];
+  }>("smartHomeEvents");
+  if (result.status === 401) redirect("/");
+  return result.body.events ?? [];
 }
 
 export async function requireGuest(): Promise<{ name: string; pass: { guestName: string; detail: string; code?: string } | null }> {

@@ -24,7 +24,7 @@ export function destinationFor(userId: string, membershipId: string | null): str
 }
 
 const securityPath = "/security";
-const residentPaths = ["/home", "/access", "/rooms", "/devices", "/service", "/scenarios", "/profile", "/my-objects"];
+const residentPaths = ["/home", "/access", "/rooms", "/devices", "/service", "/scenarios", "/events", "/profile", "/my-objects"];
 const adminPrefix = "/admin";
 
 export function guardPath(userId: string, membershipId: string | null, pathname: string): { redirect?: string } {

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAdminPreview } from "@/components/admin/AdminPreview";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { ViewToggle, useViewMode } from "@/components/ui/ViewToggle";
+import { FloorPlan } from "@/components/home/FloorPlan";
 import { commandMessage, runCommand } from "@/lib/command";
 import { formatMoney } from "@/lib/format";
 import type { AccessEvent } from "@/types/domain";
@@ -367,14 +368,18 @@ export function DeviceDesk({
   gateways = [],
   events = [],
   rooms = [],
+  commandLogs = [],
+  plans = [],
   canCommand = false,
   canPair = false,
 }: {
   devices: DeskDevice[];
   meters?: { objectId: string; name: string; value: string; unit: string }[];
   gateways?: { id: string; objectId: string; name: string; adapter: string; status: string; lastSeen: string | null; lastError: string | null; paired?: boolean; connectedDevices: number }[];
-  events?: { id: string; objectId: string; title: string; at: string; result: string }[];
+  events?: { id: string; objectId: string; title: string; at: string; result: string; severity?: string; source?: string }[];
   rooms?: { id: string; objectId: string; name: string }[];
+  commandLogs?: { id: string; objectId: string; at: string; deviceId: string; command: string; result: string; source: string; risk: string }[];
+  plans?: { unitId: string; unitName: string; objectId?: string; floors: { floor: number; image: string; pins: { deviceId: string; name: string; x: number; y: number }[] }[] }[];
   canCommand?: boolean;
   canPair?: boolean;
 }) {
@@ -385,6 +390,9 @@ export function DeviceDesk({
   const hubs = useObjectRows(gateways);
   const log = useObjectRows(events);
   const places = useObjectRows(rooms);
+  const commands = useObjectRows(commandLogs);
+  const maps = useObjectRows(plans.map((plan) => ({ ...plan, objectId: plan.objectId ?? "" })).filter((plan) => plan.objectId));
+  const [query, setQuery] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [pairToken, setPairToken] = useState<string | null>(null);
@@ -469,9 +477,16 @@ export function DeviceDesk({
     if (result.ok) router.refresh();
   }
 
+  const filtered = rows.filter((device) => {
+    const text = query.trim().toLowerCase();
+    if (!text) return true;
+    return device.name.toLowerCase().includes(text) || device.kind.toLowerCase().includes(text) || (device.gatewayName ?? "").toLowerCase().includes(text);
+  });
+
   return (
     <Shell title="Устройства">
       <ViewToggle value={view} onChange={setView} />
+      <input value={query} onChange={(event) => setQuery(event.target.value)} className="control" placeholder="Поиск по имени или типу" />
       <List empty="Шлюзов нет.">
         {hubs.map((gateway) => (
           <li key={gateway.id} className="px-5 py-4">
@@ -502,10 +517,10 @@ export function DeviceDesk({
       {pairToken ? <p className="break-all text-[13px] text-muted">{pairToken}</p> : null}
       {view === "blocks" ? (
         <ul className="grid gap-3 sm:grid-cols-2">
-          {rows.length === 0 ? (
+          {filtered.length === 0 ? (
             <li className="panel px-5 py-4 text-[15px] text-muted">Устройств нет.</li>
           ) : (
-            rows.map((device) => (
+            filtered.map((device) => (
               <li key={device.id ?? `${device.objectId}-${device.name}`} className="panel p-5">
                 <p className="text-[16px] text-ink">{device.name}</p>
                 <p className="mt-2 text-sm text-muted">
@@ -528,7 +543,7 @@ export function DeviceDesk({
         </ul>
       ) : (
         <List empty="Устройств нет.">
-          {rows.map((device) => (
+          {filtered.map((device) => (
             <li key={device.id ?? `${device.objectId}-${device.name}`} className="px-5 py-4">
               <p className="text-[16px] text-ink">{device.name}</p>
               <p className="text-sm text-muted">
@@ -593,6 +608,22 @@ export function DeviceDesk({
           </button>
         </form>
       ) : null}
+      {maps.map((plan) => (
+        <div key={plan.unitId}>
+          <p className="mb-2 text-[15px] text-ink">{plan.unitName}</p>
+          <FloorPlan floors={plan.floors} editable={canPair} />
+        </div>
+      ))}
+      <List empty="Журнала команд нет.">
+        {commands.map((row) => (
+          <li key={row.id} className="px-5 py-4">
+            <p className="text-[16px] text-ink">{row.command}</p>
+            <p className="text-sm text-muted">
+              {row.at} · {row.result} · {row.source} · {row.risk}
+            </p>
+          </li>
+        ))}
+      </List>
       <List empty="Событий нет.">
         {log.map((event) => (
           <li key={event.id} className="px-5 py-4">

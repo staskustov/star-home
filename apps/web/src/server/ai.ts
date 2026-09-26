@@ -3,6 +3,7 @@ import { intentFromPrompt, type AiQuery, type AiToolName } from "@/server/ai-int
 import { placeFromSession, type Place, type SessionRef } from "@/server/actor";
 import { modeForUnit, modesForObject, setUnitMode } from "@/server/life-mode-store";
 import { createPass, createRequest, openGate, payOldest } from "@/server/operations";
+import { roomsOf } from "@/server/catalog-store";
 import { homeSignals, newId, passesForUnit, readOps, writeOps, type Device, type PendingTool } from "@/server/ops-store";
 import { householdCan } from "@/server/rbac/policy";
 
@@ -17,7 +18,7 @@ type Proposal = {
   query: AiQuery | null;
 };
 
-const allowedTools = new Set<AiToolName>(["open_gate", "create_pass", "create_request", "pay", "switch_mode", "control_device", "set_temperature"]);
+const allowedTools = new Set<AiToolName>(["open_gate", "create_pass", "create_request", "pay", "switch_mode", "control_device", "set_temperature", "run_scenario"]);
 const allowedQueries = new Set<AiQuery>([
   "status",
   "visitors",
@@ -87,6 +88,23 @@ async function propose(prompt: string, role: Place["role"], place: Place): Promi
     return { reply: "Оплата доступна только жителю.", pending: null, query: null };
   }
   if (suggestion.tool === "create_pass" && !householdCan(role, "access.pass.create")) return { reply: "Пропуск оформляет житель.", pending: null, query: null };
+  if (suggestion.tool === "run_scenario") {
+    if (!householdCan(role, "devices.command")) return { reply: "Нет права запускать сценарии.", pending: null, query: null };
+    const hint = suggestion.scenarioHint?.toLowerCase();
+    const scenario = readOps().scenarios.find(
+      (item) =>
+        item.objectId === place.objectId &&
+        (item.unitId === place.unitId || item.unitId === null) &&
+        item.enabled !== false &&
+        (!hint || item.name.toLowerCase().includes(hint)),
+    );
+    if (!scenario) return { reply: "Такого сценария нет.", pending: null, query: null };
+    return {
+      reply: suggestion.reply || `Запустить «${scenario.name}»? Подтвердите действие.`,
+      pending: { name: "run_scenario", token: newId("confirm"), scenarioId: scenario.id },
+      query: null,
+    };
+  }
   if (suggestion.tool === "control_device" || suggestion.tool === "set_temperature") {
     if (!householdCan(role, "devices.command") && !householdCan(role, "access.gate.open")) {
       return { reply: "Нет права управлять устройствами.", pending: null, query: null };
@@ -122,9 +140,9 @@ function answer(place: Place, query: AiQuery): string {
     return `Открытый счёт ${formatMoney(signals.balance.amount, signals.balance.currency)}.`;
   }
   if (query === "rooms") {
-    const names = [...new Set(devices.map((device) => device.displayName ?? device.name).filter(Boolean))];
-    const rooms = names.length ? names.join(". ") : "Помещения не добавлены.";
-    return rooms;
+    const rooms = roomsOf(place.unitId);
+    if (!rooms.length) return "Помещения не добавлены.";
+    return rooms.map((room) => room.name).join(". ");
   }
   if (query === "devices") {
     if (!devices.length) return "Устройств нет.";
@@ -148,9 +166,17 @@ function answer(place: Place, query: AiQuery): string {
     return [...faults.map((device) => device.name), ...alarms.map((alarm) => alarm.title)].join(". ");
   }
   if (query === "energy") {
-    const power = devices.filter((device) => device.kind === "POWER" || device.capabilities?.includes("energy") || device.kind === "LIGHTING");
-    if (!power.length) return "Данных по энергии нет.";
-    return power.map((device) => `${device.name}: ${device.state?.on === false ? "выкл" : device.state?.on === true ? "вкл" : "нет показаний"}`).join(". ");
+    const meters = devices.filter((device) => typeof device.state?.watts === "number" || typeof device.state?.kwh === "number");
+    if (!meters.length) return "Данных по энергии нет.";
+    return meters
+      .map((device) => {
+        const parts = [
+          typeof device.state?.watts === "number" ? `${device.state.watts} Вт` : null,
+          typeof device.state?.kwh === "number" ? `${device.state.kwh} кВт·ч` : null,
+        ].filter(Boolean);
+        return `${device.name}: ${parts.join(", ")}`;
+      })
+      .join(". ");
   }
   if (query === "security_status") {
     const mode = modesForObject(place.objectId).find((item) => item.mode === modeForUnit(place.unitId));
@@ -210,6 +236,7 @@ export async function confirmAssistant(place: Place, token: string, session: Ses
   const deviceId = turn.pending.deviceId;
   const command = turn.pending.command;
   const value = turn.pending.value;
+  const scenarioId = turn.pending.scenarioId;
   turn.pending = null;
   writeOps(file);
   let reply = "Не удалось подтвердить выполнение.";
@@ -228,11 +255,21 @@ export async function confirmAssistant(place: Place, token: string, session: Ses
     reply = "Заявка создана.";
   }
   if (tool === "pay" && householdCan(place.role, "payments.pay")) reply = (await payOldest(place)).message;
+  if (tool === "run_scenario" && scenarioId && householdCan(place.role, "devices.command")) {
+    const { runScenario } = await import("@/server/scenarios");
+    const first = await runScenario(session, { scenarioId });
+    if (first.ok && first.value.needsConfirm && first.value.token) {
+      const second = await runScenario(session, { scenarioId, confirmToken: first.value.token });
+      reply = second.ok ? second.value.message : second.message;
+    } else {
+      reply = first.ok ? first.value.message : first.message;
+    }
+  }
   if ((tool === "control_device" || tool === "set_temperature") && deviceId && command) {
     const { commandDeviceSmart } = await import("@/server/smart-home");
-    const first = await commandDeviceSmart(session, { deviceId, command, value });
+    const first = await commandDeviceSmart(session, { deviceId, command, value, source: "ai" });
     if (first.ok && first.value.needsConfirm && first.value.token) {
-      const second = await commandDeviceSmart(session, { deviceId, command, value, confirmToken: first.value.token });
+      const second = await commandDeviceSmart(session, { deviceId, command, value, confirmToken: first.value.token, source: "ai" });
       reply = second.ok ? second.value.message : second.message;
     } else {
       reply = first.ok ? first.value.message : first.message;

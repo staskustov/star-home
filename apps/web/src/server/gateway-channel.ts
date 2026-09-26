@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "crypto";
 import { ackGatewayCommand, pullGatewayCommands } from "@/server/gateway-queue";
 import { emitLive } from "@/server/live-bus";
-import { findGateway, newId, readOps, writeOps, type NormalizedState } from "@/server/ops-store";
+import { findGateway, readOps, recordSmartHistory, writeOps, type NormalizedState } from "@/server/ops-store";
 import { can, objectFor, type StaffActor } from "@/server/rbac/decide";
 import { notifyIfAlert } from "@/server/smart-notices";
 
@@ -122,6 +122,8 @@ export function ingestGatewayState(
   if (typeof raw.position === "number" && Number.isFinite(raw.position)) next.position = raw.position;
   if (raw.latch === "OPEN" || raw.latch === "CLOSED") next.latch = raw.latch;
   if (typeof raw.detected === "boolean") next.detected = raw.detected;
+  if (typeof raw.watts === "number" && Number.isFinite(raw.watts)) next.watts = raw.watts;
+  if (typeof raw.kwh === "number" && Number.isFinite(raw.kwh)) next.kwh = raw.kwh;
   if (!Object.keys(next).length) return { ok: false, status: 400, message: "Нет состояния" };
   const current = file.devices.find((item) => item.id === device.id);
   if (!current) return { ok: false, status: 404, message: "Устройство не найдено" };
@@ -130,8 +132,7 @@ export function ingestGatewayState(
   if (next.latch) current.latch = next.latch;
   current.lastSeen = new Date().toISOString();
   current.availability = "ONLINE";
-  file.smartHistory.push({ id: newId("hist"), deviceId: current.id, objectId: current.objectId, at: current.lastSeen, state: next });
-  file.smartHistory = file.smartHistory.slice(-400);
+  recordSmartHistory(file, { deviceId: current.id, objectId: current.objectId, at: current.lastSeen, state: next });
   writeOps(file);
   notifyIfAlert({
     companyId: current.companyId,

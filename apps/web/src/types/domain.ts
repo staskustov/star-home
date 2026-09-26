@@ -133,18 +133,24 @@ export type ResidentHome = {
   categories: string[];
   rooms: { id?: string; name: string }[];
   cameras: { name: string; state: string }[];
-  devices: { id?: string; name: string; label: string; state: "ON" | "OFF" | "FAULT"; stale?: boolean; roomId?: string | null; roomName?: string | null }[];
+  devices: { id?: string; name: string; label: string; state: "ON" | "OFF" | "FAULT"; stale?: boolean; roomId?: string | null; roomName?: string | null; favorite?: boolean }[];
   serviceCategories: string[];
   aiPrompt: string;
   meters: { name: string; value: string; unit: string }[];
   facts?: {
     lights: { on: number; total: number } | null;
     doors: { open: string[] } | null;
-    energy: { on: number; total: number } | null;
+    energy: { watts?: number; kwh?: number } | null;
     alerts: string[];
   };
-  controller?: { status: string; lastSeen: string | null; stale: boolean; message: string | null } | null;
-  notices?: { id: string; title: string; body: string; at: string }[];
+  controller?: {
+    status: string;
+    lastSeen: string | null;
+    stale: boolean;
+    message: string | null;
+    gateways?: { name: string; status: string; lastSeen: string | null; stale: boolean }[];
+  } | null;
+  notices?: { id: string; title: string; body: string; at: string; severity?: string }[];
 };
 
 export type AccessEvent = {
@@ -168,7 +174,7 @@ export type AdminObjectSnapshot = {
 export type NavItem = {
   href: string;
   label: string;
-  icon: "home" | "access" | "ai" | "service" | "profile" | "overview" | "objects" | "residents" | "security" | "requests" | "payments" | "devices" | "settings" | "rooms" | "team" | "roles" | "audit" | "engineering";
+  icon: "home" | "access" | "ai" | "service" | "profile" | "overview" | "objects" | "residents" | "security" | "requests" | "payments" | "devices" | "settings" | "rooms" | "team" | "roles" | "audit" | "engineering" | "event";
 };
 
 export type NavGroup = {

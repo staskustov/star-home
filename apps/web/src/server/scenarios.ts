@@ -54,6 +54,7 @@ function asPublic(scenario: Scenario) {
     objectId: scenario.objectId,
     unitId: scenario.unitId,
     name: scenario.name,
+    description: scenario.description ?? "",
     trigger: scenario.trigger,
     lifeMode: scenario.lifeMode ?? null,
     enabled: scenario.enabled !== false,
@@ -95,6 +96,7 @@ export function createScenario(
     objectId?: unknown;
     unitId?: unknown;
     name?: unknown;
+    description?: unknown;
     trigger?: unknown;
     lifeMode?: unknown;
     steps?: unknown;
@@ -129,6 +131,7 @@ export function createScenario(
     objectId,
     unitId: viewer.value.kind === "home" ? viewer.value.place.unitId : typeof input.unitId === "string" ? input.unitId : null,
     name,
+    description: typeof input.description === "string" ? input.description.trim().slice(0, 200) : "",
     trigger,
     lifeMode,
     enabled: true,
@@ -158,6 +161,7 @@ export function updateScenario(
   input: {
     scenarioId?: unknown;
     name?: unknown;
+    description?: unknown;
     trigger?: unknown;
     lifeMode?: unknown;
     steps?: unknown;
@@ -180,6 +184,7 @@ export function updateScenario(
     if (typeof name !== "string") return name;
     current.name = name;
   }
+  if (typeof input.description === "string") current.description = input.description.trim().slice(0, 200);
   if (input.trigger === "LIFE_MODE" || input.trigger === "MANUAL" || input.trigger === "EVENT" || input.trigger === "SCHEDULE") {
     current.trigger = input.trigger;
   }

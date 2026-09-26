@@ -1,6 +1,6 @@
 # STAR HOME — Smart Home Implementation Roadmap
 
-Статус: **Phase 0–30 выполнены в этом круге.** Не коммитим, пока не попросите.
+Статус: **Phase 0–52 выполнены в этом круге.** Не коммитим, пока не попросите.
 
 Не переписывали архитектуру. Не сидели живую Postgres. Не фейкали датчики и удалённый MQTT.
 
@@ -173,12 +173,111 @@ Device / Gateway / Room, CRUD, HTTP `/api/smart-home/*` реестра, комн
 - rbac / security / adapters
 - этот файл
 
+## Phase 31 — Журнал команд
+
+- `DeviceCommandLog` в снимке: SUCCESS / DENIED / ERROR / UNCONFIRMED
+- Staff `smartHomeCommandLog`, житель не читает чужой журнал
+
+## Phase 32 — Severity и source
+
+- Событие: INFO / WARNING / ALERT, USER / GATEWAY / SCENARIO / AI / SYSTEM
+- Житель видит severity на `/events`
+
+## Phase 33 — Обрезка и downsample
+
+- События 90 дней, ряды 30 дней, шаг ≥ 5 мин
+- Точки не синтезируем: в окне 5 мин остаётся последняя
+
+## Phase 34 — Описание сценария
+
+- Поле `description`, UI на `/scenarios`
+
+## Phase 35 — Интерактивный план
+
+- Пин жителя ведёт на устройство
+- Staff `devices.edit` двигает метку, картинку плана не выдумываем
+
+## Phase 36 — Энергия
+
+- Плитка и AI только из реальных `watts` / `kwh`
+- Пустые числа не рисуем
+
+## Phase 37 — Окно replay
+
+- Очередь истекает через 15 минут, статус EXPIRED
+- Поздний ack не применяет state
+
+## Phase 38 — Лимит на устройство
+
+- 20 команд / 60 с на пользователя, 10 / 60 с на устройство
+
+## Phase 39 — Журнал в техконсоли
+
+- `/admin/devices` показывает command log
+
+## Phase 40 — Лента событий
+
+- `/events` из `smartHomeEvents`, без MQTT
+
+## Phase 41 — Агент HTTPS / --once
+
+- Вне localhost только `https`
+- `--once` уже есть. Mutual TLS / binary — не подменяем успехом
+
+## Phase 42 — Условия сценария в UI
+
+- EVENT: устройство + поле, как Phase 22, плюс описание
+
+## Phase 43 — Несколько шлюзов
+
+- Баннер, если любой remote stale / OFFLINE
+- Local-only по-прежнему без баннера
+
+## Phase 44 — Избранное
+
+- Житель закрепляет устройство на главной
+- Staff / гость не пишут чужие закрепления
+
+## Phase 45 — Команды в помещении
+
+- `/rooms/[id]` — те же команды, что карточка устройства
+
+## Phase 46 — Severity уведомлений
+
+- Notice `ALERT` только при переходе в detected / FAULT
+
+## Phase 47 — AI rooms / scenario
+
+- `rooms` из каталога, не из имён устройств
+- `run_scenario` только с confirm; HIGH по-прежнему через confirm команды
+- Энергия в AI — только watts / kwh
+
+## Phase 48 — Поиск в техконсоли
+
+- `/admin/devices` фильтр по имени / типу / шлюзу
+
+## Phase 49 — Последнее известное
+
+- Stale карточка показывает кэш и время, не выдаёт его за live
+
+## Phase 50 — Секреты
+
+- `internalAddress`, token, endpoint не в `home()` и не в ответах AI
+
+## Phase 51 — Тесты 31–52
+
+- rbac / security / adapters: журнал, favorite, energy, expiry, downsample, isolation
+
+## Phase 52 — Документы
+
+- этот файл и соседние SMART_HOME_* 
+
 ## Позже
 
-- Интерактивная карта на планировке
-- Полный Local Gateway binary / TLS
+- Полный Local Gateway binary / взаимный TLS
 - Боевые Matter / Modbus / KNX / Zigbee
 - Роль TECHNICAL_ADMIN при необходимости
+- Prisma-проекция как SoT — нет, снимок остаётся истиной
 
 ## Явные отказы
 

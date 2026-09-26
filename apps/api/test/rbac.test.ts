@@ -574,6 +574,82 @@ describe("smart home commands", () => {
     assert.equal(future.status, 200);
     assert.equal(((future.body as { points: unknown[] }).points).length, 0);
   });
+
+  it("writes a command log and hides it from the resident", async () => {
+    await rpc("commandDeviceSmart", { deviceId: "dev_light_24", command: "setPower", value: true }, resident);
+    const staffLog = await rpc("smartHomeCommandLog", { objectId: "obj_siyanie" }, objectAdmin);
+    assert.equal(staffLog.status, 200);
+    const rows = (staffLog.body as { commands: { deviceId: string; result: string }[] }).commands;
+    assert.ok(rows.some((row) => row.deviceId === "dev_light_24" && row.result === "SUCCESS"));
+    assert.equal((await rpc("smartHomeCommandLog", { objectId: "obj_siyanie" }, resident)).status, 403);
+  });
+
+  it("pins a favorite for the resident and rejects a guest", async () => {
+    const pinned = await rpc("setDeviceFavorite", { deviceId: "dev_light_24", favorite: true }, resident);
+    assert.equal(pinned.status, 200, JSON.stringify(pinned.body));
+    const home = (await rpc("home", null, resident)).body as { home: { devices: { id?: string; favorite?: boolean }[] } };
+    assert.equal(home.home.devices.find((device) => device.id === "dev_light_24")?.favorite, true);
+    assert.equal((await rpc("setDeviceFavorite", { deviceId: "dev_light_24", favorite: true }, objectAdmin)).status, 403);
+  });
+
+  it("shows energy only from real watts and keeps rooms from the catalog", async () => {
+    const before = ((await rpc("home", null, resident)).body as { home: { facts?: { energy: { watts?: number } | null } } }).home.facts;
+    assert.equal(before?.energy ?? null, null);
+    const ops = await import("../../web/src/server/ops-store");
+    const file = ops.readOps();
+    const light = file.devices.find((item) => item.id === "dev_light_24");
+    if (light) light.state = { ...light.state, watts: 42 };
+    ops.writeOps(file);
+    const after = ((await rpc("home", null, resident)).body as { home: { facts?: { energy?: { watts?: number } | null } } }).home.facts;
+    assert.equal(after?.energy?.watts, 42);
+    const asked = await rpc("ask", { prompt: "какие комнаты" }, resident);
+    assert.equal(asked.status, 200);
+    assert.match((asked.body as { reply: string }).reply, /Гостиная|Спальня/);
+    if (light) {
+      delete light.state?.watts;
+      ops.writeOps(file);
+    }
+  });
+
+  it("saves a scenario description and lists event severity", async () => {
+    const created = await rpc(
+      "createScenario",
+      { name: "Тихий вечер", description: "Только свет", trigger: "MANUAL", steps: [{ deviceId: "dev_light_24", command: "setPower", value: false }] },
+      resident,
+    );
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    const list = (await rpc("listScenarios", {}, resident)).body as { scenarios: { name: string; description?: string }[] };
+    assert.ok(list.scenarios.some((scenario) => scenario.name === "Тихий вечер" && scenario.description === "Только свет"));
+    await rpc("commandDeviceSmart", { deviceId: "dev_light_24", command: "setPower", value: false }, resident);
+    const events = (await rpc("smartHomeEvents", {}, resident)).body as { events: { severity?: string; source?: string }[] };
+    assert.ok(events.events.some((event) => event.severity && event.source));
+  });
+
+  it("asks AI to run a scenario only after confirm", async () => {
+    const people = await import("../../web/src/server/people-store");
+    const person = people.createPerson({ login: "ai.scenario", name: "Сценарий", passwordHash: "x" });
+    const membership = people.createResidentMembership({ userId: person.id, companyId: "cmp_star", objectId: "obj_siyanie", unitId: "unit_24" });
+    const actor = { userId: person.id, membershipId: membership.id };
+    await rpc("updateDevice", { deviceId: "dev_light_24", gatewayId: null }, objectAdmin);
+    await rpc("commandDeviceSmart", { deviceId: "dev_light_24", command: "setPower", value: true }, actor);
+    const created = await rpc(
+      "createScenario",
+      { name: "AI прогон", trigger: "MANUAL", steps: [{ deviceId: "dev_light_24", command: "setPower", value: false }] },
+      actor,
+    );
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    const asked = await rpc("ask", { prompt: "запусти сценарий AI прогон" }, actor);
+    assert.equal(asked.status, 200);
+    const token = (asked.body as { confirmToken: string | null }).confirmToken;
+    assert.ok(token);
+    const mid = (await rpc("smartHomeDevice", { deviceId: "dev_light_24" }, actor)).body as { device: { state?: { on?: boolean } } };
+    assert.equal(mid.device.state?.on, true);
+    const confirmed = await rpc("confirm", { token }, actor);
+    assert.equal(confirmed.status, 200, JSON.stringify(confirmed.body));
+    assert.match((confirmed.body as { reply: string }).reply, /выполнен|Готово/);
+    const after = (await rpc("smartHomeDevice", { deviceId: "dev_light_24" }, actor)).body as { device: { state?: { on?: boolean } } };
+    assert.equal(after.device.state?.on, false);
+  });
 });
 
 describe("houses", () => {

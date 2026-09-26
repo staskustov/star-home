@@ -1,7 +1,7 @@
 type Facts = {
   lights: { on: number; total: number } | null;
   doors: { open: string[] } | null;
-  energy: { on: number; total: number } | null;
+  energy: { watts?: number; kwh?: number } | null;
   alerts: string[];
 };
 
@@ -10,7 +10,15 @@ export function HomeFacts({ facts }: { facts?: Facts }) {
   const rows = [
     facts.lights ? { key: "lights", title: "Свет", detail: `${facts.lights.on} из ${facts.lights.total} включено` } : null,
     facts.doors ? { key: "doors", title: "Двери", detail: facts.doors.open.length ? `Открыто: ${facts.doors.open.join(", ")}` : "Все закрыты" } : null,
-    facts.energy ? { key: "energy", title: "Энергия", detail: `${facts.energy.on} из ${facts.energy.total} в работе` } : null,
+    facts.energy
+      ? {
+          key: "energy",
+          title: "Энергия",
+          detail: [typeof facts.energy.watts === "number" ? `${facts.energy.watts} Вт` : null, typeof facts.energy.kwh === "number" ? `${facts.energy.kwh} кВт·ч` : null]
+            .filter(Boolean)
+            .join(" · "),
+        }
+      : null,
     facts.alerts.length ? { key: "alerts", title: "Тревоги", detail: facts.alerts.join(". ") } : null,
   ].filter((row): row is { key: string; title: string; detail: string } => Boolean(row));
   if (!rows.length) return null;

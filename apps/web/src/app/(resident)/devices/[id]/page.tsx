@@ -1,4 +1,5 @@
 import { DeviceCommand } from "@/components/home/DeviceCommand";
+import { FavoriteButton } from "@/components/home/FavoriteButton";
 import { HistoryChart } from "@/components/home/HistoryChart";
 import { Icon } from "@/components/icons";
 import { LiveRefresh } from "@/components/pwa/LiveRefresh";
@@ -31,7 +32,7 @@ export default async function DevicePage({ params }: { params: Promise<{ id: str
           </span>
           <div>
             <p className={`text-[17px] ${device.stale ? "text-warning" : "text-ink"}`}>
-              {device.stale ? "Нет свежих данных" : (availabilityLabel[device.availability] ?? device.availability)}
+              {device.stale ? (device.lastKnown ? "Последнее известное состояние" : "Нет свежих данных") : (availabilityLabel[device.availability] ?? device.availability)}
             </p>
             <p className="mt-0.5 text-[13px] text-muted">{device.lastSeen ? `Последний раз ${device.lastSeen}` : "Время связи неизвестно"}</p>
           </div>
@@ -73,8 +74,22 @@ export default async function DevicePage({ params }: { params: Promise<{ id: str
               <dd>{state.latch === "OPEN" ? "Открыто" : "Закрыто"}</dd>
             </div>
           ) : null}
+          {typeof state.watts === "number" ? (
+            <div className="flex justify-between">
+              <dt className="text-muted">Мощность</dt>
+              <dd>{state.watts} Вт</dd>
+            </div>
+          ) : null}
+          {typeof state.kwh === "number" ? (
+            <div className="flex justify-between">
+              <dt className="text-muted">Энергия</dt>
+              <dd>{String(state.kwh).replace(".", ",")} кВт·ч</dd>
+            </div>
+          ) : null}
         </dl>
         {!Object.keys(state).length ? <p className="mt-4 text-[15px] text-muted">Показаний нет.</p> : null}
+        {device.stale && device.lastKnown ? <p className="mt-3 text-[13px] text-muted">Цифры на момент последней связи, не текущие.</p> : null}
+        <FavoriteButton deviceId={device.id} favorite={device.favorite} />
       </div>
 
       <div className="panel mt-4 px-5 py-5">

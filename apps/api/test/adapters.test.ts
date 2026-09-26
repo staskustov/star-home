@@ -205,6 +205,55 @@ describe("gateway channel", () => {
     assert.equal(replay.ok && replay.value.applied, false);
     assert.equal(ops.readOps().devices.find((item) => item.id === "dev_queue_light")?.state?.on, true);
   });
+
+  it("expires a queued command outside the replay window", async () => {
+    const { createHash } = await import("crypto");
+    const ops = await import("../../web/src/server/ops-store");
+    const queue = await import("../../web/src/server/gateway-queue");
+    const channel = await import("../../web/src/server/gateway-channel");
+    const token = "c".repeat(48);
+    const file = ops.readOps();
+    file.gateways.push({
+      id: "gw_expire",
+      companyId: "cmp_star",
+      objectId: "obj_siyanie",
+      unitId: null,
+      name: "Окно",
+      adapter: "wirenboard",
+      status: "ONLINE",
+      version: null,
+      lastSeen: null,
+      lastError: null,
+      internalAddress: null,
+      tokenHash: createHash("sha256").update(token).digest("hex"),
+    });
+    file.devices.push({ ...light, id: "dev_expire_light", gatewayId: "gw_expire", state: { on: false } });
+    ops.writeOps(file);
+    const row = queue.enqueueGatewayCommand({ gatewayId: "gw_expire", deviceId: "dev_expire_light", command: "setPower", value: true });
+    const next = ops.readOps();
+    const queued = next.gatewayCommands.find((item) => item.id === row.id);
+    assert.ok(queued);
+    queued.createdAt = new Date(Date.now() - 16 * 60_000).toISOString();
+    queued.expiresAt = new Date(Date.now() - 60_000).toISOString();
+    ops.writeOps(next);
+    const pulled = channel.pullGateway(token);
+    assert.equal(pulled.ok, true);
+    if (pulled.ok) assert.equal(pulled.value.commands.some((item) => item.id === row.id), false);
+    const acked = channel.ackGateway(token, { commandId: row.id, confirmed: true, state: { on: true } });
+    assert.equal(acked.ok && acked.value.applied, false);
+    assert.equal(ops.readOps().devices.find((item) => item.id === "dev_expire_light")?.state?.on, false);
+  });
+
+  it("downsamples history instead of inventing points", async () => {
+    const ops = await import("../../web/src/server/ops-store");
+    const file = ops.readOps();
+    const now = new Date().toISOString();
+    ops.recordSmartHistory(file, { deviceId: "dev_series", objectId: "obj_siyanie", at: now, state: { temperatureC: 21 } });
+    ops.recordSmartHistory(file, { deviceId: "dev_series", objectId: "obj_siyanie", at: new Date(Date.now() + 30_000).toISOString(), state: { temperatureC: 22 } });
+    const points = file.smartHistory.filter((point) => point.deviceId === "dev_series");
+    assert.equal(points.length, 1);
+    assert.equal(points[0]?.state.temperatureC, 22);
+  });
 });
 
 describe("live sequence", () => {

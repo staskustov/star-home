@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { DeviceCommand } from "@/components/home/DeviceCommand";
 import { Icon } from "@/components/icons";
 import { requireRoom } from "@/server/access";
 
@@ -13,11 +14,11 @@ export default async function RoomPage({ params }: { params: Promise<{ id: strin
         <Link href="/rooms">Помещения</Link>
       </p>
       <h1 className="mt-2 text-[28px] tracking-[-0.035em] text-ink sm:text-[34px]">{room.name}</h1>
-      <ul className="panel mt-7 overflow-hidden">
-        {devices.length === 0 ? <li className="list-row text-[15px] text-muted">В этом помещении устройств нет.</li> : null}
+      <ul className="mt-7 space-y-4">
+        {devices.length === 0 ? <li className="panel list-row text-[15px] text-muted">В этом помещении устройств нет.</li> : null}
         {devices.map((device) => (
-          <li key={device.id} className="list-row">
-            <Link href={`/devices/${device.id}`} className="-my-1 flex min-w-0 flex-1 items-center gap-[14px] py-1">
+          <li key={device.id} className="panel px-5 py-5">
+            <Link href={`/devices/${device.id}`} className="flex min-w-0 items-center gap-[14px]">
               <span className="tile-icon">
                 <Icon name="devices" className="h-[18px] w-[18px]" />
               </span>
@@ -28,6 +29,16 @@ export default async function RoomPage({ params }: { params: Promise<{ id: strin
               <span className="text-[13px] text-muted">{device.stale ? "Нет связи" : stateLabel[device.availability] ?? device.availability}</span>
               <Icon name="chevron" className="h-4 w-4 shrink-0 text-muted" />
             </Link>
+            {device.canCommand && device.commands.length ? (
+              <div className="mt-4">
+                <DeviceCommand
+                  deviceId={device.id}
+                  commands={device.commands}
+                  canCommand={device.canCommand}
+                  state={device.state as { on?: boolean; brightness?: number; targetC?: number; position?: number; latch?: string }}
+                />
+              </div>
+            ) : null}
           </li>
         ))}
       </ul>

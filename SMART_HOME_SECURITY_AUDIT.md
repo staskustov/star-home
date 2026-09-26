@@ -14,7 +14,9 @@
 - HIGH: `access.gate.open` или `engineering.command` + confirm token + аудит `DEVICE_COMMAND`.
 - Нет capability → 400.
 - OFFLINE не-local шлюз → не success.
-- Лимит 20 команд / мин на пользователя.
+- Лимит 20 команд / 60 с на пользователя и 10 / 60 с на устройство.
+- Очередь шлюза: окно 15 мин, EXPIRED ack не применяет state.
+- `smartHomeCommandLog` / `setDeviceFavorite` чужой компании → 404.
 
 ## AI
 

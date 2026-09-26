@@ -12,6 +12,16 @@ const cloud = (process.env.STAR_HOME_CLOUD_URL ?? "http://127.0.0.1:3456").repla
 const token = process.env.STAR_HOME_GATEWAY_TOKEN ?? "";
 const intervalMs = Number(process.env.STAR_HOME_GATEWAY_INTERVAL_MS ?? 20_000);
 
+function assertCloudUrl(url: string) {
+  const parsed = new URL(url);
+  const local = parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost";
+  if (parsed.protocol !== "https:" && !local) {
+    throw new Error("STAR_HOME_CLOUD_URL must use https unless the host is localhost");
+  }
+}
+
+assertCloudUrl(cloud);
+
 async function call(kind: string, extra: Record<string, unknown> = {}) {
   if (!token) throw new Error("STAR_HOME_GATEWAY_TOKEN is required");
   const response = await fetch(`${cloud}/api/smart-home/gateways/channel`, {

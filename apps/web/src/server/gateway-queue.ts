@@ -1,4 +1,16 @@
-import { findDevice, findGateway, newId, readOps, writeOps, type GatewayCommand, type NormalizedState } from "@/server/ops-store";
+import {
+  commandExpired,
+  commandReplayMs,
+  expireGatewayCommands,
+  findDevice,
+  findGateway,
+  newId,
+  readOps,
+  recordSmartHistory,
+  writeOps,
+  type GatewayCommand,
+  type NormalizedState,
+} from "@/server/ops-store";
 
 type Failure = { ok: false; status: number; message: string };
 type Success<T> = { ok: true; value: T };
@@ -19,6 +31,7 @@ export function enqueueGatewayCommand(input: {
   if (existing) return existing;
   const device = findDevice(input.deviceId);
   const gateway = findGateway(input.gatewayId);
+  const createdAt = new Date().toISOString();
   const row: GatewayCommand = {
     id: newId("gcmd"),
     companyId: device?.companyId ?? gateway?.companyId ?? "",
@@ -28,7 +41,8 @@ export function enqueueGatewayCommand(input: {
     command: input.command,
     value: input.value,
     status: "PENDING",
-    createdAt: new Date().toISOString(),
+    createdAt,
+    expiresAt: new Date(Date.now() + commandReplayMs).toISOString(),
   };
   file.gatewayCommands.unshift(row);
   file.gatewayCommands = file.gatewayCommands.slice(0, queueKeep);
@@ -46,7 +60,10 @@ export function markGatewayCommand(commandId: string, status: "ACKED" | "FAILED"
 }
 
 export function pullGatewayCommands(gatewayId: string): GatewayCommand[] {
-  return readOps().gatewayCommands.filter((item) => item.gatewayId === gatewayId && item.status === "PENDING");
+  const file = readOps();
+  expireGatewayCommands(file);
+  writeOps(file);
+  return file.gatewayCommands.filter((item) => item.gatewayId === gatewayId && item.status === "PENDING");
 }
 
 export function ackGatewayCommand(
@@ -55,9 +72,14 @@ export function ackGatewayCommand(
 ): Result<{ commandId: string; applied: boolean }> {
   if (typeof input.commandId !== "string" || !input.commandId) return { ok: false, status: 400, message: "Команда не найдена" };
   const file = readOps();
+  expireGatewayCommands(file);
   const row = file.gatewayCommands.find((item) => item.id === input.commandId && item.gatewayId === gatewayId);
   if (!row) return { ok: false, status: 404, message: "Команда не найдена" };
-  if (row.status !== "PENDING") return { ok: true, value: { commandId: row.id, applied: false } };
+  if (row.status !== "PENDING" || commandExpired(row)) {
+    if (row.status === "PENDING") row.status = "EXPIRED";
+    writeOps(file);
+    return { ok: true, value: { commandId: row.id, applied: false } };
+  }
   const confirmed = input.confirmed === true;
   row.status = confirmed ? "ACKED" : "FAILED";
   row.ackedAt = new Date().toISOString();
@@ -69,8 +91,7 @@ export function ackGatewayCommand(
       if (next.latch) device.latch = next.latch;
       device.lastSeen = row.ackedAt;
       device.availability = "ONLINE";
-      file.smartHistory.push({ id: newId("hist"), deviceId: device.id, objectId: device.objectId, at: row.ackedAt, state: next });
-      file.smartHistory = file.smartHistory.slice(-400);
+      recordSmartHistory(file, { deviceId: device.id, objectId: device.objectId, at: row.ackedAt, state: next });
     }
   }
   writeOps(file);

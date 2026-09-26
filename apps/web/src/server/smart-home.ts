@@ -14,11 +14,14 @@ import {
   findGateway,
   newId,
   readOps,
+  recordSmartHistory,
   writeOps,
   type Device,
+  type DeviceCommandLog,
   type Gateway,
   type PendingSmartCommand,
   type SmartEvent,
+  type SmartEventSource,
   type SmartHistoryPoint,
 } from "@/server/ops-store";
 import { can, reaches, staffActor, type StaffActor } from "@/server/rbac/decide";
@@ -36,9 +39,8 @@ const staleAfterMs = 5 * 60_000;
 const confirmTtlMs = 5 * 60_000;
 const commandWindowMs = 60_000;
 const commandsPerWindow = 20;
+const commandsPerDevice = 10;
 const commandHits = new Map<string, { count: number; resetAt: number }>();
-const historyKeep = 400;
-const eventKeep = 200;
 
 function denied(status = 403): Failure {
   return { ok: false, status, message: status === 401 ? "Нужно войти" : "Нет доступа" };
@@ -71,15 +73,15 @@ export function viewerReaches(viewer: Viewer, row: { companyId: string; objectId
   return row.objectId === viewer.place.objectId && (row.unitId === viewer.place.unitId || row.unitId === null || row.unitId === undefined);
 }
 
-function rateOk(userId: string, now = Date.now()): boolean {
-  const current = commandHits.get(userId);
+function rateOk(key: string, limit = commandsPerWindow, now = Date.now()): boolean {
+  const current = commandHits.get(key);
   if (!current || current.resetAt <= now) {
     if (commandHits.size > 10_000) commandHits.clear();
-    commandHits.set(userId, { count: 1, resetAt: now + commandWindowMs });
+    commandHits.set(key, { count: 1, resetAt: now + commandWindowMs });
     return true;
   }
   current.count += 1;
-  return current.count <= commandsPerWindow;
+  return current.count <= limit;
 }
 
 function isStale(device: Device, gateway?: Gateway | null): boolean {
@@ -91,7 +93,7 @@ function isStale(device: Device, gateway?: Gateway | null): boolean {
   return !Number.isFinite(at) || Date.now() - at > staleAfterMs;
 }
 
-function knownState(state: Device["state"]): Device["state"] {
+function knownState(state: Device["state"]): NonNullable<Device["state"]> {
   if (!state) return {};
   const next: NonNullable<Device["state"]> = {};
   if (state.on !== undefined) next.on = state.on;
@@ -103,6 +105,8 @@ function knownState(state: Device["state"]): Device["state"] {
   if (state.position !== undefined) next.position = state.position;
   if (state.latch !== undefined) next.latch = state.latch;
   if (state.detected !== undefined) next.detected = state.detected;
+  if (state.watts !== undefined) next.watts = state.watts;
+  if (state.kwh !== undefined) next.kwh = state.kwh;
   return next;
 }
 
@@ -150,6 +154,8 @@ export type SmartDeviceCard = {
   planFloor?: number | null;
   planX?: number | null;
   planY?: number | null;
+  lastKnown?: boolean;
+  favorite?: boolean;
 };
 
 function asCard(device: Device, viewer: Viewer): SmartDeviceCard {
@@ -172,6 +178,8 @@ function asCard(device: Device, viewer: Viewer): SmartDeviceCard {
     planFloor: device.planFloor ?? null,
     planX: device.planX ?? null,
     planY: device.planY ?? null,
+    lastKnown: stale && Object.keys(knownState(device.state)).length > 0,
+    favorite: viewer.kind === "home" ? readOps().favorites.some((item) => item.userId === viewer.place.userId && item.deviceId === device.id) : false,
   };
   if (viewer.kind === "staff" && viewerCan(viewer, "engineering.view")) {
     card.technical = {
@@ -221,18 +229,42 @@ function rememberEvent(event: Omit<SmartEvent, "id" | "seq"> & { seq?: number })
   const file = readOps();
   file.liveSeq ??= {};
   const seq = event.seq ?? (file.liveSeq[event.objectId] ?? 0);
-  const row: SmartEvent = { ...event, id: newId("sevt"), seq };
+  const row: SmartEvent = {
+    ...event,
+    id: newId("sevt"),
+    seq,
+    atIso: event.atIso ?? new Date().toISOString(),
+    severity: event.severity ?? "INFO",
+    source: event.source ?? "SYSTEM",
+  };
   file.smartEvents.unshift(row);
-  file.smartEvents = file.smartEvents.slice(0, eventKeep);
   writeOps(file);
   return row;
 }
 
 function rememberHistory(point: Omit<SmartHistoryPoint, "id">): void {
   const file = readOps();
-  file.smartHistory.push({ ...point, id: newId("hist") });
-  file.smartHistory = file.smartHistory.slice(-historyKeep);
+  recordSmartHistory(file, point);
   writeOps(file);
+}
+
+function rememberCommandLog(row: Omit<DeviceCommandLog, "id" | "at">): void {
+  const file = readOps();
+  file.commandLogs.unshift({ ...row, id: newId("clog"), at: new Date().toISOString() });
+  file.commandLogs = file.commandLogs.slice(0, 400);
+  writeOps(file);
+}
+
+function commandSource(viewer: Viewer, source: unknown): DeviceCommandLog["source"] {
+  if (source === "scenario") return "SCENARIO";
+  if (source === "ai") return "AI";
+  return viewer.kind === "staff" ? "ADMIN" : "APP";
+}
+
+function eventSource(source: unknown): SmartEventSource {
+  if (source === "scenario") return "SCENARIO";
+  if (source === "ai") return "AI";
+  return "USER";
 }
 
 function takePending(userId: string, token: string): PendingSmartCommand | null {
@@ -375,7 +407,9 @@ export function smartHomeRoomDevices(session: SessionRef | null, roomId: unknown
   };
 }
 
-export function smartHomeEvents(session: SessionRef | null, objectId?: unknown): Result<{ events: { id: string; title: string; at: string; result: string; deviceId: string | null }[] }> {
+export function smartHomeEvents(session: SessionRef | null, objectId?: unknown): Result<{
+  events: { id: string; title: string; at: string; result: string; deviceId: string | null; severity: string; source: string }[];
+}> {
   const viewer = smartViewer(session);
   if (!viewer.ok) return viewer;
   const object = objectIdFor(viewer.value, objectId);
@@ -386,9 +420,59 @@ export function smartHomeEvents(session: SessionRef | null, objectId?: unknown):
       events: readOps()
         .smartEvents.filter((event) => event.objectId === object.value && viewerReaches(viewer.value, event))
         .slice(0, 50)
-        .map((event) => ({ id: event.id, title: event.title, at: event.at, result: event.result, deviceId: event.deviceId })),
+        .map((event) => ({
+          id: event.id,
+          title: event.title,
+          at: event.at,
+          result: event.result,
+          deviceId: event.deviceId,
+          severity: event.severity ?? "INFO",
+          source: event.source ?? "SYSTEM",
+        })),
     },
   };
+}
+
+export function smartHomeCommandLog(session: SessionRef | null, objectId?: unknown): Result<{
+  commands: { id: string; at: string; deviceId: string; command: string; result: string; source: string; risk: string }[];
+}> {
+  const viewer = smartViewer(session);
+  if (!viewer.ok) return viewer;
+  if (viewer.value.kind !== "staff" || !viewerCan(viewer.value, "devices.view")) return denied();
+  const object = objectIdFor(viewer.value, objectId);
+  if (!object.ok) return object;
+  return {
+    ok: true,
+    value: {
+      commands: readOps()
+        .commandLogs.filter((row) => row.objectId === object.value && viewerReaches(viewer.value, row))
+        .slice(0, 80)
+        .map((row) => ({
+          id: row.id,
+          at: row.at,
+          deviceId: row.deviceId,
+          command: row.command,
+          result: row.result,
+          source: row.source,
+          risk: row.risk,
+        })),
+    },
+  };
+}
+
+export function setDeviceFavorite(session: SessionRef | null, input: { deviceId?: unknown; favorite?: unknown }): Result<{ id: string; favorite: boolean }> {
+  const viewer = smartViewer(session);
+  if (!viewer.ok) return viewer;
+  const found = findScopedDevice(viewer.value, input.deviceId);
+  if (!found.ok) return found;
+  const home = viewer.value;
+  if (home.kind !== "home") return denied();
+  const favorite = input.favorite !== false;
+  const file = readOps();
+  file.favorites = file.favorites.filter((item) => !(item.userId === home.place.userId && item.deviceId === found.value.id));
+  if (favorite) file.favorites.unshift({ userId: home.place.userId, deviceId: found.value.id, at: new Date().toISOString() });
+  writeOps(file);
+  return { ok: true, value: { id: found.value.id, favorite } };
 }
 
 export function smartHomeHistory(session: SessionRef | null, deviceId: unknown, since?: unknown): Result<{ points: { at: string; state: Device["state"] }[] }> {
@@ -440,18 +524,51 @@ export async function commandDeviceSmart(session: SessionRef | null, input: Comm
   const found = findScopedDevice(viewer.value, deviceId);
   if (!found.ok) return found;
   const device = found.value;
+  const remote = device.gatewayId ? findGateway(device.gatewayId) : undefined;
+  if (remote && remote.adapter !== "local" && !rateOk(`device:${device.id}`, commandsPerDevice)) {
+    return { ok: false, status: 429, message: "Слишком много команд" };
+  }
   if (!isSmartCommand(command)) return { ok: false, status: 400, message: "Неизвестная команда" };
   if (!deviceCan(device, command)) return { ok: false, status: 400, message: "Команда недоступна для этого устройства" };
 
   const risk = commandRisk(command, device);
+  const source = commandSource(viewer.value, input.source);
   if (risk === "HIGH") {
-    if (!highAllowed(viewer.value, device)) return denied();
+    if (!highAllowed(viewer.value, device)) {
+      rememberCommandLog({
+        actorUserId: userId,
+        source,
+        companyId: device.companyId,
+        objectId: device.objectId,
+        unitId: device.unitId,
+        deviceId: device.id,
+        command,
+        value,
+        risk,
+        result: "DENIED",
+        reason: "Нет права",
+      });
+      return denied();
+    }
     if (typeof input.confirmToken !== "string" || !input.confirmToken) {
       const token = newId("sconfirm");
       storePending({ token, userId, deviceId: device.id, command, value, createdAt: new Date().toISOString() });
       return { ok: true, value: { confirmed: false, needsConfirm: true, token, message: "Подтвердите команду." } };
     }
   } else if (!viewerCan(viewer.value, "devices.command")) {
+    rememberCommandLog({
+      actorUserId: userId,
+      source,
+      companyId: device.companyId,
+      objectId: device.objectId,
+      unitId: device.unitId,
+      deviceId: device.id,
+      command,
+      value,
+      risk,
+      result: "DENIED",
+      reason: "Нет права",
+    });
     return denied();
   }
 
@@ -508,13 +625,29 @@ export async function commandDeviceSmart(session: SessionRef | null, input: Comm
     companyId: device.companyId,
     objectId: device.objectId,
     unitId: device.unitId,
+    roomId: device.roomId ?? null,
     deviceId: device.id,
     gatewayId: device.gatewayId ?? null,
     kind: "command",
     title: result.confirmed ? `${device.name}: ${command}` : `${device.name}: не подтверждено`,
     result: result.confirmed ? "SUCCESS" : "UNCONFIRMED",
     at: clock(),
+    severity: result.confirmed ? "INFO" : "WARNING",
+    source: eventSource(input.source),
     seq: live.seq,
+  });
+  rememberCommandLog({
+    actorUserId: userId,
+    source,
+    companyId: device.companyId,
+    objectId: device.objectId,
+    unitId: device.unitId,
+    deviceId: device.id,
+    command,
+    value,
+    risk,
+    result: result.confirmed ? "SUCCESS" : "UNCONFIRMED",
+    reason: result.confirmed ? undefined : result.error ?? "Нет подтверждения адаптера",
   });
   if (result.confirmed && result.state) {
     rememberHistory({ deviceId: device.id, objectId: device.objectId, at: now, state: result.state });

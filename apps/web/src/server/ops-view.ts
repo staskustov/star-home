@@ -44,7 +44,7 @@ export function residentNotices(userId: string) {
   return readOps()
     .notices.filter((notice) => notice.userId === userId)
     .slice(0, 5)
-    .map((notice) => ({ id: notice.id, title: notice.title, body: notice.body, at: notice.at }));
+    .map((notice) => ({ id: notice.id, title: notice.title, body: notice.body, at: notice.at, severity: notice.severity ?? "INFO" }));
 }
 
 export const deskSections = {
@@ -147,7 +147,46 @@ export function deskFor(actor: StaffActor, section: DeskSection) {
       })),
       events: mine(file.smartEvents)
         .slice(0, 12)
-        .map((event) => ({ id: event.id, objectId: event.objectId, title: event.title, at: event.at, result: event.result })),
+        .map((event) => ({
+          id: event.id,
+          objectId: event.objectId,
+          title: event.title,
+          at: event.at,
+          result: event.result,
+          severity: event.severity ?? "INFO",
+          source: event.source ?? "SYSTEM",
+        })),
+      commandLogs: mine(file.commandLogs ?? [])
+        .slice(0, 20)
+        .map((row) => ({
+          id: row.id,
+          objectId: row.objectId,
+          at: row.at,
+          deviceId: row.deviceId,
+          command: row.command,
+          result: row.result,
+          source: row.source,
+          risk: row.risk,
+        })),
+      plans: [...new Set(mine(file.devices).map((device) => device.unitId).filter((id): id is string => Boolean(id)))].flatMap((unitId) => {
+        const unit = findUnit(unitId);
+        if (!unit?.plans?.length) return [];
+        const pins = mine(file.devices).filter((device) => device.unitId === unitId && device.planX != null && device.planY != null);
+        return [
+          {
+            unitId,
+            unitName: unit.name,
+            objectId: unit.objectId,
+            floors: unit.plans.map((plan) => ({
+              floor: plan.floor,
+              image: plan.image,
+              pins: pins
+                .filter((device) => device.planFloor === plan.floor)
+                .map((device) => ({ deviceId: device.id, name: device.name, x: device.planX as number, y: device.planY as number })),
+            })),
+          },
+        ];
+      }),
       rooms: [...new Set(mine(file.devices).map((device) => device.objectId))].flatMap((objectId) =>
         unitIdsOf(objectId).flatMap((unitId) =>
           roomsOf(unitId).map((room) => ({ id: room.id, objectId: room.objectId, name: room.name })),
