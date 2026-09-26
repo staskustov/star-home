@@ -33,12 +33,12 @@ export function SecuritySosWatch() {
     };
   }, []);
 
-  async function accept(id: string) {
+  async function act(id: string, step: "ACCEPT" | "CLOSE") {
     await runCommand(() =>
       fetch(`/api/security/alarms/${encodeURIComponent(id)}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ step: "ACCEPT" }),
+        body: JSON.stringify({ step }),
       }),
     );
     const response = await fetch("/api/security/alerts", { cache: "no-store" });
@@ -47,5 +47,5 @@ export function SecuritySosWatch() {
   }
 
   if (!view) return null;
-  return <SecuritySosOverlay view={view} onAccept={(id) => void accept(id)} />;
+  return <SecuritySosOverlay view={view} onAccept={(id) => void act(id, "ACCEPT")} onClose={(id) => void act(id, "CLOSE")} />;
 }

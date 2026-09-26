@@ -1,12 +1,14 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useAdminPreview } from "@/components/admin/AdminPreview";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { ViewToggle, useViewMode } from "@/components/ui/ViewToggle";
-import { FloorPlan } from "@/components/home/FloorPlan";
 import { commandMessage, runCommand } from "@/lib/command";
+
+const FloorPlan = dynamic(() => import("@/components/home/FloorPlan").then((mod) => ({ default: mod.FloorPlan })), { ssr: false });
 import { formatMoney } from "@/lib/format";
 import type { AccessEvent } from "@/types/domain";
 
@@ -56,7 +58,8 @@ export function AccessDesk({
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const guests = useObjectRows(passes);
   const history = useObjectRows(events);
-  const rows = useObjectRows(points);
+  const [localPoints, setLocalPoints] = useState<AccessPointRow[] | null>(null);
+  const rows = useObjectRows(localPoints ?? points);
 
   async function openGate() {
     if (!selected) return;
@@ -74,8 +77,15 @@ export function AccessDesk({
 
   async function commandPoint(pointId: string, action: "open" | "close") {
     if (!selected) return;
+    const open = action === "open";
+    const previous = localPoints ?? points;
+    setLocalPoints(
+      previous.map((point) =>
+        point.id === pointId ? { ...point, latch: open ? "OPEN" : "CLOSED", status: open ? "Открыто" : "Закрыто" } : point,
+      ),
+    );
     setNotice(null);
-    const url = action === "open" ? "/api/security/points" : `/api/access/object-points/${pointId}/close`;
+    const url = open ? "/api/security/points" : `/api/access/object-points/${pointId}/close`;
     const result = await runCommand(() =>
       fetch(url, {
         method: "POST",
@@ -83,8 +93,8 @@ export function AccessDesk({
         body: JSON.stringify({ objectId: selected.id, pointId }),
       }),
     );
+    if (!result.ok || result.payload?.confirmed !== true) setLocalPoints(previous);
     setNotice(commandMessage(result.payload));
-    if (result.ok) router.refresh();
   }
 
   async function addPoint(event: React.FormEvent<HTMLFormElement>) {
@@ -194,10 +204,10 @@ export function AccessDesk({
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 {can("access.gate.open") ? (
                   <>
-                    <button type="button" className="btn btn-primary btn-compact" onClick={() => commandPoint(point.id, "open")} disabled={point.work !== "ON"}>
+                    <button type="button" className="btn btn-primary btn-compact" onClick={() => commandPoint(point.id, "open")} disabled={point.work !== "ON" || point.latch === "OPEN"}>
                       Открыть
                     </button>
-                    <button type="button" className="btn btn-secondary btn-compact" onClick={() => commandPoint(point.id, "close")} disabled={point.work !== "ON"}>
+                    <button type="button" className="btn btn-secondary btn-compact" onClick={() => commandPoint(point.id, "close")} disabled={point.work !== "ON" || point.latch === "CLOSED"}>
                       Закрыть
                     </button>
                   </>

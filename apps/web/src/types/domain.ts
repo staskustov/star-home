@@ -134,12 +134,27 @@ export type ResidentHome = {
   categories: string[];
   rooms: { id?: string; name: string }[];
   cameras: { name: string; state: string }[];
-  devices: { id?: string; name: string; label: string; state: "ON" | "OFF" | "FAULT"; stale?: boolean; roomId?: string | null; roomName?: string | null; favorite?: boolean }[];
+  devices: {
+    id?: string;
+    name: string;
+    label: string;
+    kind?: string;
+    state: "ON" | "OFF" | "FAULT";
+    power?: boolean;
+    latch?: "OPEN" | "CLOSED";
+    commands?: string[];
+    stale?: boolean;
+    roomId?: string | null;
+    roomName?: string | null;
+    favorite?: boolean;
+  }[];
   serviceCategories: string[];
   aiPrompt: string;
   meters: { name: string; value: string; unit: string }[];
   securityPhone?: string | null;
   canSecurity?: boolean;
+  canGate?: boolean;
+  canCommand?: boolean;
   facts?: {
     lights: { on: number; total: number } | null;
     doors: { open: string[] } | null;

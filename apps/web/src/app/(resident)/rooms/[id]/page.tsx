@@ -36,6 +36,7 @@ export default async function RoomPage({ params }: { params: Promise<{ id: strin
                   commands={device.commands}
                   canCommand={device.canCommand}
                   state={device.state as { on?: boolean; brightness?: number; targetC?: number; position?: number; latch?: string }}
+                  stale={device.stale}
                 />
               </div>
             ) : null}

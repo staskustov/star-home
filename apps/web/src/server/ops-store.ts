@@ -863,7 +863,20 @@ export function homeSignals(unitId: string, objectId: string): {
   payments: { title: string; amount: number; currency: string }[];
   categories: string[];
   cameras: { name: string; state: string }[];
-  devices: { id: string; name: string; label: string; state: "ON" | "OFF" | "FAULT"; stale?: boolean; roomId?: string | null; roomName?: string | null; favorite?: boolean }[];
+  devices: {
+    id: string;
+    name: string;
+    label: string;
+    kind: string;
+    state: "ON" | "OFF" | "FAULT";
+    power?: boolean;
+    latch?: "OPEN" | "CLOSED";
+    commands: string[];
+    stale?: boolean;
+    roomId?: string | null;
+    roomName?: string | null;
+    favorite?: boolean;
+  }[];
   facts: {
     lights: { on: number; total: number } | null;
     doors: { open: string[] } | null;
@@ -917,15 +930,26 @@ export function homeSignals(unitId: string, objectId: string): {
       .map((device) => ({ name: device.name, state: device.work === "OFF" ? "Отключено" : device.work === "FAULT" ? "Неисправно" : "На связи" })),
     devices: file.devices
       .filter((device) => device.objectId === objectId && (device.unitId === unitId || device.unitId === null))
-      .map((device) => ({
-        id: device.id,
-        name: device.name,
-        label: deviceLabel(device.kind),
-        state: device.work === "OFF" ? "OFF" : device.work === "FAULT" ? "FAULT" : "ON",
-        stale: device.availability === "OFFLINE",
-        roomId: device.roomId ?? null,
-        roomName: device.roomId ? findRoom(device.roomId)?.name ?? null : null,
-      })),
+      .map((device) => {
+        const opener = isOpener(device.kind);
+        const caps = device.capabilities ?? [];
+        return {
+          id: device.id,
+          name: device.name,
+          label: deviceLabel(device.kind),
+          kind: device.kind,
+          state: device.work === "OFF" ? "OFF" : device.work === "FAULT" ? "FAULT" : "ON",
+          power: device.state?.on,
+          latch: opener ? ((device.state?.latch ?? device.latch) === "OPEN" ? "OPEN" : "CLOSED") : undefined,
+          commands: [
+            ...(caps.includes("power") ? (["setPower"] as const) : []),
+            ...(opener || caps.includes("latch") ? (["open", "close"] as const) : []),
+          ],
+          stale: device.availability === "OFFLINE",
+          roomId: device.roomId ?? null,
+          roomName: device.roomId ? findRoom(device.roomId)?.name ?? null : null,
+        };
+      }),
     facts: homeFacts(
       file.devices.filter((device) => device.objectId === objectId && (device.unitId === unitId || device.unitId === null)),
     ),

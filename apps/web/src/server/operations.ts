@@ -41,7 +41,10 @@ async function commandDevice(place: Place, device: Device | null, command: "OPEN
   const file = readOps();
   if (result.confirmed && device) {
     const current = file.devices.find((item) => item.id === device.id);
-    if (current) current.latch = opening ? "OPEN" : "CLOSED";
+    if (current) {
+      current.latch = opening ? "OPEN" : "CLOSED";
+      current.state = { ...current.state, latch: current.latch };
+    }
   }
   file.events.unshift({
     id: newId("evt"),
@@ -91,6 +94,10 @@ export async function openGate(place: Place): Promise<{ confirmed: boolean; mess
 
 export async function openAccessPoint(place: Place, pointId: string): Promise<{ confirmed: boolean; message: string }> {
   return openDevice(place, accessPoint(place.objectId, place.unitId, pointId));
+}
+
+export async function closeAccessPoint(place: Place, pointId: string): Promise<{ confirmed: boolean; message: string }> {
+  return closeDevice(place, accessPoint(place.objectId, place.unitId, pointId));
 }
 
 export function createPass(place: Place, guestName: string, detail: string, vehicle = ""): Pass {
@@ -335,6 +342,13 @@ export async function openPointFor(session: SessionRef | null, pointId: unknown)
   if (!place.ok) return place;
   if (typeof pointId !== "string" || !pointId) return { ok: false as const, status: 400, message: "Точка доступа не найдена" };
   return { ok: true as const, value: await openAccessPoint(place.value, pointId) };
+}
+
+export async function closePointFor(session: SessionRef | null, pointId: unknown) {
+  const place = placeFromSession(session, "access.gate.open");
+  if (!place.ok) return place;
+  if (typeof pointId !== "string" || !pointId) return { ok: false as const, status: 400, message: "Точка доступа не найдена" };
+  return { ok: true as const, value: await closeAccessPoint(place.value, pointId) };
 }
 
 export async function addPassFor(session: SessionRef | null, guestName: unknown, detail: unknown, vehicle?: unknown) {

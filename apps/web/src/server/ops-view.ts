@@ -27,7 +27,18 @@ export function residentAccess(unitId: string, objectId: string) {
     points: file.devices
       .filter((device) => device.objectId === objectId && (device.unitId === unitId || device.unitId === null))
       .filter((device) => isOpener(device.kind))
-      .map((device) => ({ id: device.id, name: device.name, kind: deviceLabel(device.kind) })),
+      .map((device) => {
+        const latch = (device.state?.latch ?? device.latch) === "OPEN" ? "OPEN" : "CLOSED";
+        const ready = device.work === "ON";
+        return {
+          id: device.id,
+          name: device.name,
+          kind: deviceLabel(device.kind),
+          latch: latch as "OPEN" | "CLOSED",
+          status: device.work === "FAULT" ? "Неисправно" : device.work === "OFF" ? "Отключено" : latch === "OPEN" ? "Открыто" : "Закрыто",
+          ready,
+        };
+      }),
     events: file.events
       .filter((event) => event.objectId === objectId && (event.unitId === unitId || !event.unitId))
       .map((event) => ({ id: event.id, time: event.time, title: event.title, result: event.result })),

@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { redirect } from "next/navigation";
 import type { DeskSection } from "@/server/ops-view";
 import type { Permission } from "@/server/rbac/permissions";
@@ -26,7 +27,7 @@ type AccessBody = {
   place: string;
   canCreate: boolean;
   passes: { id: string; guestName: string; detail: string; vehicle?: string; code?: string }[];
-  points: { id: string; name: string; kind: string }[];
+  points: { id: string; name: string; kind: string; latch?: "OPEN" | "CLOSED"; status?: string; ready?: boolean }[];
   events: AccessEvent[];
   redirect?: string;
 };
@@ -38,11 +39,11 @@ async function go(result: { status: number; body: { redirect?: string } }, fallb
   redirect(fallback);
 }
 
-export async function requireHome(): Promise<ResidentHome> {
+export const requireHome = cache(async (): Promise<ResidentHome> => {
   const result = await rpc<HomeBody>("home");
   if (result.status === 401 || result.body.redirect || !result.body.home) await go(result);
   return result.body.home as ResidentHome;
-}
+});
 
 export async function requirePlaces(): Promise<{ name: string; places: { membershipId: string; title: string; meta: string }[] }> {
   const result = await rpc<PlacesBody>("places");
@@ -50,13 +51,13 @@ export async function requirePlaces(): Promise<{ name: string; places: { members
   return { name: result.body.name as string, places: result.body.places as { membershipId: string; title: string; meta: string }[] };
 }
 
-export async function requireAdminContext(): Promise<{
+export const requireAdminContext = cache(async (): Promise<{
   companyName: string;
   actorLabel: string;
   objects: AdminObjectSnapshot[];
   sections: NavGroup[];
   permissions: Permission[];
-}> {
+}> => {
   const result = await rpc<AdminBody>("admin");
   if (result.status === 401 || result.body.redirect || !result.body.objects) await go(result, "/home");
   return {
@@ -66,7 +67,7 @@ export async function requireAdminContext(): Promise<{
     sections: result.body.sections ?? [],
     permissions: result.body.permissions ?? [],
   };
-}
+});
 
 export async function requireDashboard(): Promise<DashboardView> {
   const result = await rpc<DashboardView>("dashboard");

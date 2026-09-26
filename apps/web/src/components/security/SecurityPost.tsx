@@ -130,25 +130,33 @@ function Alarms({ view, onDone }: { view: SecurityPostView; onDone: () => void }
   );
 }
 
-function Points({ view, onDone }: { view: SecurityPostView; onDone: () => void }) {
-  const [busy, setBusy] = useState<string | null>(null);
+function Points({ view }: { view: SecurityPostView }) {
   const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(null);
+  const [rows, setRows] = useState(view.points);
 
-  async function open(id: string) {
-    setBusy(id);
+  useEffect(() => {
+    setRows(view.points);
+  }, [view.points]);
+
+  async function command(id: string, open: boolean) {
+    const previous = rows;
+    setRows((current) =>
+      current.map((point) =>
+        point.id === id ? { ...point, latch: open ? "OPEN" : "CLOSED", state: open ? "Открыто" : "Закрыто" } : point,
+      ),
+    );
     setNotice(null);
-    const result = await post("/api/security/points", { objectId: view.objectId, pointId: id });
-    setBusy(null);
+    const result = await post(open ? "/api/security/points" : `/api/access/object-points/${id}/close`, { objectId: view.objectId, pointId: id });
     const confirmed = result.ok && result.payload?.confirmed === true;
+    if (!confirmed) setRows(previous);
     setNotice({ text: commandMessage(result.payload), ok: confirmed });
-    onDone();
   }
 
   return (
     <Panel title="Точки доступа">
-      {view.points.length === 0 ? <Empty>Общих ворот и калиток не подключено.</Empty> : null}
+      {rows.length === 0 ? <Empty>Общих ворот и калиток не подключено.</Empty> : null}
       <ul className="grid gap-2">
-        {view.points.map((point) => (
+        {rows.map((point) => (
           <li key={point.id} className="flex items-center justify-between gap-3 rounded-2xl bg-surface-muted/30 px-4 py-3">
             <div className="min-w-0">
               <p className="truncate text-[16px] text-ink">{point.name}</p>
@@ -157,9 +165,14 @@ function Points({ view, onDone }: { view: SecurityPostView; onDone: () => void }
               </p>
             </div>
             {view.can.open ? (
-              <button type="button" disabled={!point.ready || busy === point.id} onClick={() => void open(point.id)} className="btn btn-primary btn-compact disabled:opacity-50">
-                {busy === point.id ? "Открываем…" : "Открыть"}
-              </button>
+              <div className="flex gap-2">
+                <button type="button" disabled={!point.ready || point.latch === "OPEN"} onClick={() => void command(point.id, true)} className="btn btn-primary btn-compact disabled:opacity-50">
+                  Открыть
+                </button>
+                <button type="button" disabled={!point.ready || point.latch === "CLOSED"} onClick={() => void command(point.id, false)} className="btn btn-secondary btn-compact disabled:opacity-50">
+                  Закрыть
+                </button>
+              </div>
             ) : null}
           </li>
         ))}
@@ -432,7 +445,7 @@ export function SecurityPost({ view }: { view: SecurityPostView }) {
           {view.can.passes ? <Timeline view={view} /> : null}
         </div>
         <div className="grid content-start gap-5">
-          <Points view={view} onDone={refresh} />
+          <Points view={view} />
           {view.can.passes ? <PassCheckForm view={view} /> : null}
           {view.can.passes ? <Guests view={view} /> : null}
           {view.can.journal ? <Journal view={view} /> : null}

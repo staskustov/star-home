@@ -36,6 +36,13 @@ export function workState(device: Device): { state: string; ready: boolean } {
   return { state: "В работе", ready: true };
 }
 
+export function pointState(device: Device): { state: string; ready: boolean; latch: "OPEN" | "CLOSED" } {
+  const latch = (device.state?.latch ?? device.latch) === "OPEN" ? "OPEN" : "CLOSED";
+  if (device.work === "FAULT") return { state: "Неисправно", ready: false, latch };
+  if (device.work === "OFF") return { state: "Отключено", ready: false, latch };
+  return { state: latch === "OPEN" ? "Открыто" : "Закрыто", ready: true, latch };
+}
+
 function handler(userId: string | undefined): string | null {
   return userId ? (findUserById(userId)?.name ?? "Сотрудник") : null;
 }
@@ -99,7 +106,7 @@ export function securityPost(actor: StaffActor, objectId: unknown): Success<Secu
       chats: securityChatsFor(actor, object.value.id),
       points: devices
         .filter((device) => isOpener(device.kind) && device.unitId === null)
-        .map((device) => ({ id: device.id, name: device.name, kind: deviceLabel(device.kind), ...workState(device) })),
+        .map((device) => ({ id: device.id, name: device.name, kind: deviceLabel(device.kind), ...pointState(device) })),
       cameras: can(actor, "security.camera.view") ? cameraRows(actor, object.value.id) : [],
       passes: can(actor, "access.view")
         ? here(file.passes).map((pass) => ({ id: pass.id, guestName: pass.guestName, place: placeName(pass.unitId), detail: pass.detail, vehicle: pass.vehicle || "" }))

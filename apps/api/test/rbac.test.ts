@@ -302,6 +302,18 @@ describe("smart home commands", () => {
     assert.equal((opened.body as { confirmed: boolean }).confirmed, true);
   });
 
+  it("opens and closes a gate for a resident without a second confirm", async () => {
+    const closed = await rpc("closePoint", { pointId: "dev_gate_siyanie" }, resident);
+    assert.equal(closed.status, 200);
+    assert.equal((closed.body as { confirmed: boolean }).confirmed, true);
+    const access = (await rpc("access", null, resident)).body as { points: { id: string; status: string; latch: string }[] };
+    assert.equal(access.points.find((point) => point.id === "dev_gate_siyanie")?.status, "Закрыто");
+    const opened = await rpc("openPoint", { pointId: "dev_gate_siyanie" }, resident);
+    assert.equal(opened.status, 200);
+    const after = (await rpc("access", null, resident)).body as { points: { id: string; status: string }[] };
+    assert.equal(after.points.find((point) => point.id === "dev_gate_siyanie")?.status, "Открыто");
+  });
+
   it("rejects an unknown capability and a neighbour device", async () => {
     assert.equal((await rpc("commandDeviceSmart", { deviceId: "dev_light_24", command: "setTemperature", value: 21 }, resident)).status, 400);
     const people = await import("../../web/src/server/people-store");

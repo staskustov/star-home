@@ -19,6 +19,8 @@ type Embedded = {
   pending: Promise<unknown>[];
   queue: Promise<unknown>;
   tx: Prisma.TransactionClient | null;
+  writing: boolean;
+  syncedAt: number;
 };
 
 const storeLock = 4210;
@@ -49,6 +51,8 @@ function embedded(): Embedded {
     pending: [],
     queue: Promise.resolve(),
     tx: null,
+    writing: false,
+    syncedAt: 0,
   };
   const db = () => runtime.tx ?? runtime.prisma;
 
@@ -123,13 +127,24 @@ function embedded(): Embedded {
   return runtime;
 }
 
-async function catchUp(runtime: Embedded, tx: Prisma.TransactionClient): Promise<void> {
+async function catchUp(runtime: Embedded, tx: Prisma.TransactionClient | PrismaClient): Promise<void> {
   const versions = await tx.snapshot.findMany({ select: { id: true, version: true } });
   const stale = versions.filter((row) => runtime.memory.get(row.id)?.version !== row.version).map((row) => row.id);
   if (stale.length === 0) return;
   const rows = await tx.snapshot.findMany({ where: { id: { in: stale } } });
   for (const row of rows) runtime.memory.set(row.id, { body: row.body, version: row.version });
   forgetStores(stale);
+}
+
+async function syncMemory(runtime: Embedded): Promise<void> {
+  const now = Date.now();
+  if (runtime.syncedAt && now - runtime.syncedAt < 1_500 && storeNames.every((name) => runtime.memory.has(name))) return;
+  await catchUp(runtime, runtime.prisma);
+  runtime.syncedAt = Date.now();
+}
+
+function isolate(body: unknown): unknown {
+  return body == null ? null : JSON.parse(JSON.stringify(body));
 }
 
 async function writeDirty(runtime: Embedded, tx: Prisma.TransactionClient): Promise<string[]> {
@@ -182,8 +197,10 @@ async function execute(
       },
       { maxWait: 20_000, timeout: 60_000 },
     );
+    runtime.syncedAt = Date.now();
   } catch (error) {
     runtime.memory.clear();
+    runtime.syncedAt = 0;
     forgetStores(storeNames);
     throw error;
   } finally {
@@ -199,7 +216,27 @@ async function execute(
       if (saved.length) await projectLatest(runtime.prisma, saved);
     });
   }
-  return { status: reply.status, body: JSON.parse(JSON.stringify(reply.body ?? null)) };
+  return { status: reply.status, body: isolate(reply.body ?? null) };
+}
+
+async function executeRead(
+  runtime: Embedded,
+  method: string,
+  input: unknown,
+  session: SessionRef | null,
+  client?: ClientInfo,
+): Promise<{ status: number; body: unknown }> {
+  await syncMemory(runtime);
+  const dirtyBefore = runtime.dirty.size;
+  const { handleRpc } = await import("@/server/rpc-handlers");
+  const reply = await handleRpc(method, input, session, client);
+  if (runtime.dirty.size === dirtyBefore) return { status: reply.status, body: isolate(reply.body ?? null) };
+  runtime.writing = true;
+  try {
+    return await execute(runtime, method, input, session, client);
+  } finally {
+    runtime.writing = false;
+  }
 }
 
 export function embeddedRpc(
@@ -209,7 +246,21 @@ export function embeddedRpc(
   client?: ClientInfo,
 ): Promise<{ status: number; body: unknown }> {
   const runtime = embedded();
-  const run = runtime.queue.then(() => execute(runtime, method, input, session, client));
-  runtime.queue = run.catch(() => undefined);
-  return run;
+  const write = () => {
+    const run = runtime.queue.then(async () => {
+      runtime.writing = true;
+      try {
+        return await execute(runtime, method, input, session, client);
+      } finally {
+        runtime.writing = false;
+      }
+    });
+    runtime.queue = run.catch(() => undefined);
+    return run;
+  };
+  return import("@/server/rpc-handlers").then(({ rpcReads }) => {
+    if (!rpcReads.has(method)) return write();
+    if (runtime.writing) return runtime.queue.then(() => executeRead(runtime, method, input, session, client));
+    return executeRead(runtime, method, input, session, client);
+  });
 }

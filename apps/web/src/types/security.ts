@@ -19,7 +19,7 @@ export type SecurityPostView = {
     callerName?: string | null;
   }[];
   chats?: { id: string; unitId: string; place: string; actorName: string; role: string; body: string; at: string; mine: boolean }[];
-  points: { id: string; name: string; kind: string; state: string; ready: boolean }[];
+  points: { id: string; name: string; kind: string; state: string; ready: boolean; latch?: "OPEN" | "CLOSED" }[];
   cameras: SecurityCamera[];
   passes: { id: string; guestName: string; place: string; detail: string; vehicle: string }[];
   events: { id: string; time: string; title: string; result: "SUCCESS" | "UNCONFIRMED" }[];

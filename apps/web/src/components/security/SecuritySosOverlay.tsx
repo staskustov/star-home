@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { SecurityPostView } from "@/types/security";
 
 function isSos(alarm: SecurityPostView["alarms"][number]): boolean {
@@ -22,9 +22,11 @@ function beep(context: AudioContext) {
 export function SecuritySosOverlay({
   view,
   onAccept,
+  onClose,
 }: {
   view: Pick<SecurityPostView, "alarms" | "objectName" | "can">;
   onAccept: (id: string) => void;
+  onClose: (id: string) => void;
 }) {
   const alarms = view.alarms ?? [];
   const open = alarms.filter((alarm) => isSos(alarm) && alarm.status === "OPEN");
@@ -32,6 +34,7 @@ export function SecuritySosOverlay({
   const shown = open.length ? open : accepted.slice(0, 1);
   const flashing = open.length > 0;
   const audio = useRef<AudioContext | null>(null);
+  const [confirmClose, setConfirmClose] = useState<string | null>(null);
 
   useEffect(() => {
     if (!flashing) {
@@ -54,8 +57,13 @@ export function SecuritySosOverlay({
     };
   }, [flashing]);
 
+  useEffect(() => {
+    setConfirmClose(null);
+  }, [shown[0]?.id]);
+
   if (!shown.length) return null;
   const alarm = shown[0];
+  const closing = confirmClose === alarm.id;
 
   return (
     <div className={`fixed inset-0 z-[80] flex items-center justify-center p-5 ${flashing ? "animate-pulse bg-danger/70" : "bg-ink/70"}`}>
@@ -74,13 +82,45 @@ export function SecuritySosOverlay({
           {view.objectName} · {alarm.place}
         </p>
         <p className="mt-4 text-[14px] text-muted">{alarm.at}</p>
-        {view.can.handle && alarm.status === "OPEN" ? (
-          <button type="button" className="btn btn-primary mt-6" onClick={() => onAccept(alarm.id)}>
-            Принять вызов
-          </button>
+        {view.can.handle ? (
+          <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
+            {alarm.status === "OPEN" ? (
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  setConfirmClose(null);
+                  onAccept(alarm.id);
+                }}
+              >
+                Принять вызов
+              </button>
+            ) : (
+              <p className="self-center text-[14px] text-warning">Вызов принят</p>
+            )}
+            <button
+              type="button"
+              className={closing ? "btn btn-danger" : "btn btn-secondary"}
+              onClick={() => {
+                if (closing) {
+                  onClose(alarm.id);
+                  setConfirmClose(null);
+                  return;
+                }
+                setConfirmClose(alarm.id);
+              }}
+            >
+              {closing ? "Подтвердить закрытие" : "Закрыть SOS"}
+            </button>
+          </div>
         ) : (
-          <p className="mt-6 text-[14px] text-warning">Принято · окно закроется после закрытия тревоги</p>
+          <p className="mt-6 text-[14px] text-muted">Ожидает ответа поста охраны</p>
         )}
+        {closing ? (
+          <p role="status" className="mt-3 text-[13px] text-danger">
+            Нажмите ещё раз, чтобы снять вызов.
+          </p>
+        ) : null}
       </div>
     </div>
   );

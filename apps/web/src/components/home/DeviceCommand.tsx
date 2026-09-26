@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { commandMessage, runCommand } from "@/lib/command";
+import { deviceStatus, statusClass, statusDot } from "@/lib/device-status";
 import type { SmartCommandName } from "@/server/smart-commands";
 
 export function DeviceCommand({
@@ -10,28 +10,49 @@ export function DeviceCommand({
   commands,
   canCommand,
   state,
+  work,
+  stale,
 }: {
   deviceId: string;
   commands: SmartCommandName[];
   canCommand: boolean;
   state?: { on?: boolean; brightness?: number; targetC?: number; position?: number; latch?: string };
+  work?: "ON" | "OFF" | "FAULT";
+  stale?: boolean;
 }) {
-  const router = useRouter();
   const [notice, setNotice] = useState<string | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [pending, setPending] = useState<{ command: SmartCommandName; value?: unknown } | null>(null);
+  const [power, setPower] = useState(state?.on);
+  const [latch, setLatch] = useState<"OPEN" | "CLOSED" | undefined>(state?.latch === "OPEN" || state?.latch === "CLOSED" ? state.latch : undefined);
+  const status = deviceStatus({ stale, work, power: commands.includes("setPower") ? Boolean(power) : power, latch });
 
   async function send(command: SmartCommandName, value?: unknown, confirmToken?: string) {
     setNotice(null);
+    const previousPower = power;
+    const previousLatch = latch;
+    if (command === "setPower") setPower(Boolean(value));
+    if (command === "open") setLatch("OPEN");
+    if (command === "close") setLatch("CLOSED");
+
+    const opener = command === "open" || command === "close";
     const result = await runCommand(() =>
-      fetch(`/api/smart-home/devices/${deviceId}/command`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ command, value, confirmToken }),
-      }),
+      opener
+        ? fetch(command === "open" ? "/api/access/points" : `/api/access/points/${deviceId}/close`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ pointId: deviceId }),
+          })
+        : fetch(`/api/smart-home/devices/${deviceId}/command`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ command, value, confirmToken }),
+          }),
     );
     const payload = result.payload;
     if (payload?.needsConfirm && typeof payload.token === "string") {
+      setPower(previousPower);
+      setLatch(previousLatch);
       setToken(payload.token);
       setPending({ command, value });
       setNotice("Подтвердите команду.");
@@ -39,34 +60,45 @@ export function DeviceCommand({
     }
     setToken(null);
     setPending(null);
+    if (!result.ok || payload?.confirmed !== true) {
+      setPower(previousPower);
+      setLatch(previousLatch);
+      setNotice(commandMessage(payload));
+      return;
+    }
     setNotice(commandMessage(payload));
-    if (result.ok && payload?.confirmed) router.refresh();
   }
 
   if (!canCommand || commands.length === 0) {
-    return <p className="text-[14px] text-muted">Управление недоступно.</p>;
+    return (
+      <div className="space-y-3">
+        <StatusLine status={status} />
+        <p className="text-[14px] text-muted">Управление недоступно.</p>
+      </div>
+    );
   }
 
   return (
     <div className="space-y-3">
+      <StatusLine status={status} />
       <div className="flex flex-wrap gap-2">
         {commands.includes("setPower") ? (
           <>
-            <button type="button" className="btn btn-primary btn-compact" onClick={() => void send("setPower", true)}>
+            <button type="button" className="btn btn-primary btn-compact" disabled={power === true} onClick={() => void send("setPower", true)}>
               Включить
             </button>
-            <button type="button" className="btn btn-secondary btn-compact" onClick={() => void send("setPower", false)}>
+            <button type="button" className="btn btn-secondary btn-compact" disabled={power === false} onClick={() => void send("setPower", false)}>
               Выключить
             </button>
           </>
         ) : null}
         {commands.includes("open") ? (
-          <button type="button" className="btn btn-primary btn-compact" onClick={() => void send("open")}>
+          <button type="button" className="btn btn-primary btn-compact" disabled={latch === "OPEN"} onClick={() => void send("open")}>
             Открыть
           </button>
         ) : null}
         {commands.includes("close") ? (
-          <button type="button" className="btn btn-secondary btn-compact" onClick={() => void send("close")}>
+          <button type="button" className="btn btn-secondary btn-compact" disabled={latch === "CLOSED"} onClick={() => void send("close")}>
             Закрыть
           </button>
         ) : null}
@@ -130,5 +162,14 @@ export function DeviceCommand({
         </p>
       ) : null}
     </div>
+  );
+}
+
+function StatusLine({ status }: { status: { text: string; tone: "success" | "warning" | "danger" | "muted" } }) {
+  return (
+    <p className={`flex items-center gap-2 text-[15px] ${statusClass(status.tone)}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${statusDot(status.tone)}`} aria-hidden />
+      {status.text}
+    </p>
   );
 }

@@ -6,6 +6,8 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { commandMessage, runCommand, unconfirmed } from "@/lib/command";
 import type { AccessEvent } from "@/types/domain";
 
+type Point = { id: string; name: string; kind: string; latch?: "OPEN" | "CLOSED"; status?: string; ready?: boolean };
+
 export function AccessPanel({
   place,
   passes,
@@ -16,7 +18,7 @@ export function AccessPanel({
   place: string;
   canCreate?: boolean;
   passes: { id: string; guestName: string; detail: string; vehicle?: string; code?: string; qr?: string }[];
-  points?: { id: string; name: string; kind: string }[];
+  points?: Point[];
   events: AccessEvent[];
 }) {
   const router = useRouter();
@@ -24,6 +26,7 @@ export function AccessPanel({
   const [detail, setDetail] = useState("");
   const [vehicle, setVehicle] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
+  const [rows, setRows] = useState(points);
 
   async function add(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -46,37 +49,58 @@ export function AccessPanel({
     router.refresh();
   }
 
-  async function openPoint(pointId: string) {
+  async function commandPoint(pointId: string, open: boolean) {
+    const previous = rows;
+    setRows((current) =>
+      current.map((point) =>
+        point.id === pointId
+          ? { ...point, latch: open ? "OPEN" : "CLOSED", status: open ? "Открыто" : "Закрыто" }
+          : point,
+      ),
+    );
     setNotice(null);
     const result = await runCommand(() =>
-      fetch("/api/access/points", {
+      fetch(open ? "/api/access/points" : `/api/access/points/${pointId}/close`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ pointId }),
       }),
     );
+    if (!result.ok || result.payload?.confirmed !== true) {
+      setRows(previous);
+    }
     setNotice(commandMessage(result.payload));
-    if (result.ok) router.refresh();
   }
 
   return (
     <section>
       <h1 className="text-[32px] tracking-[-0.03em] text-ink">Доступ</h1>
       <p className="mt-2 text-[15px] text-muted">{place}</p>
-      {points.length > 0 ? (
+      {rows.length > 0 ? (
         <ul className="mt-8 grid gap-3">
-          {points.map((point) => (
-            <li key={point.id}>
-              <button
-                type="button"
-                onClick={() => openPoint(point.id)}
-                className="btn btn-primary w-full justify-between text-left"
-              >
-                <span>{point.name}</span>
-                <span className="text-sm opacity-80">{point.kind}</span>
-              </button>
-            </li>
-          ))}
+          {rows.map((point) => {
+            const open = point.latch === "OPEN";
+            const ready = point.ready !== false;
+            return (
+              <li key={point.id} className="panel px-5 py-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[16px] text-ink">{point.name}</p>
+                    <p className="text-sm text-muted">{point.kind}</p>
+                  </div>
+                  <StatusBadge tone={!ready ? "warning" : open ? "success" : "info"}>{point.status ?? (open ? "Открыто" : "Закрыто")}</StatusBadge>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button type="button" className="btn btn-primary btn-compact" disabled={!ready || open} onClick={() => void commandPoint(point.id, true)}>
+                    Открыть
+                  </button>
+                  <button type="button" className="btn btn-secondary btn-compact" disabled={!ready || !open} onClick={() => void commandPoint(point.id, false)}>
+                    Закрыть
+                  </button>
+                </div>
+              </li>
+            );
+          })}
         </ul>
       ) : null}
       {canCreate ? (
@@ -133,11 +157,7 @@ function Field({ label, value, onChange }: { label: string; value: string; onCha
   return (
     <label className="block">
       <span className="text-sm text-muted">{label}</span>
-      <input
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="control mt-2"
-      />
+      <input value={value} onChange={(event) => onChange(event.target.value)} className="control mt-2" />
     </label>
   );
 }

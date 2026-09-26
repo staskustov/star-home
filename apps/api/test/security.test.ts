@@ -30,6 +30,7 @@ const resident: Session = { userId: "usr_stanislav", membershipId: "mem_stanisla
 const householdNeeds: Record<string, string> = {
   openGate: "access.gate.open",
   openPoint: "access.gate.open",
+  closePoint: "access.gate.open",
   addPass: "access.pass.create",
   pay: "payments.pay",
   alarm: "security.alarm.raise",
@@ -144,7 +145,7 @@ describe("role × method matrix", () => {
   });
 
   it("closes household actions to staff without a home", async () => {
-    for (const method of ["openGate", "openPoint", "addPass", "pay", "alarm", "raiseSos", "sendSecurityMessage", "switchMode"]) {
+    for (const method of ["openGate", "openPoint", "closePoint", "addPass", "pay", "alarm", "raiseSos", "sendSecurityMessage", "switchMode"]) {
       const before = state();
       const reply = await rpc(method, { mode: "WORK", guestName: "Тест", detail: "Сегодня", pointId: "gate" }, staff.COMPANY_ADMIN ?? null);
       assert.equal(reply.status, 403, method);

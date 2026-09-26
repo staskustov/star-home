@@ -1,15 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { StarMark } from "@/components/brand/StarMark";
-import { CameraBlock } from "@/components/home/CameraBlock";
-import { HomeHero } from "@/components/home/HomeHero";
-import { LifeModeSwitcher } from "@/components/home/LifeModeSwitcher";
 import { HomeFacts } from "@/components/home/HomeFacts";
+import { HomeHero } from "@/components/home/HomeHero";
+import { InstantDevice } from "@/components/home/InstantDevice";
+import { LifeModeSwitcher } from "@/components/home/LifeModeSwitcher";
 import { QuickActions } from "@/components/home/QuickActions";
-import { SecuritySheet } from "@/components/home/SecuritySheet";
 import { Icon, type IconName } from "@/components/icons";
 import { LiveRefresh } from "@/components/pwa/LiveRefresh";
 import { formatMoney } from "@/lib/format";
@@ -17,6 +17,9 @@ import { commandMessage, runCommand, unconfirmed } from "@/lib/command";
 import { greetingForHour } from "@/lib/greeting";
 import { houseReadout } from "@/lib/house-status";
 import type { LifeMode, ResidentHome } from "@/types/domain";
+
+const CameraBlock = dynamic(() => import("@/components/home/CameraBlock").then((mod) => ({ default: mod.CameraBlock })));
+const SecuritySheet = dynamic(() => import("@/components/home/SecuritySheet").then((mod) => ({ default: mod.SecuritySheet })));
 
 type TodayRow = { key: string; icon: IconName; title: string; detail: string; href?: string };
 
@@ -76,7 +79,6 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
       );
       const payload = result.payload;
       setNotice(payload?.needsConfirm ? "Подтвердите команду в карточке устройства." : commandMessage(payload));
-      if (result.ok && payload?.confirmed) router.refresh();
       return;
     }
     const path = id === "open-gate" ? "/api/access/gate" : id === "pay" ? "/api/payments/pay" : "";
@@ -84,10 +86,9 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
       setNotice(unconfirmed);
       return;
     }
-    setNotice(null);
+    setNotice(id === "open-gate" ? "Открываем…" : null);
     const result = await runCommand(() => fetch(path, { method: "POST" }));
     setNotice(commandMessage(result.payload));
-    if (result.ok) router.refresh();
   }
 
   if (!current) return null;
@@ -180,29 +181,15 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
         ) : (
           <ul className="panel overflow-hidden">
             {data.devices.slice(0, 4).map((device) => (
-              <li key={device.id ?? device.name} className="list-row">
-                {device.id ? (
-                  <Link href={`/devices/${device.id}`} className="-my-1 flex min-w-0 flex-1 items-center gap-[14px] py-1">
-                    <span className="tile-icon">
-                      <Icon name="devices" className="h-[18px] w-[18px]" />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-[15px] text-ink">{device.name}</span>
-                      <span className="mt-0.5 block truncate text-[13px] text-muted">
-                        {device.favorite ? "На главной · " : ""}
-                        {device.stale ? "Последнее известное" : device.label}
-                      </span>
-                    </span>
-                    <Icon name="chevron" className="h-4 w-4 shrink-0 text-muted" />
-                  </Link>
-                ) : (
-                  <>
-                    <span className="tile-icon">
-                      <Icon name="devices" className="h-[18px] w-[18px]" />
-                    </span>
-                    <span className="text-[15px] text-ink">{device.name}</span>
-                  </>
-                )}
+              <li key={device.id ?? device.name} className="list-row !items-start">
+                <div className="min-w-0 flex-1">
+                  <InstantDevice
+                    device={device}
+                    canGate={data.canGate}
+                    canCommand={data.canCommand}
+                    href={device.id ? `/devices/${device.id}` : undefined}
+                  />
+                </div>
               </li>
             ))}
             <li className="list-row">

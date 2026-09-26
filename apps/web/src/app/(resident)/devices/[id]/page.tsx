@@ -1,10 +1,9 @@
 import { DeviceCommand } from "@/components/home/DeviceCommand";
 import { FavoriteButton } from "@/components/home/FavoriteButton";
-import { HistoryChart } from "@/components/home/HistoryChart";
+import { HistoryPanel } from "@/components/home/HistoryPanel";
 import { Icon } from "@/components/icons";
 import { LiveRefresh } from "@/components/pwa/LiveRefresh";
 import { requireSmartDevice } from "@/server/access";
-import { rpc } from "@/server/rpc";
 
 const availabilityLabel: Record<string, string> = {
   ONLINE: "На связи",
@@ -15,7 +14,6 @@ const availabilityLabel: Record<string, string> = {
 export default async function DevicePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const { device } = await requireSmartDevice(id);
-  const history = await rpc<{ points?: { at: string; state?: { temperatureC?: number; humidityPercent?: number; brightness?: number; on?: boolean } }[] }>("smartHomeHistory", { deviceId: id });
   const state = device.state ?? {};
 
   return (
@@ -41,7 +39,7 @@ export default async function DevicePage({ params }: { params: Promise<{ id: str
           {state.on !== undefined ? (
             <div className="flex justify-between">
               <dt className="text-muted">Питание</dt>
-              <dd>{state.on ? "Вкл" : "Выкл"}</dd>
+              <dd>{state.on ? "Включено" : "Выключено"}</dd>
             </div>
           ) : null}
           {typeof state.brightness === "number" ? (
@@ -94,12 +92,18 @@ export default async function DevicePage({ params }: { params: Promise<{ id: str
 
       <div className="panel mt-4 px-5 py-5">
         <h2 className="mb-4 text-[19px] tracking-[-0.02em] text-ink">Управление</h2>
-        <DeviceCommand deviceId={device.id} commands={device.commands} canCommand={device.canCommand} state={state} />
+        <DeviceCommand
+          deviceId={device.id}
+          commands={device.commands}
+          canCommand={device.canCommand}
+          state={state}
+          stale={device.stale}
+        />
       </div>
 
       <div className="panel mt-4 px-5 py-5">
         <h2 className="mb-4 text-[19px] tracking-[-0.02em] text-ink">История</h2>
-        <HistoryChart points={history.body.points ?? []} />
+        <HistoryPanel deviceId={id} />
       </div>
     </section>
   );
