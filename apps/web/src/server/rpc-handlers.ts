@@ -558,11 +558,24 @@ function home(session: SessionRef): Reply {
           : null,
       paymentHistory: bills ? signals.payments : [],
       categories: signals.categories,
-      rooms: roomsOf(base.unit.id).map((room) => ({
-        id: room.id,
-        name: room.name,
-        deviceCount: signals.devices.filter((device) => device.roomId === room.id).length,
-      })),
+      rooms: (() => {
+        const file = readOps();
+        return roomsOf(base.unit.id).map((room) => {
+          const climate = file.devices.find(
+            (device) =>
+              device.roomId === room.id &&
+              (device.kind === "CLIMATE" || typeof device.state?.temperatureC === "number" || typeof device.state?.humidityPercent === "number"),
+          );
+          const reading = climate ? file.readings.find((item) => item.deviceId === climate.id) : undefined;
+          return {
+            id: room.id,
+            name: room.name,
+            deviceCount: signals.devices.filter((device) => device.roomId === room.id).length,
+            temperatureC: climate?.state?.temperatureC ?? reading?.temperatureC ?? null,
+            humidityPercent: climate?.state?.humidityPercent ?? reading?.humidityPercent ?? null,
+          };
+        });
+      })(),
       cameras: signals.cameras,
       devices: (() => {
         const pins = new Set(readOps().favorites.filter((item) => item.userId === session.userId).map((item) => item.deviceId));

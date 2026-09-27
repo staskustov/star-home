@@ -187,6 +187,7 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
         rooms={data.rooms}
         temperatureC={data.climate?.temperatureC ?? null}
         humidityPercent={data.climate?.humidityPercent ?? null}
+        metrics={data.weather?.metrics}
       />
 
       {notice ? (

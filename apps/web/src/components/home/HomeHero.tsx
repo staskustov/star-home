@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Icon } from "@/components/icons";
+import { MetricChip, metricLook, type MetricStyle } from "@/components/home/MetricChip";
 import { formatHumidity, formatTemperature } from "@/lib/format";
 
 function devicesLabel(count: number) {
@@ -17,14 +17,27 @@ export function HomeHero({
   rooms,
   temperatureC,
   humidityPercent,
+  metrics,
 }: {
   unitName: string;
-  rooms: { id?: string; name: string; deviceCount?: number }[];
+  rooms: { id?: string; name: string; deviceCount?: number; temperatureC?: number | null; humidityPercent?: number | null }[];
   temperatureC: number | null;
   humidityPercent: number | null;
+  metrics?: MetricStyle[];
 }) {
   const [index, setIndex] = useState(0);
-  const slides = [{ name: unitName, deviceCount: rooms.reduce((sum, room) => sum + (room.deviceCount ?? 0), 0), house: true }, ...rooms.map((room) => ({ name: room.name, deviceCount: room.deviceCount ?? 0, house: false }))];
+  const slides = [
+    { name: unitName, deviceCount: rooms.reduce((sum, room) => sum + (room.deviceCount ?? 0), 0), house: true, temperatureC, humidityPercent },
+    ...rooms.map((room) => ({
+      name: room.name,
+      deviceCount: room.deviceCount ?? 0,
+      house: false,
+      temperatureC: room.temperatureC ?? null,
+      humidityPercent: room.humidityPercent ?? null,
+    })),
+  ];
+  const temp = metricLook(metrics, "temperature");
+  const humidity = metricLook(metrics, "humidity");
 
   function onScroll(event: React.UIEvent<HTMLDivElement>) {
     const target = event.currentTarget;
@@ -48,19 +61,13 @@ export function HomeHero({
                 </p>
               ) : null}
             </div>
-            {slide.house && (temperatureC !== null || humidityPercent !== null) ? (
-              <p className="mt-2 flex items-center gap-3 text-[13px] text-muted">
-                {temperatureC !== null ? (
-                  <span className="inline-flex items-center gap-1">
-                    <Icon name="thermo" className="h-3.5 w-3.5" />
-                    {formatTemperature(temperatureC)}
-                  </span>
+            {slide.temperatureC !== null || slide.humidityPercent !== null ? (
+              <p className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[15px]">
+                {slide.temperatureC !== null ? (
+                  <MetricChip compact icon={temp.icon} color={temp.color} label={temp.label} value={formatTemperature(slide.temperatureC)} />
                 ) : null}
-                {humidityPercent !== null ? (
-                  <span className="inline-flex items-center gap-1">
-                    <Icon name="drop" className="h-3.5 w-3.5" />
-                    {formatHumidity(humidityPercent)}
-                  </span>
+                {slide.humidityPercent !== null ? (
+                  <MetricChip compact icon={humidity.icon} color={humidity.color} label={humidity.label} value={formatHumidity(slide.humidityPercent)} />
                 ) : null}
               </p>
             ) : null}

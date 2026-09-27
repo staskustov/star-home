@@ -812,8 +812,8 @@ select.control,
   border-radius: 18px;
   border: 1px solid var(--line);
   background: var(--surface);
-  color: var(--graphite);
-  font-size: 13px;
+  color: var(--ink);
+  font-size: 15px;
   letter-spacing: -0.011em;
   scrollbar-width: none;
 }

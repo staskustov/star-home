@@ -66,7 +66,7 @@ export function AccessPointsList({
               {compact ? (
                 <div className="min-w-0">
                   <p className="truncate text-[15px] text-ink">{point.name}</p>
-                  <p className="mt-0.5 text-[13px] text-muted">{point.status ?? (open ? "Открыто" : "Закрыто")}</p>
+                  <p className={`mt-0.5 text-[13px] ${open ? "text-danger" : "text-success"}`}>{point.status ?? (open ? "Открыто" : "Закрыто")}</p>
                 </div>
               ) : (
                 <div className="flex items-center justify-between gap-3">
@@ -74,14 +74,14 @@ export function AccessPointsList({
                     <p className="text-[16px] text-ink">{point.name}</p>
                     <p className="text-sm text-muted">{point.kind}</p>
                   </div>
-                  <StatusBadge tone={!ready ? "warning" : open ? "success" : "info"}>{point.status ?? (open ? "Открыто" : "Закрыто")}</StatusBadge>
+                  <StatusBadge tone={!ready ? "warning" : open ? "danger" : "success"}>{point.status ?? (open ? "Открыто" : "Закрыто")}</StatusBadge>
                 </div>
               )}
               <div className={compact ? "flex shrink-0 gap-2" : "mt-3 flex flex-wrap gap-2"}>
-                <button type="button" className="btn btn-primary btn-compact" disabled={!allow || open} onClick={() => void commandPoint(point.id, true)}>
+                <button type="button" className={`btn btn-compact ${allow && !open ? "btn-primary" : "btn-secondary"}`} disabled={!allow || open} onClick={() => void commandPoint(point.id, true)}>
                   Открыть
                 </button>
-                <button type="button" className="btn btn-secondary btn-compact" disabled={!allow || !open} onClick={() => void commandPoint(point.id, false)}>
+                <button type="button" className={`btn btn-compact ${allow && open ? "btn-primary" : "btn-secondary"}`} disabled={!allow || !open} onClick={() => void commandPoint(point.id, false)}>
                   Закрыть
                 </button>
               </div>

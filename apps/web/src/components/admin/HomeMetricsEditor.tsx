@@ -79,9 +79,11 @@ export function HomeMetricsEditor({
                 <input type="checkbox" checked={item.enabled} disabled={!canEdit} onChange={(event) => patch(item.key, { enabled: event.target.checked })} />
                 {item.label}
               </label>
-              <span className="weather-metric" style={{ color: item.color }}>
-                <Icon name={(icons.includes(item.icon as (typeof icons)[number]) ? item.icon : "thermo") as IconName} className="h-4 w-4" />
-                {item.label}
+              <span className="weather-metric">
+                <span className="inline-flex" style={{ color: item.color }}>
+                  <Icon name={(icons.includes(item.icon as (typeof icons)[number]) ? item.icon : "thermo") as IconName} className="h-4 w-4" />
+                </span>
+                <span className="text-ink">{item.label}</span>
               </span>
             </div>
             <label className="block">

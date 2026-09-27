@@ -167,7 +167,7 @@ export type ResidentHome = {
   } | null;
   paymentHistory: { title: string; amount: number; currency: string }[];
   categories: string[];
-  rooms: { id?: string; name: string; deviceCount?: number }[];
+  rooms: { id?: string; name: string; deviceCount?: number; temperatureC?: number | null; humidityPercent?: number | null }[];
   cameras: { name: string; state: string }[];
   devices: {
     id?: string;
