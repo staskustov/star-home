@@ -2,14 +2,28 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { HomeChipEditor } from "@/components/admin/HomeChipEditor";
 import { useAdminPreview } from "@/components/admin/AdminPreview";
 import { ThemePalette } from "@/components/shell/ThemePalette";
 import { lifeModeChecks, type LifeModeCheck, type LifeModeSetting } from "@/types/domain";
 
-export function LifeModeSettings({ objects, canEdit }: { objects: { objectId: string; modes: LifeModeSetting[] }[]; canEdit: boolean }) {
+type Chip = Parameters<typeof HomeChipEditor>[0]["chips"];
+
+export function LifeModeSettings({
+  objects,
+  canEdit,
+}: {
+  objects: {
+    objectId: string;
+    modes: LifeModeSetting[];
+    chips: Chip;
+    scenarios: { id: string; name: string }[];
+  }[];
+  canEdit: boolean;
+}) {
   const { selected } = useAdminPreview();
-  const modes = objects.find((object) => object.objectId === selected?.id)?.modes;
-  if (!selected || !modes) {
+  const current = objects.find((object) => object.objectId === selected?.id);
+  if (!selected || !current) {
     return (
       <div className="mx-auto max-w-3xl">
         <h1 className="text-[36px] leading-none tracking-[-0.04em] text-ink">Настройки</h1>
@@ -17,18 +31,32 @@ export function LifeModeSettings({ objects, canEdit }: { objects: { objectId: st
       </div>
     );
   }
-  return <ModeEditor key={selected.id} objectId={selected.id} objectName={selected.name} modes={modes} canEdit={canEdit} />;
+  return (
+    <ModeEditor
+      key={selected.id}
+      objectId={selected.id}
+      objectName={selected.name}
+      modes={current.modes}
+      chips={current.chips}
+      scenarios={current.scenarios}
+      canEdit={canEdit}
+    />
+  );
 }
 
 function ModeEditor({
   objectId,
   objectName,
   modes,
+  chips,
+  scenarios,
   canEdit,
 }: {
   objectId: string;
   objectName: string;
   modes: LifeModeSetting[];
+  chips: Chip;
+  scenarios: { id: string; name: string }[];
   canEdit: boolean;
 }) {
   const router = useRouter();
@@ -136,6 +164,7 @@ function ModeEditor({
         </p>
       ) : null}
       {saved ? <p className="mt-4 text-sm text-muted">Сохранено: {saved}.</p> : null}
+      <HomeChipEditor objectId={objectId} chips={chips} scenarios={scenarios} canEdit={canEdit} />
     </div>
   );
 }

@@ -38,6 +38,7 @@ const householdNeeds: Record<string, string> = {
   sendSecurityMessage: "security.alarm.raise",
   ask: "ai.use",
   switchMode: "home.mode.switch",
+  saveHomeLayout: "home.view",
   addRequest: "service.create",
   commandDeviceSmart: "devices.command",
   runHomeAction: "devices.command",
@@ -145,7 +146,7 @@ describe("role × method matrix", () => {
   });
 
   it("closes household actions to staff without a home", async () => {
-    for (const method of ["openGate", "openPoint", "closePoint", "addPass", "pay", "alarm", "raiseSos", "sendSecurityMessage", "switchMode"]) {
+    for (const method of ["openGate", "openPoint", "closePoint", "addPass", "pay", "alarm", "raiseSos", "sendSecurityMessage", "switchMode", "saveHomeLayout"]) {
       const before = state();
       const reply = await rpc(method, { mode: "WORK", guestName: "Тест", detail: "Сегодня", pointId: "gate" }, staff.COMPANY_ADMIN ?? null);
       assert.equal(reply.status, 403, method);
@@ -233,6 +234,8 @@ describe("another company", () => {
       ["teamRestore", { membershipId: rival.adminId }],
       ["teamRemove", { membershipId: rival.adminId }],
       ["saveMode", { objectId: rival.objectId, setting: { mode: "HOME" } }],
+      ["saveHomeChip", { objectId: rival.objectId, name: "Захват", icon: "night", strip: "scenarios", action: "night" }],
+      ["removeHomeChip", { objectId: rival.objectId, chipId: "chip_x" }],
       ["openObjectGate", { objectId: rival.objectId }],
       ["cameraFrame", { objectId: rival.objectId, deviceId: "dev_camera_rival" }],
       ["securityCameras", { objectId: rival.objectId }],

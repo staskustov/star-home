@@ -4,7 +4,7 @@ import { findBuilding, findUnit } from "@/server/catalog-store";
 import { deviceLabel, isOpener } from "@/server/device-kinds";
 import { findUserById } from "@/server/directory";
 import { recordAudit } from "@/server/operations";
-import { clock, readOps, writeOps, type Alarm, type Device } from "@/server/ops-store";
+import { clock, outdoorWeather, readOps, writeOps, type Alarm, type Device } from "@/server/ops-store";
 import { can, objectFor, objectsInScope, reaches, type StaffActor } from "@/server/rbac/decide";
 import { securityChatsFor } from "@/server/security-desk";
 import { publishLive } from "@/server/store-bind";
@@ -125,6 +125,7 @@ export function securityPost(actor: StaffActor, objectId: unknown): Success<Secu
               return { id: row.id, time: shortTime(entry.at), actor: row.actor, action: row.action, target: row.target, result: row.result };
             })
         : [],
+      weather: outdoorWeather(object.value.id),
     },
   };
 }

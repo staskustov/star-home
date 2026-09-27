@@ -3,7 +3,7 @@ import { objectPresentation } from "@/lib/object-presentation";
 import { findBuilding, findUnit, structureCounts, unitIdsOf, unitIdsOfBuilding, type CatalogObject } from "@/server/catalog-store";
 import type { DeviceKind } from "@/server/device-kinds";
 import { findUserById, objectHasAssignments, residentCount } from "@/server/directory";
-import { alarmsForObject, devicesForObject, eventsForObject, passesForObject, readOps, requestsForObject, type Device } from "@/server/ops-store";
+import { alarmsForObject, devicesForObject, eventsForObject, outdoorWeather, passesForObject, readOps, requestsForObject, type Device } from "@/server/ops-store";
 import { auditLabel } from "@/server/audit-actions";
 import { listAudit } from "@/server/audit-store";
 import { auditVisible, shortTime } from "@/server/audit-view";
@@ -16,7 +16,7 @@ const systemGroups: { id: string; name: string; kinds: readonly DeviceKind[] }[]
   { id: "access", name: "Доступ", kinds: ["GATE", "WICKET", "BARRIER", "LOCK"] },
   { id: "cameras", name: "Камеры", kinds: ["CAMERA"] },
   { id: "climate", name: "Климат", kinds: ["CLIMATE", "HEATING"] },
-  { id: "sensors", name: "Датчики", kinds: ["LEAK", "SMOKE", "FIRE", "MOTION"] },
+  { id: "sensors", name: "Датчики", kinds: ["LEAK", "SMOKE", "FIRE", "MOTION", "WEATHER"] },
   { id: "utilities", name: "Ресурсы", kinds: ["POWER", "WATER"] },
   { id: "comfort", name: "Комфорт", kinds: ["LIGHTING", "IRRIGATION", "CURTAIN"] },
 ];
@@ -216,6 +216,7 @@ function objectDashboard(actor: StaffActor, object: CatalogObject): DashboardObj
     status: statusFor(actor, attention),
     attention: attention.slice(0, attentionLimit),
     pulse: pulseFor(actor, object),
+    weather: outdoorWeather(object.id),
     systems: systemsFor(actor, object),
     feed: feedFor(actor, object),
   };

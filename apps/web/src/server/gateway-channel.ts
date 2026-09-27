@@ -124,6 +124,8 @@ export function ingestGatewayState(
   if (typeof raw.detected === "boolean") next.detected = raw.detected;
   if (typeof raw.watts === "number" && Number.isFinite(raw.watts)) next.watts = raw.watts;
   if (typeof raw.kwh === "number" && Number.isFinite(raw.kwh)) next.kwh = raw.kwh;
+  if (typeof raw.windMs === "number" && Number.isFinite(raw.windMs)) next.windMs = raw.windMs;
+  if (typeof raw.radiationUSv === "number" && Number.isFinite(raw.radiationUSv)) next.radiationUSv = raw.radiationUSv;
   if (!Object.keys(next).length) return { ok: false, status: 400, message: "Нет состояния" };
   const current = file.devices.find((item) => item.id === device.id);
   if (!current) return { ok: false, status: 404, message: "Устройство не найдено" };

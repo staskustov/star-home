@@ -4,6 +4,7 @@ import Link from "next/link";
 import { AddObjectButton } from "@/components/admin/ObjectDraftSheet";
 import { DeleteObjectButton, EditObjectButton } from "@/components/admin/ObjectManage";
 import { useAdminPreview } from "@/components/admin/AdminPreview";
+import { WeatherStrip } from "@/components/home/WeatherStrip";
 import { Icon } from "@/components/icons";
 import type { DashboardObject, DashboardTone, DashboardView } from "@/types/dashboard";
 
@@ -219,6 +220,7 @@ export function AdminDashboard({ view }: { view: DashboardView }) {
           {canDeleteObject ? <DeleteObjectButton objectId={object.id} canDelete={object.canDelete !== false} /> : null}
         </div>
       </header>
+      <WeatherStrip weather={object.weather} />
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
         <Attention object={object} />
         <Pulse object={object} />

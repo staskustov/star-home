@@ -45,6 +45,12 @@ export type DashboardObject = {
   pulse: DashboardPulse[];
   systems: DashboardSystem[] | null;
   feed: DashboardFeedItem[] | null;
+  weather: {
+    temperatureC: number | null;
+    humidityPercent: number | null;
+    windMs: number | null;
+    radiationUSv: number | null;
+  };
 };
 
 export type DashboardView = {

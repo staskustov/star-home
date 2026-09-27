@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { HomeScreenSettings } from "@/components/home/HomeScreenSettings";
 import { PushButton } from "@/components/pwa/PushButton";
 import { ProfilePhoto } from "@/components/shell/ProfilePhoto";
 import { ThemePalette } from "@/components/shell/ThemePalette";
@@ -8,8 +9,9 @@ export default async function ProfilePage() {
   const profile = await profileView();
   return (
     <section>
-      <h1 className="text-[32px] tracking-[-0.03em] text-ink">{profile.name}</h1>
-      {profile.place ? <p className="mt-3 text-[17px] text-graphite">{profile.place}</p> : null}
+      <h1 className="text-[32px] tracking-[-0.03em] text-ink">Настройки</h1>
+      <p className="mt-3 text-[22px] tracking-[-0.02em] text-ink">{profile.name}</p>
+      {profile.place ? <p className="mt-2 text-[17px] text-graphite">{profile.place}</p> : null}
       <ProfilePhoto name={profile.name} photo={profile.photo} />
       {profile.choosePlaces ? (
         <Link href="/my-objects" className="btn btn-secondary mt-8">
@@ -25,6 +27,14 @@ export default async function ProfilePage() {
         </form>
       ) : null}
       <ThemePalette />
+      {profile.homeLayout ? (
+        <HomeScreenSettings
+          scenarioIds={profile.homeLayout.scenarioIds}
+          actionIds={profile.homeLayout.actionIds}
+          scenarios={profile.homeLayout.scenarios}
+          actions={profile.homeLayout.actions}
+        />
+      ) : null}
       <div className="mt-8">
         <PushButton />
       </div>

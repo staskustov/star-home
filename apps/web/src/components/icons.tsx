@@ -20,7 +20,10 @@ export type IconName =
   | "meter"
   | "event"
   | "phone"
-  | "bell";
+  | "bell"
+  | "night"
+  | "wind"
+  | "radiation";
 
 const paths: Record<IconName, ReactNode> = {
   home: (
@@ -241,6 +244,25 @@ const paths: Record<IconName, ReactNode> = {
     <>
       <path d="M6.2 9.2a5.8 5.8 0 0 1 11.6 0c0 4.2 1.4 5.4 1.4 5.4H4.8s1.4-1.2 1.4-5.4Z" />
       <path d="M10 19.2a2 2 0 0 0 4 0" />
+    </>
+  ),
+  night: (
+    <>
+      <path d="M16.4 14.6A6.6 6.6 0 0 1 9.2 5.8 7 7 0 1 0 16.4 14.6Z" />
+    </>
+  ),
+  wind: (
+    <>
+      <path d="M4 10h11a2.4 2.4 0 1 0-2.2-3.4" />
+      <path d="M4 14h13.2a2.6 2.6 0 1 1-2.4 3.6" />
+    </>
+  ),
+  radiation: (
+    <>
+      <circle cx="12" cy="12" r="1.4" />
+      <path d="M12 6.2 9.6 10.4A4 4 0 0 1 12 9.6a4 4 0 0 1 2.4.8Z" />
+      <path d="m7.1 16.6 4.3-1.2A4 4 0 0 1 9.6 13.2 4 4 0 0 1 8.4 15Z" />
+      <path d="m16.9 16.6-4.3-1.2A4 4 0 0 0 14.4 13.2 4 4 0 0 0 15.6 15Z" />
     </>
   ),
 };

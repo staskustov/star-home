@@ -385,11 +385,93 @@ describe("smart home commands", () => {
 
   it("shows home facts from stored device state", async () => {
     await rpc("commandDeviceSmart", { deviceId: "dev_light_24", command: "setPower", value: true }, resident);
-    const home = (await rpc("home", null, resident)).body as { home: { facts?: { lights?: { on: number; total: number } | null }; quickActions: { id: string }[] } };
+    const home = (await rpc("home", null, resident)).body as {
+      home: {
+        facts?: { lights?: { on: number; total: number } | null };
+        weather?: { temperatureC: number | null; windMs: number | null };
+        scenarioChips: { id: string; action?: string | null; lifeMode?: string }[];
+        actionChips: { id: string; action?: string | null }[];
+      };
+    };
     assert.ok(home.home.facts?.lights);
     assert.ok((home.home.facts.lights.on ?? 0) >= 1);
-    assert.ok(home.home.quickActions.some((action) => action.id === "night"));
-    assert.ok(home.home.quickActions.some((action) => action.id === "lights-off"));
+    assert.ok(home.home.scenarioChips.some((chip) => chip.lifeMode === "HOME"));
+    assert.ok(home.home.scenarioChips.some((chip) => chip.action === "night"));
+    assert.ok(home.home.actionChips.some((chip) => chip.action === "open-gate"));
+    assert.equal(home.home.weather?.temperatureC ?? null, null);
+    assert.equal(home.home.weather?.windMs ?? null, null);
+  });
+
+  it("broadcasts outdoor weather from stored object sensors only", async () => {
+    const ops = await import("../../web/src/server/ops-store");
+    const file = ops.readOps();
+    const station = file.devices.find((device) => device.id === "dev_weather_siyanie");
+    assert.ok(station);
+    assert.equal(station.kind, "WEATHER");
+    assert.equal(station.unitId, null);
+    station.state = { temperatureC: 11.2, humidityPercent: 64, windMs: 3.1, radiationUSv: 0.11 };
+    ops.writeOps(file);
+    const home = (await rpc("home", null, resident)).body as {
+      home: { weather: { temperatureC: number | null; humidityPercent: number | null; windMs: number | null; radiationUSv: number | null } };
+    };
+    assert.equal(home.home.weather.temperatureC, 11.2);
+    assert.equal(home.home.weather.humidityPercent, 64);
+    assert.equal(home.home.weather.windMs, 3.1);
+    assert.equal(home.home.weather.radiationUSv, 0.11);
+    delete station.state;
+    ops.writeOps(file);
+    const empty = (await rpc("home", null, resident)).body as { home: { weather: { temperatureC: number | null } } };
+    assert.equal(empty.home.weather.temperatureC, null);
+  });
+
+  it("lets a resident pick home chips and keeps exactly three life modes", async () => {
+    const before = (await rpc("home", null, resident)).body as { home: { scenarioChips: { id: string }[]; lifeModes: { mode: string }[] } };
+    assert.equal(before.home.lifeModes.length, 3);
+    assert.deepEqual(
+      before.home.lifeModes.map((item) => item.mode),
+      ["HOME", "WORK", "VACATION"],
+    );
+    const keep = before.home.scenarioChips.slice(0, 2).map((chip) => chip.id);
+    const saved = await rpc("saveHomeLayout", { scenarioIds: keep, actionIds: [] }, resident);
+    assert.equal(saved.status, 200, JSON.stringify(saved.body));
+    const after = (await rpc("home", null, resident)).body as { home: { scenarioChips: { id: string }[]; actionChips: { id: string }[] } };
+    assert.deepEqual(
+      after.home.scenarioChips.map((chip) => chip.id),
+      keep,
+    );
+    assert.equal(after.home.actionChips.length, 0);
+    await rpc("saveHomeLayout", {}, resident);
+  });
+
+  it("lets admin add a resident scenario chip and refuses guests", async () => {
+    const people = await import("../../web/src/server/people-store");
+    const visitor = people.createPerson({ login: "chip.guest", name: "Гость", passwordHash: "x" });
+    const guest = people.createResidentMembership({
+      userId: visitor.id,
+      companyId: "cmp_star",
+      objectId: "obj_siyanie",
+      unitId: "unit_24",
+      role: "GUEST",
+      expiresAt: "2999-01-01T00:00:00",
+    });
+    assert.equal((await rpc("saveHomeLayout", { scenarioIds: [], actionIds: [] }, { userId: visitor.id, membershipId: guest.id })).status, 403);
+    const created = await rpc(
+      "saveHomeChip",
+      { objectId: "obj_siyanie", name: "Вечер", icon: "night", strip: "scenarios", scenarioId: "scen_night_24" },
+      admin,
+    );
+    assert.equal(created.status, 200, JSON.stringify(created.body));
+    const chip = created.body as { id: string; name: string; scenarioId: string };
+    assert.equal(chip.name, "Вечер");
+    assert.equal(chip.scenarioId, "scen_night_24");
+    const settings = (await rpc("settings", null, admin)).body as {
+      objects: { objectId: string; chips: { scenarios: { id: string }[] }; modes: { mode: string }[] }[];
+    };
+    const object = settings.objects.find((item) => item.objectId === "obj_siyanie");
+    assert.equal(object?.modes.length, 3);
+    assert.ok(object?.chips.scenarios.some((item) => item.id === chip.id));
+    assert.equal((await rpc("removeHomeChip", { objectId: "obj_siyanie", chipId: chip.id }, resident)).status, 403);
+    assert.equal((await rpc("removeHomeChip", { objectId: "obj_siyanie", chipId: chip.id }, admin)).status, 200);
   });
 
   it("runs lights-off and keeps the night scenario", async () => {

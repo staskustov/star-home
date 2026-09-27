@@ -15,6 +15,7 @@ export const deviceKinds = [
   "WATER",
   "IRRIGATION",
   "CURTAIN",
+  "WEATHER",
 ] as const;
 
 export type DeviceKind = (typeof deviceKinds)[number];
@@ -36,6 +37,7 @@ const labels: Record<DeviceKind, string> = {
   WATER: "Вода",
   IRRIGATION: "Полив",
   CURTAIN: "Шторы",
+  WEATHER: "Погода",
 };
 
 const openers = new Set<DeviceKind>(["GATE", "WICKET", "BARRIER", "LOCK"]);

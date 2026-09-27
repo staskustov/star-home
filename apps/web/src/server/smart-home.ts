@@ -107,6 +107,8 @@ function knownState(state: Device["state"]): NonNullable<Device["state"]> {
   if (state.detected !== undefined) next.detected = state.detected;
   if (state.watts !== undefined) next.watts = state.watts;
   if (state.kwh !== undefined) next.kwh = state.kwh;
+  if (state.windMs !== undefined) next.windMs = state.windMs;
+  if (state.radiationUSv !== undefined) next.radiationUSv = state.radiationUSv;
   return next;
 }
 

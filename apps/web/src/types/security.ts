@@ -24,6 +24,12 @@ export type SecurityPostView = {
   passes: { id: string; guestName: string; place: string; detail: string; vehicle: string }[];
   events: { id: string; time: string; title: string; result: "SUCCESS" | "UNCONFIRMED" }[];
   journal: { id: string; time: string; actor: string; action: string; target: string; result: "SUCCESS" | "DENIED" | "ERROR" }[];
+  weather: {
+    temperatureC: number | null;
+    humidityPercent: number | null;
+    windMs: number | null;
+    radiationUSv: number | null;
+  };
 };
 
 export type PassCheck = { guestName: string; place: string; detail: string; vehicle: string };

@@ -4,11 +4,11 @@ import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { HomeChipStrip, type HomeChipTile } from "@/components/home/HomeChipStrip";
 import { HomeFacts } from "@/components/home/HomeFacts";
 import { HomeHero } from "@/components/home/HomeHero";
 import { InstantDevice } from "@/components/home/InstantDevice";
-import { LifeModeSwitcher } from "@/components/home/LifeModeSwitcher";
-import { QuickActions } from "@/components/home/QuickActions";
+import { WeatherStrip } from "@/components/home/WeatherStrip";
 import { Icon, type IconName } from "@/components/icons";
 import { LiveRefresh } from "@/components/pwa/LiveRefresh";
 import { formatMoney } from "@/lib/format";
@@ -56,6 +56,26 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
       return;
     }
     router.refresh();
+  }
+
+  async function onChip(chip: HomeChipTile) {
+    if (chip.lifeMode) {
+      await changeMode(chip.lifeMode);
+      return;
+    }
+    if (chip.scenarioId) {
+      setNotice(null);
+      const result = await runCommand(() =>
+        fetch(`/api/smart-home/scenarios/${chip.scenarioId}/run`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({}),
+        }),
+      );
+      setNotice(commandMessage(result.payload));
+      return;
+    }
+    if (chip.action) await onAction(chip.action);
   }
 
   async function onAction(id: string) {
@@ -111,7 +131,7 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
   ];
 
   return (
-    <div className="space-y-7">
+    <div className="home-stack">
       <LiveRefresh />
       <header>
         <h1 suppressHydrationWarning className="text-[28px] leading-[1.1] tracking-[-0.035em] text-ink sm:text-[34px]">
@@ -122,14 +142,16 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
         </p>
       </header>
 
+      <WeatherStrip weather={data.weather} />
       <SecuritySheet open={securityOpen} onClose={() => setSecurityOpen(false)} />
-      <LifeModeSwitcher modes={data.lifeModes} value={current.mode} onChange={changeMode} />
+      <HomeChipStrip chips={data.scenarioChips ?? []} label="Сценарии" activeMode={current.mode} onSelect={onChip} />
 
       {data.controller?.message ? (
         <p className="panel px-5 py-4 text-[15px] text-warning">{data.controller.message}</p>
       ) : null}
 
       <CameraBlock cameras={data.cameras} />
+      <HomeChipStrip chips={data.actionChips ?? []} label="Быстрые кнопки" onSelect={onChip} />
 
       <HomeHero
         unitName={data.unit.name}
@@ -144,14 +166,11 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
 
       <HomeFacts facts={data.facts} />
 
-      <div className="space-y-3">
-        <QuickActions actions={data.quickActions} onSelect={onAction} />
-        {notice ? (
-          <p role="status" className="fade-in text-[15px] text-muted">
-            {notice}
-          </p>
-        ) : null}
-      </div>
+      {notice ? (
+        <p role="status" className="fade-in text-[15px] text-muted">
+          {notice}
+        </p>
+      ) : null}
 
       <section aria-label="Дом">
         <h2 className="mb-3 text-[19px] tracking-[-0.02em] text-ink">Дом</h2>

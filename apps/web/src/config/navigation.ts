@@ -8,7 +8,7 @@ export const residentNav: NavItem[] = [
   { href: "/service", label: "Сервис", icon: "service" },
   { href: "/scenarios", label: "Сценарии", icon: "settings" },
   { href: "/events", label: "События", icon: "event" },
-  { href: "/profile", label: "Профиль", icon: "profile" },
+  { href: "/profile", label: "Настройки", icon: "profile" },
 ];
 
 export const residentDock = ["/home", "/rooms", "/devices", "/service"];

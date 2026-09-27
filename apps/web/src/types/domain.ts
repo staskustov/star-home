@@ -119,6 +119,32 @@ export type ResidentHome = {
     temperatureC: number;
     humidityPercent: number;
   } | null;
+  weather?: {
+    temperatureC: number | null;
+    humidityPercent: number | null;
+    windMs: number | null;
+    radiationUSv: number | null;
+  } | null;
+  scenarioChips?: {
+    id: string;
+    name: string;
+    icon: string;
+    strip: "scenarios" | "actions";
+    kind: "LIFE_MODE" | "SCENARIO" | "ACTION";
+    lifeMode?: LifeMode;
+    scenarioId?: string | null;
+    action?: string | null;
+  }[];
+  actionChips?: {
+    id: string;
+    name: string;
+    icon: string;
+    strip: "scenarios" | "actions";
+    kind: "LIFE_MODE" | "SCENARIO" | "ACTION";
+    lifeMode?: LifeMode;
+    scenarioId?: string | null;
+    action?: string | null;
+  }[];
   quickActions: QuickAction[];
   visitor: VisitorPreview | null;
   balance: Money | null;

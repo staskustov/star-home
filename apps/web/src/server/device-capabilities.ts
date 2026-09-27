@@ -13,6 +13,8 @@ export const capabilities = [
   "smoke",
   "contact",
   "energy",
+  "wind",
+  "radiation",
 ] as const;
 
 export type Capability = (typeof capabilities)[number];
@@ -33,6 +35,7 @@ const byKind: Partial<Record<DeviceKind, readonly Capability[]>> = {
   POWER: ["power", "energy"],
   WATER: ["energy"],
   IRRIGATION: ["power"],
+  WEATHER: ["temperature", "humidity", "wind", "radiation"],
 };
 
 export function isCapability(value: unknown): value is Capability {

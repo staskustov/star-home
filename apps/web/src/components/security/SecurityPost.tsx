@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { WeatherStrip } from "@/components/home/WeatherStrip";
 import { ObjectSwitcher } from "@/components/home/ObjectSwitcher";
 import { CameraTile } from "@/components/security/CameraTile";
 import { Clock } from "@/components/security/Clock";
@@ -436,6 +437,10 @@ export function SecurityPost({ view }: { view: SecurityPostView }) {
           </div>
         </div>
       </header>
+
+      <div className="mx-auto max-w-[1440px] px-5 pt-4 lg:px-10">
+        <WeatherStrip weather={view.weather} />
+      </div>
 
       <main className="fade-in mx-auto grid max-w-[1440px] gap-5 px-5 py-6 lg:grid-cols-[minmax(0,1fr)_380px] lg:px-10 lg:py-8">
         <div className="grid content-start gap-5">

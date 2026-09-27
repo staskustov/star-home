@@ -755,6 +755,78 @@ input[type="file"].control::file-selector-button {
   box-shadow: 0 8px 18px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
+.home-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.home-stack h2 {
+  margin-bottom: 6px;
+}
+
+.weather-strip {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  overflow-x: auto;
+  padding: 10px 14px;
+  border-radius: 18px;
+  border: 1px solid var(--panel-line);
+  background: color-mix(in srgb, var(--surface-muted) 40%, var(--panel));
+  backdrop-filter: var(--panel-blur);
+  -webkit-backdrop-filter: var(--panel-blur);
+  color: var(--graphite);
+  font-size: 13px;
+  letter-spacing: -0.011em;
+  scrollbar-width: none;
+}
+
+.weather-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.weather-metric {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.chip-row {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  border-radius: 22px;
+  border: 1px solid var(--panel-line);
+  background: color-mix(in srgb, var(--surface-muted) 40%, var(--panel));
+  backdrop-filter: var(--panel-blur);
+  -webkit-backdrop-filter: var(--panel-blur);
+}
+
+.chip-row::-webkit-scrollbar {
+  display: none;
+}
+
+.chip-row .segment-item {
+  flex: 0 0 auto;
+  width: 88px;
+  min-width: 88px;
+}
+
+@media (min-width: 1024px) {
+  .home-stack {
+    gap: 1.75rem;
+  }
+
+  .home-stack h2 {
+    margin-bottom: 0.75rem;
+  }
+}
+
 .dock {
   position: fixed;
   right: 0;

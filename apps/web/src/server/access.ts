@@ -16,6 +16,15 @@ type AdminBody = {
   permissions?: Permission[];
   redirect?: string;
 };
+type HomeChipOption = {
+  id: string;
+  name: string;
+  icon: string;
+  strip: "scenarios" | "actions";
+  kind: "LIFE_MODE" | "SCENARIO" | "ACTION";
+  locked?: boolean;
+};
+
 type ProfileBody = {
   name: string;
   place: string | null;
@@ -23,6 +32,12 @@ type ProfileBody = {
   adminMembershipId: string | null;
   notices: { id: string; title: string; body: string; at: string }[];
   photo: string | null;
+  homeLayout: {
+    scenarioIds: string[];
+    actionIds: string[];
+    scenarios: HomeChipOption[];
+    actions: HomeChipOption[];
+  } | null;
 };
 type AccessBody = {
   place: string;

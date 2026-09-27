@@ -40,6 +40,7 @@ import {
   membershipsOf,
   placesFor,
 } from "@/server/directory";
+import { homeLayoutFor, removeHomeChipFor, saveHomeChipFor, saveHomeLayoutFor } from "@/server/home-chips";
 import { saveModeFor, settingsFor, switchModeFor } from "@/server/life-modes";
 import { loginLimited, noteLoginFailure, noteLoginSuccess } from "@/server/login-limit";
 import { homeSignals, readOps } from "@/server/ops-store";
@@ -171,6 +172,9 @@ const methodPolicy: Record<string, Route> = {
   ask: household((current, input) => askFor(current, input.prompt)),
   confirm: household((current, input) => confirmFor(current, input.token)),
   switchMode: household((current, input) => switchModeFor(current, input.mode)),
+  saveHomeLayout: household((current, input) => saveHomeLayoutFor(current, input)),
+  saveHomeChip: staff("settings.edit", (actor, input) => saveHomeChipFor(actor, input)),
+  removeHomeChip: staff("settings.edit", (actor, input) => removeHomeChipFor(actor, input)),
   smartHomeStatus: session(async (current, input) => asReply(await (await import("./smart-home")).smartHomeStatus(current, input.objectId))),
   smartHomeDevices: session(async (current, input) => asReply((await import("./smart-home")).smartHomeDevices(current, input.objectId))),
   smartHomeDevice: session(async (current, input) => asReply((await import("./smart-home")).smartHomeDevice(current, input.deviceId))),
@@ -366,6 +370,9 @@ const guardedMethods: Partial<Record<string, AuditAction>> = {
   removeResident: "RESIDENT_REMOVE",
   saveMode: "MODE_SETTINGS",
   switchMode: "MODE_SWITCH",
+  saveHomeLayout: "HOME_LAYOUT",
+  saveHomeChip: "HOME_CHIP",
+  removeHomeChip: "HOME_CHIP",
   openObjectGate: "OPEN_GATE",
   openGate: "OPEN_GATE",
   openPoint: "OPEN_GATE",
@@ -521,6 +528,8 @@ function home(session: SessionRef): Reply {
   const pays = householdCan(membership.role, "payments.pay");
   const bills = householdCan(membership.role, "payments.view");
   const ownRequestsOnly = selfOnlyOf(membership.role).has("service.view");
+  const layout = homeLayoutFor(session.userId, base.unit.id, base.object.id, base.object.companyId);
+  const actionChips = layout.actionChips.filter((chip) => pays || chip.action !== "pay");
   return ok({
     home: {
       ...base,
@@ -545,17 +554,15 @@ function home(session: SessionRef): Reply {
       meters: signals.meters,
       facts: signals.facts,
       controller: signals.controller,
+      weather: signals.weather,
       notices: residentNotices(session.userId).slice(0, 3),
       securityPhone: findObject(base.object.id)?.securityPhone ?? null,
       canSecurity: householdCan(membership.role, "security.alarm.raise"),
       canGate: householdCan(membership.role, "access.gate.open"),
       canCommand: householdCan(membership.role, "devices.command"),
-      quickActions: [
-        ...base.quickActions.filter((action) => pays || action.id !== "pay"),
-        { id: "lights-off", label: "Выключить свет" },
-        { id: "curtains-close", label: "Закрыть шторы" },
-        { id: "night", label: "Ночь" },
-      ],
+      scenarioChips: layout.scenarioChips,
+      actionChips,
+      quickActions: actionChips.map((chip) => ({ id: chip.action ?? chip.id, label: chip.name })),
     },
   });
 }
@@ -574,6 +581,8 @@ function profile(session: SessionRef): Reply {
   const membership = session.membershipId ? findMembership(session.userId, session.membershipId) : undefined;
   const view = membership ? homeFor(user, membership) : null;
   const admin = adminMemberships(session.userId)[0];
+  const canHome = Boolean(membership && householdCan(membership.role, "home.view") && view);
+  const layout = canHome && view ? homeLayoutFor(session.userId, view.unit.id, view.object.id, view.object.companyId) : null;
   return ok({
     name: user.name,
     place: view ? `${view.object.name} · ${view.unit.name}` : null,
@@ -581,6 +590,14 @@ function profile(session: SessionRef): Reply {
     adminMembershipId: admin?.id ?? null,
     notices: residentNotices(session.userId),
     photo: user.photo ?? null,
+    homeLayout: layout
+      ? {
+          scenarioIds: layout.scenarioIds,
+          actionIds: layout.actionIds,
+          scenarios: layout.available.scenarios,
+          actions: layout.available.actions,
+        }
+      : null,
   });
 }
 

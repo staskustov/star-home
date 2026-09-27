@@ -8,6 +8,8 @@ import {
   setUnitMode,
   updateModeSetting,
 } from "@/server/life-mode-store";
+import { chipsForObject } from "@/server/home-chips";
+import { readOps } from "@/server/ops-store";
 import { can, objectFor, objectsInScope, wholeObject, type StaffActor } from "@/server/rbac/decide";
 import { householdCan } from "@/server/rbac/policy";
 import type { LifeModeSetting } from "@/types/domain";
@@ -99,6 +101,10 @@ export function settingsFor(actor: StaffActor) {
     objects: objectsInScope(actor).map((object) => ({
       objectId: object.id,
       modes: modesForObject(object.id),
+      chips: chipsForObject(object.id, object.companyId),
+      scenarios: readOps()
+        .scenarios.filter((scenario) => scenario.objectId === object.id && scenario.companyId === object.companyId)
+        .map((scenario) => ({ id: scenario.id, name: scenario.name })),
     })),
   };
 }

@@ -81,6 +81,8 @@ export type NormalizedState = {
   detected?: boolean;
   watts?: number;
   kwh?: number;
+  windMs?: number;
+  radiationUSv?: number;
 };
 
 export type Device = {
@@ -323,6 +325,30 @@ export type Scenario = {
   steps: ScenarioStep[];
 };
 
+export type HomeChipKind = "LIFE_MODE" | "SCENARIO" | "ACTION";
+
+export type HomeChip = {
+  id: string;
+  companyId: string;
+  objectId: string;
+  name: string;
+  icon: string;
+  kind: HomeChipKind;
+  strip: "scenarios" | "actions";
+  lifeMode?: "HOME" | "WORK" | "VACATION";
+  scenarioId?: string | null;
+  action?: string | null;
+  sort: number;
+  locked?: boolean;
+};
+
+export type HomeLayout = {
+  userId: string;
+  unitId: string;
+  scenarioIds: string[];
+  actionIds: string[];
+};
+
 export type AiTurn = {
   id: string;
   companyId: string;
@@ -358,6 +384,8 @@ type OpsFile = {
   liveSeq: Record<string, number>;
   chats: SecurityChatMessage[];
   pushDevices: PushDevice[];
+  homeChips: HomeChip[];
+  homeLayouts: HomeLayout[];
 };
 
 const filePath = path.join(process.cwd(), "data", "ops.json");
@@ -566,6 +594,24 @@ function seed(): OpsFile {
         name: "Замок",
         adapter: "local",
       },
+      {
+        id: "dev_weather_siyanie",
+        companyId: "cmp_star",
+        objectId: "obj_siyanie",
+        unitId: null,
+        kind: "WEATHER",
+        name: "Улица",
+        adapter: "local",
+      },
+      {
+        id: "dev_weather_park",
+        companyId: "cmp_star",
+        objectId: "obj_park",
+        unitId: null,
+        kind: "WEATHER",
+        name: "Улица",
+        adapter: "local",
+      },
     ],
     gateways: [],
     removedDeviceIds: [],
@@ -595,6 +641,8 @@ function seed(): OpsFile {
     liveSeq: {},
     chats: [],
     pushDevices: [],
+    homeChips: [],
+    homeLayouts: [],
   };
 }
 
@@ -692,6 +740,8 @@ function normalize(file: OpsFile): OpsFile {
   file.liveSeq ??= {};
   file.chats ??= [];
   file.pushDevices ??= [];
+  file.homeChips ??= [];
+  file.homeLayouts ??= [];
   for (const request of file.requests ?? []) {
     if ((request.status as string) === "NEW") request.status = "CREATED";
   }
@@ -890,6 +940,12 @@ export function homeSignals(unitId: string, objectId: string): {
     message: string | null;
     gateways?: { name: string; status: string; lastSeen: string | null; stale: boolean }[];
   } | null;
+  weather: {
+    temperatureC: number | null;
+    humidityPercent: number | null;
+    windMs: number | null;
+    radiationUSv: number | null;
+  };
 } {
   const file = load();
   const climateDevice = file.devices.find((device) => device.kind === "CLIMATE" && device.unitId === unitId);
@@ -954,6 +1010,26 @@ export function homeSignals(unitId: string, objectId: string): {
       file.devices.filter((device) => device.objectId === objectId && (device.unitId === unitId || device.unitId === null)),
     ),
     controller: homeController(file.gateways.filter((gateway) => gateway.objectId === objectId)),
+    weather: outdoorWeatherOf(file.devices.filter((device) => device.objectId === objectId && device.kind === "WEATHER")),
+  };
+}
+
+export function outdoorWeather(objectId: string) {
+  return outdoorWeatherOf(load().devices.filter((device) => device.objectId === objectId && device.kind === "WEATHER"));
+}
+
+function outdoorWeatherOf(devices: Device[]) {
+  const outdoor = devices.filter((device) => device.unitId === null);
+  const pool = outdoor.length ? outdoor : devices;
+  const numbers = (pick: (device: Device) => number | undefined) => {
+    const value = pool.map(pick).find((item) => typeof item === "number" && Number.isFinite(item));
+    return typeof value === "number" ? value : null;
+  };
+  return {
+    temperatureC: numbers((device) => device.state?.temperatureC),
+    humidityPercent: numbers((device) => device.state?.humidityPercent),
+    windMs: numbers((device) => device.state?.windMs),
+    radiationUSv: numbers((device) => device.state?.radiationUSv),
   };
 }
 
