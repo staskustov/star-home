@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { commandMessage, runCommand } from "@/lib/command";
+import { Select } from "@/components/ui/Select";
 
 type Scenario = {
   id: string;
@@ -117,23 +118,23 @@ export function ScenarioList({ scenarios, devices }: { scenarios: Scenario[]; de
         <p className="text-[16px] text-ink">Новый сценарий</p>
         <input value={name} onChange={(event) => setName(event.target.value)} className="control" placeholder="Название" />
         <input value={description} onChange={(event) => setDescription(event.target.value)} className="control" placeholder="Описание, не обязательно" />
-        <select value={trigger} onChange={(event) => setTrigger(event.target.value)} className="control">
+        <Select value={trigger} onChange={(event) => setTrigger(event.target.value)}>
           <option value="MANUAL">Вручную</option>
           <option value="EVENT">По событию</option>
           <option value="SCHEDULE">По времени</option>
-        </select>
-        <select value={deviceId} onChange={(event) => setDeviceId(event.target.value)} className="control">
+        </Select>
+        <Select value={deviceId} onChange={(event) => setDeviceId(event.target.value)}>
           {devices.filter((device) => device.id).map((device) => (
             <option key={device.id} value={device.id}>
               {device.name}
             </option>
           ))}
-        </select>
-        <select value={command} onChange={(event) => setCommand(event.target.value)} className="control">
+        </Select>
+        <Select value={command} onChange={(event) => setCommand(event.target.value)}>
           <option value="setPower">Питание</option>
           <option value="setPosition">Положение</option>
           <option value="close">Закрыть</option>
-        </select>
+        </Select>
         {trigger === "SCHEDULE" ? (
           <div className="grid grid-cols-2 gap-3">
             <input value={hour} onChange={(event) => setHour(event.target.value)} className="control" placeholder="Час" />
@@ -141,11 +142,11 @@ export function ScenarioList({ scenarios, devices }: { scenarios: Scenario[]; de
           </div>
         ) : null}
         {trigger === "EVENT" ? (
-          <select value={field} onChange={(event) => setField(event.target.value)} className="control">
+          <Select value={field} onChange={(event) => setField(event.target.value)}>
             <option value="on">Питание выкл</option>
             <option value="detected">Датчик сработал</option>
             <option value="latch">Замок закрыт</option>
-          </select>
+          </Select>
         ) : null}
         <button type="submit" className="btn btn-primary btn-compact">
           Сохранить

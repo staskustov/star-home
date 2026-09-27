@@ -576,6 +576,7 @@ function home(session: SessionRef): Reply {
       canSecurity: householdCan(membership.role, "security.alarm.raise"),
       canGate: householdCan(membership.role, "access.gate.open"),
       canCommand: householdCan(membership.role, "devices.command"),
+      canPay: pays,
       scenarioChips: layout.scenarioChips,
       actionChips,
       quickActions: actionChips.map((chip) => ({ id: chip.action ?? chip.id, label: chip.name })),

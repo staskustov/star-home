@@ -23,12 +23,12 @@ export function useViewMode(key: string): [ViewMode, (mode: ViewMode) => void] {
 
 export function ViewToggle({ value, onChange }: { value: ViewMode; onChange: (mode: ViewMode) => void }) {
   return (
-    <div className="inline-flex rounded-full border border-line p-1" role="group" aria-label="Вид">
+    <div className="inline-flex gap-1 rounded-[16px] border border-line bg-surface p-1" role="group" aria-label="Вид">
       <button
         type="button"
         aria-pressed={value === "list"}
         onClick={() => onChange("list")}
-        className={`rounded-full px-3 py-1 text-sm ${value === "list" ? "bg-accent text-accent-contrast" : "text-muted"}`}
+        className={`btn btn-compact ${value === "list" ? "btn-primary" : "btn-secondary"}`}
       >
         Список
       </button>
@@ -36,7 +36,7 @@ export function ViewToggle({ value, onChange }: { value: ViewMode; onChange: (mo
         type="button"
         aria-pressed={value === "blocks"}
         onClick={() => onChange("blocks")}
-        className={`rounded-full px-3 py-1 text-sm ${value === "blocks" ? "bg-accent text-accent-contrast" : "text-muted"}`}
+        className={`btn btn-compact ${value === "blocks" ? "btn-primary" : "btn-secondary"}`}
       >
         Блоки
       </button>

@@ -16,7 +16,7 @@
   --info: #3e5550;
   --glow: rgba(255, 255, 255, 0.72);
   --panel: var(--surface);
-  --panel-line: color-mix(in srgb, var(--line) 88%, transparent);
+  --panel-line: var(--line);
   --panel-blur: none;
   --backdrop: none;
   --veil: transparent;
@@ -38,9 +38,9 @@
   --danger: #974036;
   --info: #5c5244;
   --glow: rgba(255, 250, 242, 0.6);
-  --panel: rgba(251, 248, 243, 0.62);
-  --panel-line: rgba(255, 255, 255, 0.55);
-  --panel-blur: blur(22px) saturate(1.15);
+  --panel: var(--surface);
+  --panel-line: var(--line);
+  --panel-blur: none;
   --backdrop: url("/images/house-dusk.jpg");
   --veil: linear-gradient(180deg, rgba(236, 229, 218, 0.78), rgba(236, 229, 218, 0.9));
 }
@@ -60,9 +60,9 @@
   --danger: #ee9f92;
   --info: #cdbda6;
   --glow: rgba(234, 223, 206, 0.08);
-  --panel: rgba(62, 53, 44, 0.46);
-  --panel-line: rgba(255, 244, 228, 0.1);
-  --panel-blur: blur(24px) saturate(1.2);
+  --panel: var(--surface);
+  --panel-line: var(--line);
+  --panel-blur: none;
   --veil: linear-gradient(180deg, rgba(24, 20, 16, 0.62), rgba(24, 20, 16, 0.86));
 }
 
@@ -320,19 +320,15 @@ h3 {
 .panel {
   border-radius: 24px;
   border: 1px solid var(--panel-line);
-  background: var(--panel);
-  backdrop-filter: var(--panel-blur);
-  -webkit-backdrop-filter: var(--panel-blur);
+  background: var(--surface);
   box-shadow:
     0 1px 1px rgba(26, 26, 26, 0.04),
     0 12px 32px rgba(63, 61, 57, 0.05);
 }
 
 .glass-rail {
-  border-color: var(--panel-line);
-  background: color-mix(in srgb, var(--bg) 55%, transparent);
-  backdrop-filter: blur(24px) saturate(1.15);
-  -webkit-backdrop-filter: blur(24px) saturate(1.15);
+  border-color: var(--line);
+  background: var(--surface);
 }
 
 .auth-stage {
@@ -448,10 +444,8 @@ h3 {
   align-items: center;
   gap: 10px;
   border-radius: 18px;
-  border: 1px solid var(--panel-line);
-  background: var(--panel);
-  backdrop-filter: var(--panel-blur);
-  -webkit-backdrop-filter: var(--panel-blur);
+  border: 1px solid var(--line);
+  background: var(--surface);
   padding: 8px 14px;
   color: var(--ink);
   font-size: 15px;
@@ -501,8 +495,8 @@ h3 {
   width: 100%;
   min-height: 52px;
   border-radius: 16px;
-  border: 1px solid var(--panel-line);
-  background: color-mix(in srgb, var(--surface) 30%, var(--panel));
+  border: 1px solid var(--line);
+  background: var(--surface);
   color: var(--ink);
   padding: 0 16px;
   font-size: 16px;
@@ -578,8 +572,6 @@ input[type="file"].control::file-selector-button {
 .field-input {
   min-height: 56px;
   padding-left: 48px;
-  backdrop-filter: var(--panel-blur);
-  -webkit-backdrop-filter: var(--panel-blur);
 }
 
 .field-action {
@@ -609,10 +601,13 @@ input[type="file"].control::file-selector-button {
   min-width: 0;
 }
 
+select.control,
 .select-wrap .control {
   appearance: none;
+  -webkit-appearance: none;
   padding-right: 44px;
   cursor: pointer;
+  background-color: var(--surface);
 }
 
 .select-chevron {
@@ -634,16 +629,23 @@ input[type="file"].control::file-selector-button {
   min-height: 52px;
   padding: 0 20px;
   border-radius: 16px;
-  border: 1px solid transparent;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
   font-size: 15px;
   font-weight: 520;
   letter-spacing: -0.011em;
   cursor: pointer;
+  box-shadow: 0 1px 2px rgba(26, 26, 26, 0.04);
   transition:
     background 180ms cubic-bezier(0.2, 0, 0, 1),
     border-color 180ms cubic-bezier(0.2, 0, 0, 1),
     box-shadow 180ms cubic-bezier(0.2, 0, 0, 1),
     transform 180ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.btn:hover {
+  background: var(--surface-muted);
 }
 
 .btn:active {
@@ -661,6 +663,7 @@ input[type="file"].control::file-selector-button {
 }
 
 .btn-primary {
+  border-color: transparent;
   background: var(--accent);
   color: var(--accent-contrast);
   box-shadow:
@@ -669,16 +672,15 @@ input[type="file"].control::file-selector-button {
 }
 
 .btn-primary:hover {
+  background: var(--accent);
   filter: brightness(1.08);
 }
 
 .btn-secondary {
-  background: var(--panel);
+  background: var(--surface);
   color: var(--ink);
-  border-color: var(--panel-line);
+  border-color: var(--line);
   box-shadow: 0 1px 2px rgba(26, 26, 26, 0.04);
-  backdrop-filter: var(--panel-blur);
-  -webkit-backdrop-filter: var(--panel-blur);
 }
 
 .btn-secondary:hover {
@@ -722,10 +724,8 @@ input[type="file"].control::file-selector-button {
   gap: 4px;
   padding: 4px;
   border-radius: 22px;
-  border: 1px solid var(--panel-line);
-  background: color-mix(in srgb, var(--surface-muted) 40%, var(--panel));
-  backdrop-filter: var(--panel-blur);
-  -webkit-backdrop-filter: var(--panel-blur);
+  border: 1px solid var(--line);
+  background: var(--surface);
 }
 
 .segment-item {
@@ -772,10 +772,8 @@ input[type="file"].control::file-selector-button {
   overflow-x: auto;
   padding: 10px 14px;
   border-radius: 18px;
-  border: 1px solid var(--panel-line);
-  background: color-mix(in srgb, var(--surface-muted) 40%, var(--panel));
-  backdrop-filter: var(--panel-blur);
-  -webkit-backdrop-filter: var(--panel-blur);
+  border: 1px solid var(--line);
+  background: var(--surface);
   color: var(--graphite);
   font-size: 13px;
   letter-spacing: -0.011em;
@@ -801,10 +799,8 @@ input[type="file"].control::file-selector-button {
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
   border-radius: 22px;
-  border: 1px solid var(--panel-line);
-  background: color-mix(in srgb, var(--surface-muted) 40%, var(--panel));
-  backdrop-filter: var(--panel-blur);
-  -webkit-backdrop-filter: var(--panel-blur);
+  border: 1px solid var(--line);
+  background: var(--surface);
 }
 
 .chip-row::-webkit-scrollbar {
@@ -850,11 +846,9 @@ input[type="file"].control::file-selector-button {
   bottom: 0;
   left: 0;
   z-index: 30;
-  border-top: 1px solid var(--panel-line);
-  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  border-top: 1px solid var(--line);
+  background: var(--surface);
   padding-bottom: env(safe-area-inset-bottom);
-  backdrop-filter: blur(24px) saturate(1.2);
-  -webkit-backdrop-filter: blur(24px) saturate(1.2);
 }
 
 :root[data-theme="dark"] .dock {
@@ -905,12 +899,25 @@ input[type="file"].control::file-selector-button {
   bottom: calc(78px + env(safe-area-inset-bottom));
   left: 12px;
   border-radius: 24px;
-  border: 1px solid var(--panel-line);
-  background: color-mix(in srgb, var(--bg) 86%, transparent);
+  border: 1px solid var(--line);
+  background: var(--surface);
   padding: 10px 10px 14px;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(24px) saturate(1.2);
-  -webkit-backdrop-filter: blur(24px) saturate(1.2);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.18);
+}
+
+.file-btn {
+  position: relative;
+  display: inline-flex;
+  cursor: pointer;
+}
+
+.file-btn input[type="file"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
 }
 
 .sheet-link {

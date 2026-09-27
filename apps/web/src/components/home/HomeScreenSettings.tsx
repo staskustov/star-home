@@ -10,6 +10,7 @@ type Chip = {
   name: string;
   icon: string;
   strip: "scenarios" | "actions";
+  locked?: boolean;
 };
 
 function chipIcon(name: string): IconName {
@@ -34,6 +35,9 @@ export function HomeScreenSettings({
   const [saving, setSaving] = useState(false);
 
   function toggle(id: string, strip: "scenarios" | "actions") {
+    const chips = strip === "scenarios" ? scenarios : actions;
+    const chip = chips.find((item) => item.id === id);
+    if (chip?.locked && chip.strip === "scenarios") return;
     const set = strip === "scenarios" ? setSelectedScenarios : setSelectedActions;
     set((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
   }
@@ -62,7 +66,7 @@ export function HomeScreenSettings({
       <p className="mt-2 text-[15px] text-muted">Выберите сценарии и быстрые кнопки. Если плиток много, на главной их можно прокрутить.</p>
       <ChipPicker title="Сценарии" chips={scenarios} selected={selectedScenarios} onToggle={(id) => toggle(id, "scenarios")} />
       <ChipPicker title="Быстрые кнопки" chips={actions} selected={selectedActions} onToggle={(id) => toggle(id, "actions")} />
-      <button type="button" className="btn mt-6" disabled={saving} onClick={() => void save()}>
+      <button type="button" className="btn btn-primary mt-6" disabled={saving} onClick={() => void save()}>
         Сохранить главный экран
       </button>
       {notice ? (
@@ -94,7 +98,13 @@ function ChipPicker({
           return (
             <li key={chip.id}>
               <label className="panel flex cursor-pointer items-center gap-3 px-4 py-3">
-                <input type="checkbox" checked={on} onChange={() => onToggle(chip.id)} className="h-4 w-4" />
+                <input
+                  type="checkbox"
+                  checked={on || (Boolean(chip.locked) && chip.strip === "scenarios")}
+                  disabled={Boolean(chip.locked) && chip.strip === "scenarios"}
+                  onChange={() => onToggle(chip.id)}
+                  className="h-4 w-4"
+                />
                 <Icon name={chipIcon(chip.icon)} className="h-5 w-5 text-graphite" />
                 <span className="text-[15px] text-ink">{chip.name}</span>
               </label>

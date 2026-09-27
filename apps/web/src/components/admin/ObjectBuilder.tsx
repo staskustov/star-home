@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAdminPreview } from "@/components/admin/AdminPreview";
 import { DeviceAddWizard } from "@/components/admin/DeviceAddWizard";
+import { Select } from "@/components/ui/Select";
 import { ViewToggle, useViewMode, type ViewMode } from "@/components/ui/ViewToggle";
 import { plural } from "@/lib/format";
 import { objectPresentation } from "@/lib/object-presentation";
@@ -563,17 +564,13 @@ function UnitEditor({
         </label>
         <label className="block">
           <span className="text-sm text-muted">Этажность</span>
-          <select
-            value={floors}
-            onChange={(event) => setFloors(Number(event.target.value))}
-            className="control mt-2"
-          >
+          <Select value={floors} onChange={(event) => setFloors(Number(event.target.value))} wrapClassName="mt-2">
             {[1, 2, 3, 4, 5, 6].map((count) => (
               <option key={count} value={count}>
                 {count}
               </option>
             ))}
-          </select>
+          </Select>
         </label>
       </div>
       {Array.from({ length: floors }, (_, index) => index + 1).map((floor) => {
@@ -588,12 +585,14 @@ function UnitEditor({
             ) : (
               <p className="mt-2 text-sm text-muted">Картинка для будущей карты устройств.</p>
             )}
-            <input
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              className="mt-2 block w-full text-sm text-muted"
-              onChange={(event) => onPlan(floor, event.target.files?.[0])}
-            />
+            <label className="file-btn btn btn-secondary btn-compact mt-3">
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                onChange={(event) => onPlan(floor, event.target.files?.[0])}
+              />
+              {plan?.image ? "Заменить картинку" : "Добавить картинку"}
+            </label>
           </label>
         );
       })}
@@ -610,7 +609,7 @@ function UnitEditor({
                   </span>
                   <button
                     type="button"
-                    className="text-sm text-muted"
+                    className="btn btn-secondary btn-compact"
                     onClick={async () => {
                       setError(null);
                       const response = await fetch(`/api/catalog/rooms/${room.id}`, { method: "DELETE" });
@@ -657,14 +656,14 @@ function UnitEditor({
             className="control"
           />
           {floors > 1 ? (
-            <select value={roomFloor} onChange={(event) => setRoomFloor(event.target.value)} className="control">
+            <Select value={roomFloor} onChange={(event) => setRoomFloor(event.target.value)}>
               <option value="">Этаж</option>
               {Array.from({ length: floors }, (_, index) => index + 1).map((floor) => (
                 <option key={floor} value={floor}>
                   {floor}
                 </option>
               ))}
-            </select>
+            </Select>
           ) : (
             <span />
           )}

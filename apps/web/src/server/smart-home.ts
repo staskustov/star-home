@@ -806,26 +806,33 @@ export async function runHomeAction(
   if (action === "night") {
     const { runScenario } = await import("./scenarios");
     const night = readOps().scenarios.find(
-      (scenario) => scenario.name === "Ночь" && scenario.unitId === place.unitId && viewerReaches(viewer.value, scenario),
+      (scenario) =>
+        viewerReaches(viewer.value, scenario) &&
+        (scenario.name === "Ночь" || scenario.id.startsWith("scen_night_")) &&
+        (scenario.unitId === place.unitId || scenario.unitId === null),
     );
-    if (!night) return { ok: false, status: 404, message: "Сценарий не найден" };
-    const result = await runScenario(session, { scenarioId: night.id, confirmToken: input.confirmToken });
-    if (!result.ok) return result;
-    return { ok: true, value: { confirmed: result.value.confirmed, needsConfirm: result.value.needsConfirm, token: result.value.token, message: result.value.message } };
+    if (night) {
+      const result = await runScenario(session, { scenarioId: night.id, confirmToken: input.confirmToken });
+      if (!result.ok) return result;
+      return { ok: true, value: { confirmed: result.value.confirmed, needsConfirm: result.value.needsConfirm, token: result.value.token, message: result.value.message } };
+    }
   }
   const devices = scopedDevices(viewer.value);
   const targets =
-    action === "lights-off"
-      ? devices.filter((device) => device.kind === "LIGHTING")
-      : action === "curtains-close"
-        ? devices.filter((device) => device.kind === "CURTAIN")
-        : [];
-  if (!targets.length) return { ok: false, status: 400, message: "Нет таких устройств" };
+    action === "night"
+      ? devices.filter((device) => device.kind === "LIGHTING" || device.kind === "CURTAIN")
+      : action === "lights-off"
+        ? devices.filter((device) => device.kind === "LIGHTING")
+        : action === "curtains-close"
+          ? devices.filter((device) => device.kind === "CURTAIN")
+          : [];
+  if (!targets.length) return { ok: false, status: 400, message: action === "night" ? "Сценарий не найден" : "Нет таких устройств" };
   for (const device of targets) {
+    const lights = device.kind === "LIGHTING";
     const result = await commandDeviceSmart(session, {
       deviceId: device.id,
-      command: action === "lights-off" ? "setPower" : "setPosition",
-      value: action === "lights-off" ? false : 0,
+      command: lights ? "setPower" : "setPosition",
+      value: lights ? false : 0,
       confirmToken: input.confirmToken,
     });
     if (!result.ok) return result;

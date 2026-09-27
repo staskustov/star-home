@@ -183,7 +183,7 @@ export function RolesMatrix({ board }: { board: RolesBoard }) {
                 {columns.map((role, index) => (
                   <td key={role.value} className={`px-2 py-4 text-center ${index === staffColumns.length ? "border-l border-line/60" : ""}`}>
                     {role.editable && (role.customized || drafts[role.value]) && !same(grantedOf(role), role.ceiling) ? (
-                      <button type="button" onClick={() => standard(role)} className="text-[13px] text-ink underline decoration-line underline-offset-4 hover:decoration-ink">
+                      <button type="button" onClick={() => standard(role)} className="btn btn-secondary btn-compact">
                         Сбросить
                       </button>
                     ) : null}

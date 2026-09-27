@@ -2,25 +2,18 @@
 
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { HomeActionStrip, type ActionChipTile } from "@/components/home/HomeActionStrip";
 import { HomeChipStrip, type HomeChipTile } from "@/components/home/HomeChipStrip";
-import { HomeFacts } from "@/components/home/HomeFacts";
 import { HomeHero } from "@/components/home/HomeHero";
-import { InstantDevice } from "@/components/home/InstantDevice";
 import { WeatherStrip } from "@/components/home/WeatherStrip";
-import { Icon, type IconName } from "@/components/icons";
 import { LiveRefresh } from "@/components/pwa/LiveRefresh";
-import { formatMoney } from "@/lib/format";
 import { commandMessage, runCommand, unconfirmed } from "@/lib/command";
 import { greetingForHour } from "@/lib/greeting";
 import type { LifeMode, ResidentHome } from "@/types/domain";
 
 const CameraBlock = dynamic(() => import("@/components/home/CameraBlock").then((mod) => ({ default: mod.CameraBlock })));
 const SecuritySheet = dynamic(() => import("@/components/home/SecuritySheet").then((mod) => ({ default: mod.SecuritySheet })));
-
-type TodayRow = { key: string; icon: IconName; title: string; detail: string; href?: string };
 
 export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
   const router = useRouter();
@@ -134,22 +127,6 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
 
   if (!current) return null;
 
-  const today: TodayRow[] = [
-    ...(data.visitor ? [{ key: "visitor", icon: "guests" as const, title: data.visitor.title, detail: data.visitor.detail, href: "/access" }] : []),
-    ...(data.balance ? [{ key: "balance", icon: "payments" as const, title: "Счёт", detail: formatMoney(data.balance.amount, data.balance.currency) }] : []),
-    ...(data.todayEvent ? [{ key: "event", icon: "event" as const, title: data.todayEvent.title, detail: data.todayEvent.detail }] : []),
-    ...(data.todayRequest
-      ? [{ key: "request", icon: "requests" as const, title: "Заявка", detail: `${data.todayRequest.title}. ${data.todayRequest.detail}`, href: "/service" }]
-      : []),
-    ...data.paymentHistory.map((payment) => ({
-      key: `pay-${payment.title}-${payment.amount}`,
-      icon: "payments" as const,
-      title: "Оплачено",
-      detail: `${payment.title} · ${formatMoney(payment.amount, payment.currency)}`,
-    })),
-    ...data.meters.map((meter) => ({ key: `meter-${meter.name}`, icon: "meter" as const, title: meter.name, detail: `${meter.value} ${meter.unit}` })),
-  ];
-
   return (
     <div className="home-stack">
       <LiveRefresh />
@@ -180,83 +157,11 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
         humidityPercent={data.climate?.humidityPercent ?? null}
       />
 
-      <HomeFacts facts={data.facts} />
-
       {notice ? (
         <p role="status" className="fade-in text-[15px] text-muted">
           {notice}
         </p>
       ) : null}
-
-      <section aria-label="Дом">
-        <h2 className="mb-3 text-[19px] tracking-[-0.02em] text-ink">Дом</h2>
-        {data.devices.length === 0 ? (
-          <p className="panel px-5 py-5 text-[15px] text-muted">Устройства ещё не подключены.</p>
-        ) : (
-          <ul className="panel overflow-hidden">
-            {data.devices.slice(0, 4).map((device) => (
-              <li key={device.id ?? device.name} className="list-row !items-start">
-                <div className="min-w-0 flex-1">
-                  <InstantDevice
-                    device={device}
-                    canGate={data.canGate}
-                    canCommand={data.canCommand}
-                    href={device.id ? `/devices/${device.id}` : undefined}
-                  />
-                </div>
-              </li>
-            ))}
-            <li className="list-row">
-              <Link href="/devices" className="-my-1 flex min-w-0 flex-1 items-center gap-[14px] py-1 text-[15px] text-muted">
-                Все устройства
-                <Icon name="chevron" className="ml-auto h-4 w-4 shrink-0 text-muted" />
-              </Link>
-            </li>
-            <li className="list-row">
-              <Link href="/events" className="-my-1 flex min-w-0 flex-1 items-center gap-[14px] py-1 text-[15px] text-muted">
-                События дома
-                <Icon name="chevron" className="ml-auto h-4 w-4 shrink-0 text-muted" />
-              </Link>
-            </li>
-          </ul>
-        )}
-      </section>
-
-      <section aria-label="Сегодня">
-        <h2 className="mb-3 text-[19px] tracking-[-0.02em] text-ink">Сегодня</h2>
-        {today.length > 0 ? (
-          <ul className="panel overflow-hidden">
-            {today.map((row) => (
-              <li key={row.key} className="list-row">
-                <TodayContent row={row} />
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="panel px-5 py-5 text-[15px] text-muted">Пока тихо.</p>
-        )}
-      </section>
     </div>
-  );
-}
-
-function TodayContent({ row }: { row: TodayRow }) {
-  const body = (
-    <>
-      <span className="tile-icon">
-        <Icon name={row.icon} className="h-[18px] w-[18px]" />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block text-[15px] text-ink">{row.title}</span>
-        <span className="mt-0.5 block truncate text-[13px] text-muted">{row.detail}</span>
-      </span>
-    </>
-  );
-  if (!row.href) return body;
-  return (
-    <Link href={row.href} className="-my-1 flex min-w-0 flex-1 items-center gap-[14px] py-1">
-      {body}
-      <Icon name="chevron" className="h-4 w-4 shrink-0 text-muted" />
-    </Link>
   );
 }

@@ -83,6 +83,12 @@ function asView(chip: HomeChip): HomeChipView {
   };
 }
 
+function lockedScenarioIds(objectId: string, companyId: string): string[] {
+  return ensureChipsFor(objectId, companyId)
+    .filter((chip) => chip.strip === "scenarios" && chip.locked)
+    .map((chip) => chip.id);
+}
+
 export function decorateActionChips(objectId: string, chips: HomeChipView[]): HomeChipView[] {
   const devices = readOps().devices.filter((device) => device.objectId === objectId);
   const openers = devices.filter((device) => isOpener(device.kind));
@@ -149,10 +155,12 @@ function pickChips(objectId: string, companyId: string, ids: string[] | undefine
   const chips = ensureChipsFor(objectId, companyId).filter((chip) => chip.strip === strip);
   const selected = ids ?? defaultIds(objectId, strip);
   const byId = new Map(chips.map((chip) => [chip.id, chip]));
-  return selected.flatMap((id) => {
+  const locked = strip === "scenarios" ? chips.filter((chip) => chip.locked).map(asView) : [];
+  const extra = selected.flatMap((id) => {
     const chip = byId.get(id);
-    return chip ? [asView(chip)] : [];
+    return chip && !(strip === "scenarios" && chip.locked) ? [asView(chip)] : [];
   });
+  return [...locked, ...extra];
 }
 
 export function chipsForObject(objectId: string, companyId: string) {
@@ -167,7 +175,7 @@ export function homeLayoutFor(userId: string, unitId: string, objectId: string, 
   const stored = readOps().homeLayouts.find((item) => item.userId === userId && item.unitId === unitId);
   const available = chipsForObject(objectId, companyId);
   return {
-    scenarioIds: stored?.scenarioIds ?? defaultIds(objectId, "scenarios"),
+    scenarioIds: [...new Set([...(stored?.scenarioIds ?? defaultIds(objectId, "scenarios")), ...lockedScenarioIds(objectId, companyId)])],
     actionIds: stored?.actionIds ?? defaultIds(objectId, "actions"),
     scenarioChips: pickChips(objectId, companyId, stored?.scenarioIds, "scenarios"),
     actionChips: decorateActionChips(objectId, pickChips(objectId, companyId, stored?.actionIds, "actions")),
@@ -193,7 +201,7 @@ export function saveHomeLayoutFor(
     const ids = value.filter((item): item is string => typeof item === "string" && known.has(item) && chips.some((chip) => chip.id === item && chip.strip === strip));
     return [...new Set(ids)].slice(0, 20);
   };
-  const scenarioIds = clean(input.scenarioIds, "scenarios");
+  const scenarioIds = [...new Set([...lockedScenarioIds(object.id, object.companyId), ...clean(input.scenarioIds, "scenarios")])];
   const actionIds = clean(input.actionIds, "actions");
   const file = readOps();
   const next = file.homeLayouts.filter((item) => !(item.userId === session.userId && item.unitId === membership.unitId));

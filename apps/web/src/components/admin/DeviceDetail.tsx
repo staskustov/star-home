@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useAdminPreview } from "@/components/admin/AdminPreview";
 import { formatChannelValue } from "@/lib/format";
 import { commandMessage, runCommand } from "@/lib/command";
+import { Select } from "@/components/ui/Select";
 
 type Channel = {
   id: string;
@@ -185,44 +186,44 @@ export function DeviceDetail({
             <>
               <label className="block">
                 <span className="text-sm text-muted">Дом</span>
-                <select
+                <Select
                   value={unitId}
                   disabled={!allowEdit}
                   onChange={(event) => {
                     setUnitId(event.target.value);
                     setRoomId("");
                   }}
-                  className="control mt-2"
+                  wrapClassName="mt-2"
                 >
                   {houses.map((unit) => (
                     <option key={unit.id} value={unit.id}>
                       {unit.name}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
               <label className="block">
                 <span className="text-sm text-muted">Помещение</span>
-                <select value={roomId} disabled={!allowEdit} onChange={(event) => setRoomId(event.target.value)} className="control mt-2">
+                <Select value={roomId} disabled={!allowEdit} onChange={(event) => setRoomId(event.target.value)} wrapClassName="mt-2">
                   {roomsOfHouse.map((room) => (
                     <option key={room.id} value={room.id}>
                       {room.name}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
             </>
           ) : null}
           <label className="block sm:col-span-2">
             <span className="text-sm text-muted">Шлюз</span>
-            <select value={gatewayId} disabled={!allowEdit} onChange={(event) => setGatewayId(event.target.value)} className="control mt-2">
+            <Select value={gatewayId} disabled={!allowEdit} onChange={(event) => setGatewayId(event.target.value)} wrapClassName="mt-2">
               <option value="">Без шлюза</option>
               {hubs.map((gateway) => (
                 <option key={gateway.id} value={gateway.id}>
                   {gateway.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
         </section>
 

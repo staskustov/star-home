@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Icon, type IconName } from "@/components/icons";
 import { homeChipActions, homeChipIcons } from "@/lib/home-chips";
+import { Select } from "@/components/ui/Select";
 
 type Chip = {
   id: string;
@@ -124,34 +125,34 @@ export function HomeChipEditor({
           </fieldset>
           <label className="block">
             <span className="text-[13px] text-muted">Блок</span>
-            <select value={strip} onChange={(event) => setStrip(event.target.value as "scenarios" | "actions")} className="control mt-1 w-full">
+            <Select value={strip} onChange={(event) => setStrip(event.target.value as "scenarios" | "actions")} wrapClassName="mt-1 w-full">
               <option value="scenarios">Сценарии</option>
               <option value="actions">Быстрые кнопки</option>
-            </select>
+            </Select>
           </label>
           <label className="block">
             <span className="text-[13px] text-muted">Сценарий автоматизации</span>
-            <select value={scenarioId} onChange={(event) => setScenarioId(event.target.value)} className="control mt-1 w-full">
+            <Select value={scenarioId} onChange={(event) => setScenarioId(event.target.value)} wrapClassName="mt-1 w-full">
               <option value="">Не привязывать</option>
               {scenarios.map((scenario) => (
                 <option key={scenario.id} value={scenario.id}>
                   {scenario.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           <label className="block">
             <span className="text-[13px] text-muted">Или готовая кнопка</span>
-            <select value={action} onChange={(event) => setAction(event.target.value as typeof action)} className="control mt-1 w-full">
+            <Select value={action} onChange={(event) => setAction(event.target.value as typeof action)} wrapClassName="mt-1 w-full">
               <option value="">Не выбирать</option>
               {homeChipActions.map((item) => (
                 <option key={item} value={item}>
                   {actionLabels[item]}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
-          <button type="submit" className="btn">
+          <button type="submit" className="btn btn-primary">
             Добавить плитку
           </button>
         </form>

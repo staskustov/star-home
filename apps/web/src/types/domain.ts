@@ -187,6 +187,7 @@ export type ResidentHome = {
   canSecurity?: boolean;
   canGate?: boolean;
   canCommand?: boolean;
+  canPay?: boolean;
   facts?: {
     lights: { on: number; total: number } | null;
     doors: { open: string[] } | null;
@@ -225,7 +226,7 @@ export type AdminObjectSnapshot = {
 export type NavItem = {
   href: string;
   label: string;
-  icon: "home" | "access" | "ai" | "service" | "profile" | "overview" | "objects" | "residents" | "security" | "requests" | "payments" | "devices" | "settings" | "rooms" | "team" | "roles" | "audit" | "engineering" | "event";
+  icon: "home" | "access" | "ai" | "service" | "profile" | "overview" | "objects" | "residents" | "security" | "requests" | "payments" | "devices" | "settings" | "scenarios" | "rooms" | "team" | "roles" | "audit" | "engineering" | "event";
 };
 
 export type NavGroup = {

@@ -2,13 +2,14 @@ import type { NavItem } from "@/types/domain";
 
 export const residentNav: NavItem[] = [
   { href: "/home", label: "Главная", icon: "home" },
-  { href: "/access", label: "Доступ", icon: "access" },
   { href: "/rooms", label: "Помещения", icon: "rooms" },
-  { href: "/devices", label: "Устройства", icon: "devices" },
   { href: "/service", label: "Сервис", icon: "service" },
-  { href: "/scenarios", label: "Сценарии", icon: "settings" },
+  { href: "/access", label: "Доступ", icon: "access" },
+  { href: "/devices", label: "Устройства", icon: "devices" },
+  { href: "/scenarios", label: "Сценарии", icon: "scenarios" },
   { href: "/events", label: "События", icon: "event" },
-  { href: "/profile", label: "Настройки", icon: "profile" },
+  { href: "/payments", label: "Платежи", icon: "payments" },
+  { href: "/profile", label: "Настройки", icon: "settings" },
 ];
 
-export const residentDock = ["/home", "/rooms", "/devices", "/service"];
+export const residentDock = ["/home", "/rooms", "/service"];

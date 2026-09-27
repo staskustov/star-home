@@ -7,6 +7,7 @@ import { capabilitiesFor, type Capability } from "@/server/device-capabilities";
 import { displayNameForCapability, unitForCapability } from "@/server/device-channels";
 import { formatChannelValue } from "@/lib/format";
 import { commandMessage, runCommand } from "@/lib/command";
+import { Select } from "@/components/ui/Select";
 
 type Gateway = { id: string; objectId: string; name: string; adapter: string; status: string };
 type Room = { id: string; objectId: string; unitId: string; unitName: string; name: string };
@@ -268,14 +269,14 @@ export function DeviceAddWizard({
         <div className="mt-5 space-y-4">
           <label className="block">
             <span className="text-sm text-muted">Шлюз</span>
-            <select value={gatewayId} onChange={(event) => setGatewayId(event.target.value)} className="control mt-2">
+            <Select value={gatewayId} onChange={(event) => setGatewayId(event.target.value)} wrapClassName="mt-2">
               {hubs.length === 0 ? <option value="">Нет шлюзов</option> : null}
               {hubs.map((gateway) => (
                 <option key={gateway.id} value={gateway.id}>
                   {gateway.name} · {gateway.adapter}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           <button type="button" className="btn btn-primary btn-compact" disabled={busy || !gatewayId} onClick={() => void startScan()}>
             {scanStatus === "pending" ? "Ищем…" : "Найти"}
@@ -318,24 +319,24 @@ export function DeviceAddWizard({
           </label>
           <label className="block">
             <span className="text-sm text-muted">Тип</span>
-            <select value={kind} onChange={(event) => changeKind(event.target.value as DeviceKind)} className="control mt-2">
+            <Select value={kind} onChange={(event) => changeKind(event.target.value as DeviceKind)} wrapClassName="mt-2">
               {deviceKinds.map((item) => (
                 <option key={item} value={item}>
                   {deviceLabel(item)}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           <label className="block">
             <span className="text-sm text-muted">Шлюз</span>
-            <select value={gatewayId} onChange={(event) => setGatewayId(event.target.value)} className="control mt-2">
+            <Select value={gatewayId} onChange={(event) => setGatewayId(event.target.value)} wrapClassName="mt-2">
               <option value="">Без шлюза</option>
               {hubs.map((gateway) => (
                 <option key={gateway.id} value={gateway.id}>
                   {gateway.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           <label className="block">
             <span className="text-sm text-muted">Производитель</span>
@@ -384,30 +385,30 @@ export function DeviceAddWizard({
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="block">
                 <span className="text-sm text-muted">Дом</span>
-                <select
+                <Select
                   value={unitId}
                   onChange={(event) => {
                     setUnitId(event.target.value);
                     setRoomId("");
                   }}
-                  className="control mt-2"
+                  wrapClassName="mt-2"
                 >
                   {houses.map((unit) => (
                     <option key={unit.id} value={unit.id}>
                       {unit.name}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
               <label className="block">
                 <span className="text-sm text-muted">Помещение</span>
-                <select value={roomId} onChange={(event) => setRoomId(event.target.value)} className="control mt-2">
+                <Select value={roomId} onChange={(event) => setRoomId(event.target.value)} wrapClassName="mt-2">
                   {roomsOfHouse.map((room) => (
                     <option key={room.id} value={room.id}>
                       {room.name}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
             </div>
           ) : null}

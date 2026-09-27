@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { useAdminPreview } from "@/components/admin/AdminPreview";
 import { DeviceAddWizard } from "@/components/admin/DeviceAddWizard";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { Select } from "@/components/ui/Select";
 import { ViewToggle, useViewMode } from "@/components/ui/ViewToggle";
 import { commandMessage, runCommand } from "@/lib/command";
 import { formatChannelValue } from "@/lib/format";
@@ -734,7 +735,7 @@ export function DeviceDesk({
       {notice ? <p className="text-[15px] text-muted">{notice}</p> : null}
       {canPair ? (
         <form onSubmit={place} className="panel grid gap-3 px-5 py-5 sm:grid-cols-4">
-          <select value={pin.deviceId} onChange={(event) => setPin((current) => ({ ...current, deviceId: event.target.value }))} className="control sm:col-span-4">
+          <Select value={pin.deviceId} onChange={(event) => setPin((current) => ({ ...current, deviceId: event.target.value }))} wrapClassName="sm:col-span-4">
             <option value="">Устройство на плане</option>
             {rows.filter((device) => device.id).map((device) => (
               <option key={device.id} value={device.id}>
@@ -742,7 +743,7 @@ export function DeviceDesk({
                 {device.planX != null ? ` · ${device.planFloor}эт` : ""}
               </option>
             ))}
-          </select>
+          </Select>
           <input value={pin.floor} onChange={(event) => setPin((current) => ({ ...current, floor: event.target.value }))} className="control" placeholder="Этаж" />
           <input value={pin.x} onChange={(event) => setPin((current) => ({ ...current, x: event.target.value }))} className="control" placeholder="X %" />
           <input value={pin.y} onChange={(event) => setPin((current) => ({ ...current, y: event.target.value }))} className="control" placeholder="Y %" />
@@ -753,23 +754,22 @@ export function DeviceDesk({
       ) : null}
       {canPair ? (
         <form onSubmit={bindRoom} className="panel grid gap-3 px-5 py-5 sm:grid-cols-4">
-          <select value={bind.deviceId} onChange={(event) => setBind((current) => ({ ...current, deviceId: event.target.value }))} className="control">
+          <Select value={bind.deviceId} onChange={(event) => setBind((current) => ({ ...current, deviceId: event.target.value }))}>
             <option value="">Устройство</option>
             {rows.filter((device) => device.id).map((device) => (
               <option key={device.id} value={device.id}>
                 {device.name}
               </option>
             ))}
-          </select>
-          <select value={bind.place} onChange={(event) => setBind((current) => ({ ...current, place: event.target.value }))} className="control">
+          </Select>
+          <Select value={bind.place} onChange={(event) => setBind((current) => ({ ...current, place: event.target.value }))}>
             <option value="OBJECT">Объект</option>
             <option value="STREET">Улица посёлка</option>
             <option value="ROOM">Дом / помещение</option>
-          </select>
-          <select
+          </Select>
+          <Select
             value={bind.roomId}
             onChange={(event) => setBind((current) => ({ ...current, roomId: event.target.value }))}
-            className="control"
             disabled={bind.place !== "ROOM"}
           >
             <option value="">Помещение или улица дома</option>
@@ -778,7 +778,7 @@ export function DeviceDesk({
                 {room.unitName ? `${room.unitName} · ${room.name}` : room.name}
               </option>
             ))}
-          </select>
+          </Select>
           <button type="submit" className="btn btn-secondary btn-compact">
             Привязать
           </button>

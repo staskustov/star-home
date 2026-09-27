@@ -684,11 +684,9 @@ describe("smart home commands", () => {
     const keep = before.home.scenarioChips.slice(0, 2).map((chip) => chip.id);
     const saved = await rpc("saveHomeLayout", { scenarioIds: keep, actionIds: [] }, resident);
     assert.equal(saved.status, 200, JSON.stringify(saved.body));
-    const after = (await rpc("home", null, resident)).body as { home: { scenarioChips: { id: string }[]; actionChips: { id: string }[] } };
-    assert.deepEqual(
-      after.home.scenarioChips.map((chip) => chip.id),
-      keep,
-    );
+    const after = (await rpc("home", null, resident)).body as { home: { scenarioChips: { id: string; name: string }[]; actionChips: { id: string }[] } };
+    assert.ok(after.home.scenarioChips.some((chip) => chip.name === "Ночь"));
+    assert.ok(keep.every((id) => after.home.scenarioChips.some((chip) => chip.id === id)));
     assert.equal(after.home.actionChips.length, 0);
     await rpc("saveHomeLayout", {}, resident);
   });
