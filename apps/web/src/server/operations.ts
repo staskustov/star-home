@@ -367,19 +367,20 @@ export async function addPassFor(
   const name = clean(guestName, "Введите имя гостя", 80);
   if (typeof name !== "string") return name;
   const range = passRange(from, to);
-  if (range && "ok" in range && range.ok === false) return range;
-  const note = range
-    ? range.detail
-    : clean(detail, "Укажите срок доступа", 160);
+  if (range && range.ok === false) return range;
+  const note = range ? range.detail : clean(detail, "Укажите срок доступа", 160);
   if (typeof note !== "string") return note;
   const car = typeof vehicle === "string" ? vehicle.trim().replace(/\s+/g, " ").slice(0, 40) : "";
   return {
     ok: true as const,
-    value: createPass(place.value, name, note, car, range && "from" in range ? range.from : null, range && "to" in range ? range.to : null),
+    value: createPass(place.value, name, note, car, range?.from ?? null, range?.to ?? null),
   };
 }
 
-function passRange(from: unknown, to: unknown): { from: string; to: string; detail: string } | { ok: false; status: number; message: string } | null {
+function passRange(
+  from: unknown,
+  to: unknown,
+): { ok: true; from: string; to: string; detail: string } | { ok: false; status: number; message: string } | null {
   if ((from === undefined || from === null || from === "") && (to === undefined || to === null || to === "")) return null;
   const start = parseWhen(from);
   const end = parseWhen(to);
@@ -389,7 +390,7 @@ function passRange(from: unknown, to: unknown): { from: string; to: string; deta
     value
       .toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone })
       .replace(",", "");
-  return { from: start.toISOString(), to: end.toISOString(), detail: `${stamp(start)} — ${stamp(end)}` };
+  return { ok: true, from: start.toISOString(), to: end.toISOString(), detail: `${stamp(start)} — ${stamp(end)}` };
 }
 
 function parseWhen(value: unknown): Date | null {
