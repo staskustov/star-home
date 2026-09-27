@@ -28,8 +28,8 @@ export function AppShell({
       <div className="min-h-dvh lg:grid lg:grid-cols-[240px_minmax(0,1fr)]">
         <div className="hidden lg:block">{sidebar}</div>
         <div className="min-w-0">
-          <header className="sticky top-0 z-20 flex items-center justify-between gap-3 border-b border-line/60 bg-bg/40 px-5 py-3 backdrop-blur-xl lg:justify-end lg:px-8">
-            <p className="flex items-center gap-2 text-[12px] font-medium tracking-[0.26em] text-ink lg:hidden">
+          <header className="sticky top-0 z-20 flex items-center justify-between gap-3 overflow-visible border-b border-line/60 bg-bg px-5 py-3 lg:justify-end lg:px-8">
+            <p className="flex min-w-0 items-center gap-2 text-[12px] font-medium tracking-[0.26em] text-ink lg:hidden">
               <StarMark className="h-4 w-4 text-accent" />
               STAR HOME
             </p>

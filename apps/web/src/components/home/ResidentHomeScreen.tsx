@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
+import { HomeAccessBlock } from "@/components/home/HomeAccessBlock";
 import { HomeActionStrip, type ActionChipTile } from "@/components/home/HomeActionStrip";
 import { HomeChipStrip, type HomeChipTile } from "@/components/home/HomeChipStrip";
 import { HomeHero } from "@/components/home/HomeHero";
@@ -147,6 +148,7 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
         <p className="panel px-5 py-4 text-[15px] text-warning">{data.controller.message}</p>
       ) : null}
 
+      <HomeAccessBlock points={data.accessPoints ?? []} canCommand={data.canGate !== false} />
       <CameraBlock cameras={data.cameras} />
       <HomeActionStrip chips={actionChips} onSelect={onChip} />
 

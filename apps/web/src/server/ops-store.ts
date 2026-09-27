@@ -212,6 +212,7 @@ export type Notice = {
   body: string;
   at: string;
   severity?: "INFO" | "WARNING" | "ALERT";
+  readAt?: string | null;
 };
 
 export type AuditEntry = {
@@ -1025,6 +1026,19 @@ export function alarmsForObject(objectId: string): Alarm[] {
 
 export function noticesForUser(userId: string): Notice[] {
   return load().notices.filter((notice) => notice.userId === userId);
+}
+
+export function markNoticesRead(userId: string): Notice[] {
+  const file = load();
+  const at = new Date().toISOString();
+  let changed = false;
+  for (const notice of file.notices) {
+    if (notice.userId !== userId || notice.readAt) continue;
+    notice.readAt = at;
+    changed = true;
+  }
+  if (changed) persist(file);
+  return noticesForUser(userId);
 }
 
 export function auditForObject(objectId: string): AuditEntry[] {

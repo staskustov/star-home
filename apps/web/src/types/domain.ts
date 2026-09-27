@@ -201,7 +201,15 @@ export type ResidentHome = {
     message: string | null;
     gateways?: { name: string; status: string; lastSeen: string | null; stale: boolean }[];
   } | null;
-  notices?: { id: string; title: string; body: string; at: string; severity?: string }[];
+  notices?: { id: string; title: string; body: string; at: string; severity?: string; readAt?: string | null }[];
+  accessPoints?: {
+    id: string;
+    name: string;
+    kind: string;
+    latch?: "OPEN" | "CLOSED";
+    status?: string;
+    ready?: boolean;
+  }[];
 };
 
 export type AccessEvent = {

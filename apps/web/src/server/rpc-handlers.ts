@@ -43,7 +43,7 @@ import {
 import { homeLayoutFor, removeHomeChipFor, saveHomeChipFor, saveHomeLayoutFor } from "@/server/home-chips";
 import { saveModeFor, settingsFor, switchModeFor } from "@/server/life-modes";
 import { loginLimited, noteLoginFailure, noteLoginSuccess } from "@/server/login-limit";
-import { homeSignals, readOps } from "@/server/ops-store";
+import { homeSignals, markNoticesRead, readOps } from "@/server/ops-store";
 import { deskFor, deskSections, isDeskSection, residentAccess, residentNotices } from "@/server/ops-view";
 import {
   addPassFor,
@@ -151,6 +151,7 @@ const methodPolicy: Record<string, Route> = {
   switch: session(switched),
   places: session(places),
   profile: session(profile),
+  readNotices: session(readNotices),
   saveProfilePhoto: session(saveProfilePhoto),
   admin: session(admin),
   subscribe: session(subscribe),
@@ -572,6 +573,7 @@ function home(session: SessionRef): Reply {
       controller: signals.controller,
       weather: signals.weather,
       notices: residentNotices(session.userId).slice(0, 3),
+      accessPoints: residentAccess(base.unit.id, base.object.id).points,
       securityPhone: findObject(base.object.id)?.securityPhone ?? null,
       canSecurity: householdCan(membership.role, "security.alarm.raise"),
       canGate: householdCan(membership.role, "access.gate.open"),
@@ -616,6 +618,11 @@ function profile(session: SessionRef): Reply {
         }
       : null,
   });
+}
+
+function readNotices(session: SessionRef): Reply {
+  markNoticesRead(session.userId);
+  return ok({ notices: residentNotices(session.userId) });
 }
 
 function saveProfilePhoto(session: SessionRef, input: Input): Reply {

@@ -3,7 +3,7 @@ import { ThemeToggle } from "@/components/shell/ThemeToggle";
 
 export function TopBarActions() {
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex shrink-0 items-center gap-2">
       <ThemeToggle />
       <AccountActions />
       <form action="/api/auth/logout" method="post" className="hidden lg:block">

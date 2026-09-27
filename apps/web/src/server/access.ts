@@ -58,7 +58,12 @@ async function go(result: { status: number; body: { redirect?: string } }, fallb
 export const requireHome = cache(async (): Promise<ResidentHome> => {
   const result = await rpc<HomeBody>("home");
   if (result.status === 401 || result.body.redirect || !result.body.home) await go(result);
-  return result.body.home as ResidentHome;
+  const home = result.body.home as ResidentHome;
+  if (!home.accessPoints) {
+    const access = await rpc<AccessBody>("access");
+    if (access.status === 200) home.accessPoints = access.body.points ?? [];
+  }
+  return home;
 });
 
 export async function requirePlaces(): Promise<{ name: string; places: { membershipId: string; title: string; meta: string }[] }> {

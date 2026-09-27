@@ -640,6 +640,7 @@ describe("smart home commands", () => {
         weather?: { temperatureC: number | null; windMs: number | null };
         scenarioChips: { id: string; action?: string | null; lifeMode?: string }[];
         actionChips: { id: string; action?: string | null }[];
+        accessPoints: { id: string }[];
       };
     };
     assert.ok(home.home.facts?.lights);
@@ -648,6 +649,8 @@ describe("smart home commands", () => {
     assert.ok(home.home.scenarioChips.some((chip) => chip.action === "night"));
     assert.ok(home.home.actionChips.some((chip) => chip.action === "open-gate" && (chip.latch === "OPEN" || chip.latch === "CLOSED")));
     assert.ok(home.home.actionChips.some((chip) => chip.action === "open-point"));
+    assert.ok(home.home.accessPoints.some((point) => point.id === "dev_gate_siyanie"));
+    assert.ok(home.home.accessPoints.some((point) => point.id === "dev_wicket_siyanie"));
     assert.equal(home.home.weather?.temperatureC, 12.4);
     assert.equal(home.home.weather?.windMs, 2.4);
   });
@@ -944,6 +947,12 @@ describe("smart home commands", () => {
     const after = ((await rpc("home", null, resident)).body as { home: { notices?: { body: string }[] } }).home.notices ?? [];
     assert.ok(after.length >= before.length);
     assert.ok(after.some((item) => item.body.includes("сигнал")));
+    const unread = ((await rpc("profile", null, resident)).body as { notices: { id: string; readAt?: string | null }[] }).notices;
+    assert.ok(unread.some((notice) => !notice.readAt));
+    const marked = await rpc("readNotices", null, resident);
+    assert.equal(marked.status, 200);
+    const read = (marked.body as { notices: { id: string; readAt?: string | null }[] }).notices;
+    assert.ok(read.length > 0 && read.every((notice) => Boolean(notice.readAt)));
     await rpc("updateDevice", { deviceId: "dev_light_24", gatewayId: null }, admin);
   });
 

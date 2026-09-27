@@ -57,7 +57,14 @@ export function residentNotices(userId: string) {
   return readOps()
     .notices.filter((notice) => notice.userId === userId)
     .slice(0, 5)
-    .map((notice) => ({ id: notice.id, title: notice.title, body: notice.body, at: notice.at, severity: notice.severity ?? "INFO" }));
+    .map((notice) => ({
+      id: notice.id,
+      title: notice.title,
+      body: notice.body,
+      at: notice.at,
+      severity: notice.severity ?? "INFO",
+      readAt: notice.readAt ?? null,
+    }));
 }
 
 export const deskSections = {
