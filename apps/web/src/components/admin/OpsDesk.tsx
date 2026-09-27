@@ -408,7 +408,7 @@ export function DeviceDesk({
   const [pairToken, setPairToken] = useState<string | null>(null);
   const [pending, setPending] = useState<{ id: string; command: string } | null>(null);
   const [pin, setPin] = useState({ deviceId: "", floor: "1", x: "50", y: "50" });
-  const [bind, setBind] = useState({ deviceId: "", roomId: "" });
+  const [bind, setBind] = useState({ deviceId: "", place: "ROOM", roomId: "" });
 
   async function testCommand(deviceId: string, command: string, confirmToken?: string) {
     setNotice(null);
@@ -480,7 +480,11 @@ export function DeviceDesk({
       fetch(`/api/smart-home/devices/${bind.deviceId}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ roomId: bind.roomId || null }),
+        body: JSON.stringify(
+          bind.place === "ROOM"
+            ? { place: "ROOM", roomId: bind.roomId }
+            : { place: bind.place, unitId: null, roomId: null },
+        ),
       }),
     );
     setNotice(result.ok ? "Помещение сохранено." : commandMessage(result.payload));
@@ -596,7 +600,7 @@ export function DeviceDesk({
         </form>
       ) : null}
       {canPair ? (
-        <form onSubmit={bindRoom} className="panel grid gap-3 px-5 py-5 sm:grid-cols-3">
+        <form onSubmit={bindRoom} className="panel grid gap-3 px-5 py-5 sm:grid-cols-4">
           <select value={bind.deviceId} onChange={(event) => setBind((current) => ({ ...current, deviceId: event.target.value }))} className="control">
             <option value="">Устройство</option>
             {rows.filter((device) => device.id).map((device) => (
@@ -605,8 +609,18 @@ export function DeviceDesk({
               </option>
             ))}
           </select>
-          <select value={bind.roomId} onChange={(event) => setBind((current) => ({ ...current, roomId: event.target.value }))} className="control">
-            <option value="">Без помещения</option>
+          <select value={bind.place} onChange={(event) => setBind((current) => ({ ...current, place: event.target.value }))} className="control">
+            <option value="OBJECT">Объект</option>
+            <option value="STREET">Улица посёлка</option>
+            <option value="ROOM">Дом / помещение</option>
+          </select>
+          <select
+            value={bind.roomId}
+            onChange={(event) => setBind((current) => ({ ...current, roomId: event.target.value }))}
+            className="control"
+            disabled={bind.place !== "ROOM"}
+          >
+            <option value="">Помещение или улица дома</option>
             {places.map((room) => (
               <option key={room.id} value={room.id}>
                 {room.name}

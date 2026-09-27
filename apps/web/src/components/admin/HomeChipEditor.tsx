@@ -18,6 +18,7 @@ type Chip = {
 
 const actionLabels: Record<(typeof homeChipActions)[number], string> = {
   "open-gate": "Ворота",
+  "open-point": "Точка доступа",
   guests: "Гости",
   security: "Охрана",
   pay: "Оплатить",

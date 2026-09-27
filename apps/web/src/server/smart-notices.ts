@@ -10,14 +10,13 @@ export function notifyHousehold(input: {
   body: string;
   severity?: "INFO" | "WARNING" | "ALERT";
 }): void {
-  if (!input.unitId) return;
   const file = readOps();
   const stamp = new Date().toISOString();
   const people = listMemberships().filter(
     (membership) =>
       membership.companyId === input.companyId &&
       membership.objectId === input.objectId &&
-      membership.unitId === input.unitId &&
+      (!input.unitId || membership.unitId === input.unitId) &&
       (membership.role === "RESIDENT" || membership.role === "FAMILY_MEMBER") &&
       membership.status !== "REVOKED",
   );
@@ -44,17 +43,19 @@ export function notifyIfAlert(input: {
   objectId: string;
   unitId: string | null;
   name: string;
-  before?: { work?: string; detected?: boolean };
-  after: { work?: string; detected?: boolean };
+  before?: { work?: string; detected?: boolean; availability?: string };
+  after: { work?: string; detected?: boolean; availability?: string };
 }): void {
-  const raised = (afterDetected(input.after) && !afterDetected(input.before)) || (input.after.work === "FAULT" && input.before?.work !== "FAULT");
-  if (!raised) return;
+  const fault = input.after.work === "FAULT" && input.before?.work !== "FAULT";
+  const offline = input.after.availability === "OFFLINE" && input.before?.availability !== "OFFLINE";
+  const raised = afterDetected(input.after) && !afterDetected(input.before);
+  if (!fault && !offline && !raised) return;
   notifyHousehold({
     companyId: input.companyId,
     objectId: input.objectId,
     unitId: input.unitId,
-    title: "Тревога",
-    body: `${input.name}: есть сигнал.`,
+    title: "Устройство",
+    body: fault ? `${input.name}: неисправно.` : offline ? `${input.name}: нет связи.` : `${input.name}: есть сигнал.`,
     severity: "ALERT",
   });
 }

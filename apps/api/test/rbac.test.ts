@@ -257,6 +257,7 @@ describe("smart home registry", () => {
     );
     assert.equal(created.status, 201);
     const deviceId = (created.body as { id: string }).id;
+    assert.equal((await rpc("registerDevice", { objectId: "obj_siyanie", unitId: "unit_24", name: "Свет без комнаты", kind: "LIGHTING" }, objectAdmin)).status, 400);
     assert.equal((await rpc("registerDevice", { objectId: "obj_park", name: "Чужой", kind: "LIGHTING" }, objectAdmin)).status, 403);
     const devices = (await rpc("listDevices", { objectId: "obj_siyanie" }, objectAdmin)).body as {
       devices: { id: string; roomId: string | null; gatewayId: string | null; capabilities: string[]; availability: string }[];
@@ -397,9 +398,10 @@ describe("smart home commands", () => {
     assert.ok((home.home.facts.lights.on ?? 0) >= 1);
     assert.ok(home.home.scenarioChips.some((chip) => chip.lifeMode === "HOME"));
     assert.ok(home.home.scenarioChips.some((chip) => chip.action === "night"));
-    assert.ok(home.home.actionChips.some((chip) => chip.action === "open-gate"));
-    assert.equal(home.home.weather?.temperatureC ?? null, null);
-    assert.equal(home.home.weather?.windMs ?? null, null);
+    assert.ok(home.home.actionChips.some((chip) => chip.action === "open-gate" && (chip.latch === "OPEN" || chip.latch === "CLOSED")));
+    assert.ok(home.home.actionChips.some((chip) => chip.action === "open-point"));
+    assert.equal(home.home.weather?.temperatureC, 12.4);
+    assert.equal(home.home.weather?.windMs, 2.4);
   });
 
   it("broadcasts outdoor weather from stored object sensors only", async () => {
@@ -421,7 +423,7 @@ describe("smart home commands", () => {
     delete station.state;
     ops.writeOps(file);
     const empty = (await rpc("home", null, resident)).body as { home: { weather: { temperatureC: number | null } } };
-    assert.equal(empty.home.weather.temperatureC, null);
+    assert.equal(empty.home.weather.temperatureC, 12.4);
   });
 
   it("lets a resident pick home chips and keeps exactly three life modes", async () => {

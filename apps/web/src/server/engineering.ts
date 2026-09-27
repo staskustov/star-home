@@ -3,6 +3,7 @@ import { deviceLabel, type DeviceKind } from "@/server/device-kinds";
 import { rememberReading, runDevice } from "@/server/devices";
 import { recordAudit } from "@/server/operations";
 import { readOps, writeOps, type Device, type DeviceReading } from "@/server/ops-store";
+import { notifyIfAlert } from "@/server/smart-notices";
 import { can, objectFor, objectsInScope, reaches, type StaffActor } from "@/server/rbac/decide";
 import { placeName } from "@/server/security-post";
 import type { DeviceWork, EngineeringBoard, EngineeringDevice, EngineeringSystem } from "@/types/engineering";
@@ -158,6 +159,14 @@ export function setDeviceWorkFor(actor: StaffActor, objectId: unknown, deviceId:
   if (!device) return { ok: false, status: 404, message: "Устройство не найдено" };
   device.work = next;
   writeOps(file);
+  notifyIfAlert({
+    companyId: device.companyId,
+    objectId: device.objectId,
+    unitId: device.unitId,
+    name: device.name,
+    before: { work: from },
+    after: { work: next },
+  });
   recordAudit({
     actorUserId: actor.userId,
     companyId: device.companyId,

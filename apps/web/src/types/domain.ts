@@ -134,6 +134,9 @@ export type ResidentHome = {
     lifeMode?: LifeMode;
     scenarioId?: string | null;
     action?: string | null;
+    deviceId?: string | null;
+    latch?: "OPEN" | "CLOSED";
+    stale?: boolean;
   }[];
   actionChips?: {
     id: string;
@@ -144,6 +147,9 @@ export type ResidentHome = {
     lifeMode?: LifeMode;
     scenarioId?: string | null;
     action?: string | null;
+    deviceId?: string | null;
+    latch?: "OPEN" | "CLOSED";
+    stale?: boolean;
   }[];
   quickActions: QuickAction[];
   visitor: VisitorPreview | null;
@@ -158,7 +164,7 @@ export type ResidentHome = {
   } | null;
   paymentHistory: { title: string; amount: number; currency: string }[];
   categories: string[];
-  rooms: { id?: string; name: string }[];
+  rooms: { id?: string; name: string; deviceCount?: number }[];
   cameras: { name: string; state: string }[];
   devices: {
     id?: string;

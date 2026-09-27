@@ -2,6 +2,7 @@ import { homeChipActions, homeChipIcons } from "@/lib/home-chips";
 import { findObject } from "@/server/catalog-store";
 import { findMembership } from "@/server/directory";
 import { modesForObject } from "@/server/life-mode-store";
+import { isOpener } from "@/server/device-kinds";
 import { newId, readOps, writeOps, type HomeChip, type HomeChipKind } from "@/server/ops-store";
 import { recordAudit } from "@/server/operations";
 import { can, objectFor, type StaffActor } from "@/server/rbac/decide";
@@ -22,6 +23,9 @@ export type HomeChipView = {
   lifeMode?: LifeMode;
   scenarioId?: string | null;
   action?: string | null;
+  deviceId?: string | null;
+  latch?: "OPEN" | "CLOSED";
+  stale?: boolean;
   locked?: boolean;
 };
 
@@ -74,8 +78,31 @@ function asView(chip: HomeChip): HomeChipView {
     lifeMode: chip.lifeMode,
     scenarioId: chip.scenarioId ?? null,
     action: chip.action ?? null,
+    deviceId: chip.deviceId ?? null,
     locked: Boolean(chip.locked),
   };
+}
+
+export function decorateActionChips(objectId: string, chips: HomeChipView[]): HomeChipView[] {
+  const devices = readOps().devices.filter((device) => device.objectId === objectId);
+  const openers = devices.filter((device) => isOpener(device.kind));
+  return chips.map((chip) => {
+    const bound = chip.deviceId ? openers.find((device) => device.id === chip.deviceId) : undefined;
+    const byAction =
+      chip.action === "open-gate"
+        ? openers.find((device) => device.kind === "GATE")
+        : chip.action === "open-point"
+          ? openers.find((device) => device.kind === "WICKET" || device.kind === "BARRIER" || device.kind === "LOCK")
+          : undefined;
+    const device = bound ?? byAction;
+    if (!device) return chip;
+    return {
+      ...chip,
+      deviceId: device.id,
+      latch: (device.state?.latch ?? device.latch) === "OPEN" ? "OPEN" : "CLOSED",
+      stale: device.availability === "OFFLINE" || device.work === "FAULT" || device.work === "OFF",
+    };
+  });
 }
 
 function defaultsFor(objectId: string, companyId: string): HomeChip[] {
@@ -89,6 +116,21 @@ function defaultsFor(objectId: string, companyId: string): HomeChip[] {
     { id: `chip_${objectId}_gate`, companyId, objectId, name: "Ворота", icon: "gate", kind: "ACTION", strip: "actions", action: "open-gate", sort: 10, locked: true },
     { id: `chip_${objectId}_security`, companyId, objectId, name: "Охрана", icon: "security", kind: "ACTION", strip: "actions", action: "security", sort: 20, locked: true },
     { id: `chip_${objectId}_guests`, companyId, objectId, name: "Гости", icon: "guests", kind: "ACTION", strip: "actions", action: "guests", sort: 30, locked: true },
+    ...readOps()
+      .devices.filter((device) => device.objectId === objectId && device.unitId === null && isOpener(device.kind) && device.kind !== "GATE")
+      .map((device, index) => ({
+        id: `chip_${objectId}_${device.id}`,
+        companyId,
+        objectId,
+        name: device.name,
+        icon: device.kind === "LOCK" ? "lock" : "gate",
+        kind: "ACTION" as const,
+        strip: "actions" as const,
+        action: "open-point" as const,
+        deviceId: device.id,
+        sort: 16 + index,
+        locked: true,
+      })),
   ];
 }
 
@@ -128,7 +170,7 @@ export function homeLayoutFor(userId: string, unitId: string, objectId: string, 
     scenarioIds: stored?.scenarioIds ?? defaultIds(objectId, "scenarios"),
     actionIds: stored?.actionIds ?? defaultIds(objectId, "actions"),
     scenarioChips: pickChips(objectId, companyId, stored?.scenarioIds, "scenarios"),
-    actionChips: pickChips(objectId, companyId, stored?.actionIds, "actions"),
+    actionChips: decorateActionChips(objectId, pickChips(objectId, companyId, stored?.actionIds, "actions")),
     available,
   };
 }

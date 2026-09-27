@@ -197,6 +197,8 @@ function seed(): Catalog {
       { id: "room_24_bedroom", objectId: "obj_siyanie", unitId: "unit_24", floor: 1, name: "Спальня", kind: "BEDROOM", sort: 1 },
       { id: "room_24_kitchen", objectId: "obj_siyanie", unitId: "unit_24", floor: 1, name: "Кухня", kind: "KITCHEN", sort: 2 },
       { id: "room_24_street", objectId: "obj_siyanie", unitId: "unit_24", floor: null, name: "Улица", kind: "STREET", sort: 3 },
+      { id: "room_84_living", objectId: "obj_park", unitId: "unit_84", floor: 1, name: "Гостиная", kind: "LIVING", sort: 0 },
+      { id: "room_84_street", objectId: "obj_park", unitId: "unit_84", floor: null, name: "Улица", kind: "STREET", sort: 1 },
     ],
   };
 }
@@ -241,6 +243,35 @@ function normalizeUnits(catalog: Catalog): Catalog {
     room.kind ??= "OTHER";
     room.sort ??= 0;
   }
+  let added = false;
+  for (const unit of catalog.units) {
+    const rooms = catalog.rooms.filter((room) => room.unitId === unit.id);
+    if (!rooms.some((room) => room.kind === "STREET")) {
+      catalog.rooms.push({
+        id: `room_${unit.id}_street`,
+        objectId: unit.objectId,
+        unitId: unit.id,
+        floor: null,
+        name: "Улица",
+        kind: "STREET",
+        sort: rooms.length,
+      });
+      added = true;
+    }
+    if (!rooms.some((room) => room.kind !== "STREET")) {
+      catalog.rooms.push({
+        id: `room_${unit.id}_main`,
+        objectId: unit.objectId,
+        unitId: unit.id,
+        floor: 1,
+        name: "Помещение",
+        kind: "OTHER",
+        sort: 0,
+      });
+      added = true;
+    }
+  }
+  if (added) persist(catalog);
   return catalog;
 }
 

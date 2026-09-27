@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
 import { capabilitiesFor, type Capability } from "@/server/device-capabilities";
 import { deviceLabel, isOpener, type DeviceKind } from "@/server/device-kinds";
-import { findObject, findRoom } from "@/server/catalog-store";
+import { findObject, findRoom, roomsOf } from "@/server/catalog-store";
 import { boundValue, remember } from "@/server/store-bind";
 import type { AccessEvent } from "@/types/domain";
 import { timeZone } from "@/server/time-zone";
@@ -85,11 +85,22 @@ export type NormalizedState = {
   radiationUSv?: number;
 };
 
+export const devicePlaces = ["OBJECT", "STREET", "ROOM"] as const;
+export type DevicePlace = (typeof devicePlaces)[number];
+
+export const staticOutdoorWeather = {
+  temperatureC: 12.4,
+  humidityPercent: 58,
+  windMs: 2.4,
+  radiationUSv: 0.11,
+} as const;
+
 export type Device = {
   id: string;
   companyId: string;
   objectId: string;
   unitId: string | null;
+  place?: DevicePlace;
   kind: DeviceKind;
   name: string;
   adapter: "local" | "http" | "matter" | "mqtt" | "modbus" | "onvif" | "rs485";
@@ -338,6 +349,7 @@ export type HomeChip = {
   lifeMode?: "HOME" | "WORK" | "VACATION";
   scenarioId?: string | null;
   action?: string | null;
+  deviceId?: string | null;
   sort: number;
   locked?: boolean;
 };
@@ -526,6 +538,7 @@ function seed(): OpsFile {
         kind: "CLIMATE",
         name: "Климат квартиры",
         adapter: "local",
+        roomId: "room_84_living",
       },
       {
         id: "dev_wicket_siyanie",
@@ -554,6 +567,7 @@ function seed(): OpsFile {
         name: "Камера входа",
         adapter: "local",
         work: "ON",
+        roomId: "room_24_street",
       },
       {
         id: "dev_camera_yard_24",
@@ -564,6 +578,7 @@ function seed(): OpsFile {
         name: "Камера двора",
         adapter: "local",
         work: "ON",
+        roomId: "room_24_street",
       },
       {
         id: "dev_camera_wicket_24",
@@ -574,6 +589,7 @@ function seed(): OpsFile {
         name: "Камера калитки",
         adapter: "local",
         work: "OFF",
+        roomId: "room_24_street",
       },
       {
         id: "dev_leak_24",
@@ -584,6 +600,7 @@ function seed(): OpsFile {
         name: "Датчик протечки",
         adapter: "local",
         work: "FAULT",
+        roomId: "room_24_kitchen",
       },
       {
         id: "dev_lock_84",
@@ -593,6 +610,7 @@ function seed(): OpsFile {
         kind: "LOCK",
         name: "Замок",
         adapter: "local",
+        roomId: "room_84_living",
       },
       {
         id: "dev_weather_siyanie",
@@ -602,6 +620,8 @@ function seed(): OpsFile {
         kind: "WEATHER",
         name: "Улица",
         adapter: "local",
+        place: "STREET",
+        state: { ...staticOutdoorWeather },
       },
       {
         id: "dev_weather_park",
@@ -611,6 +631,8 @@ function seed(): OpsFile {
         kind: "WEATHER",
         name: "Улица",
         adapter: "local",
+        place: "STREET",
+        state: { ...staticOutdoorWeather },
       },
     ],
     gateways: [],
@@ -654,6 +676,37 @@ export function isGatewayAdapter(value: unknown): value is GatewayAdapterKind {
   return typeof value === "string" && (gatewayAdapters as readonly string[]).includes(value);
 }
 
+export function isDevicePlace(value: unknown): value is DevicePlace {
+  return typeof value === "string" && (devicePlaces as readonly string[]).includes(value);
+}
+
+function bindDevicePlace(device: Device): void {
+  const rooms = device.unitId ? roomsOf(device.unitId) : [];
+  const streetRoom = rooms.find((room) => room.kind === "STREET");
+  const indoor = rooms.find((room) => room.kind !== "STREET") ?? rooms[0];
+  const outdoorName = /улиц|двор|калитк|ворот|шлагбаум/i.test(device.name);
+  if (device.place === "STREET" || device.kind === "WEATHER") {
+    device.place = "STREET";
+    device.unitId = null;
+    device.roomId = null;
+    return;
+  }
+  if (device.roomId) {
+    const room = findRoom(device.roomId);
+    device.place = "ROOM";
+    if (room) device.unitId = room.unitId;
+    return;
+  }
+  if (device.unitId) {
+    const room = outdoorName || device.kind === "CAMERA" ? streetRoom ?? indoor : indoor;
+    device.place = "ROOM";
+    device.roomId = room?.id ?? null;
+    return;
+  }
+  device.place = outdoorName ? "STREET" : "OBJECT";
+  device.roomId = null;
+}
+
 export function normalizeDevice(device: Device, reading?: DeviceReading): Device {
   device.displayName ??= device.name;
   device.gatewayId ??= null;
@@ -670,6 +723,15 @@ export function normalizeDevice(device: Device, reading?: DeviceReading): Device
   device.metadata ??= {};
   if (!device.work) device.work = "ON";
   if (isOpener(device.kind)) device.latch ??= "CLOSED";
+  bindDevicePlace(device);
+  if (device.kind === "WEATHER") {
+    device.state = {
+      temperatureC: device.state?.temperatureC ?? staticOutdoorWeather.temperatureC,
+      humidityPercent: device.state?.humidityPercent ?? staticOutdoorWeather.humidityPercent,
+      windMs: device.state?.windMs ?? staticOutdoorWeather.windMs,
+      radiationUSv: device.state?.radiationUSv ?? staticOutdoorWeather.radiationUSv,
+    };
+  }
   if (reading && (device.kind === "CLIMATE" || device.capabilities?.includes("temperature") || device.capabilities?.includes("humidity"))) {
     device.state = {
       ...device.state,
@@ -1026,10 +1088,10 @@ function outdoorWeatherOf(devices: Device[]) {
     return typeof value === "number" ? value : null;
   };
   return {
-    temperatureC: numbers((device) => device.state?.temperatureC),
-    humidityPercent: numbers((device) => device.state?.humidityPercent),
-    windMs: numbers((device) => device.state?.windMs),
-    radiationUSv: numbers((device) => device.state?.radiationUSv),
+    temperatureC: numbers((device) => device.state?.temperatureC) ?? staticOutdoorWeather.temperatureC,
+    humidityPercent: numbers((device) => device.state?.humidityPercent) ?? staticOutdoorWeather.humidityPercent,
+    windMs: numbers((device) => device.state?.windMs) ?? staticOutdoorWeather.windMs,
+    radiationUSv: numbers((device) => device.state?.radiationUSv) ?? staticOutdoorWeather.radiationUSv,
   };
 }
 

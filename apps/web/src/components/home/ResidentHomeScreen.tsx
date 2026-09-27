@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { HomeActionStrip, type ActionChipTile } from "@/components/home/HomeActionStrip";
 import { HomeChipStrip, type HomeChipTile } from "@/components/home/HomeChipStrip";
 import { HomeFacts } from "@/components/home/HomeFacts";
 import { HomeHero } from "@/components/home/HomeHero";
@@ -14,7 +15,6 @@ import { LiveRefresh } from "@/components/pwa/LiveRefresh";
 import { formatMoney } from "@/lib/format";
 import { commandMessage, runCommand, unconfirmed } from "@/lib/command";
 import { greetingForHour } from "@/lib/greeting";
-import { houseReadout } from "@/lib/house-status";
 import type { LifeMode, ResidentHome } from "@/types/domain";
 
 const CameraBlock = dynamic(() => import("@/components/home/CameraBlock").then((mod) => ({ default: mod.CameraBlock })));
@@ -27,6 +27,11 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
   const [mode, setMode] = useState<LifeMode>(data.activeLifeMode);
   const [notice, setNotice] = useState<string | null>(null);
   const [securityOpen, setSecurityOpen] = useState(false);
+  const [actionChips, setActionChips] = useState(data.actionChips ?? []);
+
+  useEffect(() => {
+    setActionChips(data.actionChips ?? []);
+  }, [data.actionChips]);
   const current = data.lifeModes.find((item) => item.mode === mode) ?? data.lifeModes[0];
   const greeting = greetingForHour(new Date().getHours(), data.residentName);
 
@@ -58,9 +63,26 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
     router.refresh();
   }
 
-  async function onChip(chip: HomeChipTile) {
+  async function onChip(chip: HomeChipTile | ActionChipTile) {
     if (chip.lifeMode) {
       await changeMode(chip.lifeMode);
+      return;
+    }
+    if ("latch" in chip && chip.deviceId && (chip.action === "open-gate" || chip.action === "open-point" || chip.latch)) {
+      const open = chip.latch !== "OPEN";
+      setActionChips((current) => current.map((item) => (item.id === chip.id ? { ...item, latch: open ? "OPEN" : "CLOSED" } : item)));
+      setNotice(open ? "Открываем…" : "Закрываем…");
+      const result = await runCommand(() =>
+        fetch(open ? "/api/access/points" : `/api/access/points/${chip.deviceId}/close`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ pointId: chip.deviceId }),
+        }),
+      );
+      if (!result.ok || result.payload?.confirmed !== true) {
+        setActionChips((current) => current.map((item) => (item.id === chip.id ? { ...item, latch: chip.latch } : item)));
+      }
+      setNotice(commandMessage(result.payload));
       return;
     }
     if (chip.scenarioId) {
@@ -111,8 +133,6 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
   }
 
   if (!current) return null;
-  const readout = houseReadout(data.devices, current);
-  const security = readout.tone === "danger" ? "Есть проблема" : current.securityLabel;
 
   const today: TodayRow[] = [
     ...(data.visitor ? [{ key: "visitor", icon: "guests" as const, title: data.visitor.title, detail: data.visitor.detail, href: "/access" }] : []),
@@ -151,15 +171,11 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
       ) : null}
 
       <CameraBlock cameras={data.cameras} />
-      <HomeChipStrip chips={data.actionChips ?? []} label="Быстрые кнопки" onSelect={onChip} />
+      <HomeActionStrip chips={actionChips} onSelect={onChip} />
 
       <HomeHero
         unitName={data.unit.name}
         rooms={data.rooms}
-        summary={readout.summary}
-        detail={readout.detail}
-        tone={readout.tone}
-        security={security}
         temperatureC={data.climate?.temperatureC ?? null}
         humidityPercent={data.climate?.humidityPercent ?? null}
       />

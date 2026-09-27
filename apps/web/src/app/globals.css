@@ -817,6 +817,23 @@ input[type="file"].control::file-selector-button {
   min-width: 88px;
 }
 
+.action-row {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.action-row::-webkit-scrollbar {
+  display: none;
+}
+
+.action-tile {
+  flex: 0 0 auto;
+  min-width: 148px;
+}
+
 @media (min-width: 1024px) {
   .home-stack {
     gap: 1.75rem;

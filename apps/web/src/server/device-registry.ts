@@ -4,6 +4,7 @@ import { deviceKinds, deviceLabel, type DeviceKind } from "@/server/device-kinds
 import { recordAudit } from "@/server/operations";
 import {
   gatewaysForObject,
+  isDevicePlace,
   isGatewayAdapter,
   newId,
   normalizeDevice,
@@ -11,6 +12,7 @@ import {
   writeOps,
   type Device,
   type DeviceAvailability,
+  type DevicePlace,
   type Gateway,
   type GatewayAdapterKind,
   type GatewayStatus,
@@ -27,6 +29,7 @@ export type RegistryDevice = {
   objectId: string;
   unitId: string | null;
   roomId: string | null;
+  place: DevicePlace;
   gatewayId: string | null;
   name: string;
   displayName: string;
@@ -83,6 +86,7 @@ function asDevice(device: Device): RegistryDevice {
     objectId: normalized.objectId,
     unitId: normalized.unitId,
     roomId: normalized.roomId ?? null,
+    place: normalized.place ?? (normalized.roomId ? "ROOM" : "OBJECT"),
     gatewayId: normalized.gatewayId ?? null,
     name: normalized.name,
     displayName: normalized.displayName ?? normalized.name,
@@ -139,6 +143,25 @@ function bindUnit(actor: StaffActor, objectId: string, unitId: unknown): string 
   return unit.value.id;
 }
 
+function bindPlace(
+  actor: StaffActor,
+  objectId: string,
+  input: { place?: unknown; unitId?: unknown; roomId?: unknown; kind?: unknown },
+): { place: DevicePlace; unitId: string | null; roomId: string | null } | Failure {
+  const explicit = isDevicePlace(input.place) ? input.place : null;
+  const hasHome = Boolean(input.unitId) || Boolean(input.roomId);
+  const place: DevicePlace = explicit ?? (hasHome ? "ROOM" : input.kind === "WEATHER" ? "STREET" : "OBJECT");
+  if (place === "STREET" || place === "OBJECT") {
+    return { place, unitId: null, roomId: null };
+  }
+  const roomId = bindRoom(actor, objectId, typeof input.unitId === "string" ? input.unitId : null, input.roomId);
+  if (roomId && typeof roomId !== "string") return roomId;
+  if (typeof roomId !== "string") return { ok: false, status: 400, message: "Если устройство в доме, выберите помещение или улицу дома" };
+  const room = findRoom(roomId);
+  if (!room) return { ok: false, status: 404, message: "Помещение не найдено" };
+  return { place: "ROOM", unitId: room.unitId, roomId };
+}
+
 function bindRoom(actor: StaffActor, objectId: string, unitId: string | null, roomId: unknown): string | null | Failure {
   if (roomId === undefined || roomId === null || roomId === "") return null;
   if (typeof roomId !== "string") return { ok: false, status: 400, message: "Помещение не найдено" };
@@ -181,6 +204,7 @@ export function registerDevice(
     objectId: unknown;
     unitId?: unknown;
     roomId?: unknown;
+    place?: unknown;
     gatewayId?: unknown;
     name: unknown;
     kind: unknown;
@@ -196,10 +220,9 @@ export function registerDevice(
   const name = cleanName(input.name);
   if (typeof name !== "string") return name;
   if (!isKind(input.kind)) return { ok: false, status: 400, message: "Выберите тип устройства" };
-  const unitId = bindUnit(actor, object.value.id, input.unitId);
-  if (unitId && typeof unitId !== "string") return unitId;
-  const roomId = bindRoom(actor, object.value.id, typeof unitId === "string" ? unitId : null, input.roomId);
-  if (roomId && typeof roomId !== "string") return roomId;
+  const bound = bindPlace(actor, object.value.id, input);
+  if ("ok" in bound && bound.ok === false) return bound;
+  const place = bound as { place: DevicePlace; unitId: string | null; roomId: string | null };
   const gatewayId = bindGateway(actor, object.value.id, input.gatewayId);
   if (gatewayId && typeof gatewayId !== "string") return gatewayId;
   const manufacturer = cleanOptional(input.manufacturer, 80);
@@ -212,14 +235,15 @@ export function registerDevice(
     id: newId("dev"),
     companyId: object.value.companyId,
     objectId: object.value.id,
-    unitId: typeof unitId === "string" ? unitId : null,
+    unitId: place.unitId,
+    place: place.place,
     kind: input.kind,
     name,
     displayName: name,
     adapter: "local",
     work: "ON",
     gatewayId: typeof gatewayId === "string" ? gatewayId : null,
-    roomId: typeof roomId === "string" ? roomId : null,
+    roomId: place.roomId,
     manufacturer: typeof manufacturer === "string" ? manufacturer : null,
     model: typeof model === "string" ? model : null,
     externalId: typeof externalId === "string" ? externalId : null,
@@ -249,6 +273,7 @@ export function updateRegistryDevice(
     deviceId: unknown;
     name?: unknown;
     roomId?: unknown;
+    place?: unknown;
     gatewayId?: unknown;
     unitId?: unknown;
     manufacturer?: unknown;
@@ -265,11 +290,17 @@ export function updateRegistryDevice(
   if (!device) return { ok: false, status: 404, message: "Устройство не найдено" };
   const name = input.name === undefined ? device.name : cleanName(input.name);
   if (typeof name !== "string") return name;
-  const unitId = input.unitId === undefined ? device.unitId : bindUnit(actor, device.objectId, input.unitId);
-  if (unitId && typeof unitId !== "string") return unitId;
-  const nextUnit = unitId === null || typeof unitId === "string" ? unitId : device.unitId;
-  const roomId = input.roomId === undefined ? (device.roomId ?? null) : bindRoom(actor, device.objectId, nextUnit, input.roomId);
-  if (roomId && typeof roomId !== "string") return roomId;
+  const bound =
+    input.place === undefined && input.unitId === undefined && input.roomId === undefined
+      ? { place: device.place ?? (device.roomId ? "ROOM" : "OBJECT"), unitId: device.unitId, roomId: device.roomId ?? null }
+      : bindPlace(actor, device.objectId, {
+          place: input.place ?? device.place,
+          unitId: input.unitId === undefined ? device.unitId : input.unitId,
+          roomId: input.roomId === undefined ? device.roomId : input.roomId,
+          kind: device.kind,
+        });
+  if ("ok" in bound && bound.ok === false) return bound;
+  const place = bound as { place: DevicePlace; unitId: string | null; roomId: string | null };
   const gatewayId = input.gatewayId === undefined ? (device.gatewayId ?? null) : bindGateway(actor, device.objectId, input.gatewayId);
   if (gatewayId && typeof gatewayId !== "string") return gatewayId;
   const manufacturer = input.manufacturer === undefined ? (device.manufacturer ?? null) : cleanOptional(input.manufacturer, 80);
@@ -280,17 +311,17 @@ export function updateRegistryDevice(
   if (externalId && typeof externalId !== "string") return externalId;
   const changes = [
     ...(device.name !== name ? [{ field: "Название", from: device.name, to: name }] : []),
-    ...((device.roomId ?? null) !== (typeof roomId === "string" ? roomId : null)
-      ? [{ field: "Помещение", from: device.roomId ?? "", to: typeof roomId === "string" ? roomId : "" }]
-      : []),
+    ...((device.roomId ?? null) !== place.roomId ? [{ field: "Помещение", from: device.roomId ?? "", to: place.roomId ?? "" }] : []),
+    ...(device.place !== place.place ? [{ field: "Место", from: device.place ?? "", to: place.place }] : []),
     ...((device.gatewayId ?? null) !== (typeof gatewayId === "string" ? gatewayId : null)
       ? [{ field: "Шлюз", from: device.gatewayId ?? "", to: typeof gatewayId === "string" ? gatewayId : "" }]
       : []),
   ];
   device.name = name;
   device.displayName = name;
-  device.unitId = nextUnit;
-  device.roomId = typeof roomId === "string" ? roomId : null;
+  device.unitId = place.unitId;
+  device.place = place.place;
+  device.roomId = place.roomId;
   device.gatewayId = typeof gatewayId === "string" ? gatewayId : null;
   device.manufacturer = typeof manufacturer === "string" ? manufacturer : null;
   device.model = typeof model === "string" ? model : null;
