@@ -9,6 +9,7 @@ import { HomeChipStrip, type HomeChipTile } from "@/components/home/HomeChipStri
 import { HomeHero } from "@/components/home/HomeHero";
 import { WeatherStrip } from "@/components/home/WeatherStrip";
 import { LiveRefresh } from "@/components/pwa/LiveRefresh";
+import { StatusToast } from "@/components/ui/StatusToast";
 import { commandMessage, runCommand, unconfirmed } from "@/lib/command";
 import { greetingForHour } from "@/lib/greeting";
 import type { LifeMode, ResidentHome } from "@/types/domain";
@@ -20,6 +21,7 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
   const router = useRouter();
   const [mode, setMode] = useState<LifeMode>(data.activeLifeMode);
   const [notice, setNotice] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ text: string; at: number } | null>(null);
   const [securityOpen, setSecurityOpen] = useState(false);
   const [actionChips, setActionChips] = useState(data.actionChips ?? []);
 
@@ -65,7 +67,8 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
     if ("latch" in chip && chip.deviceId && (chip.action === "open-gate" || chip.action === "open-point" || chip.latch)) {
       const open = chip.latch !== "OPEN";
       setActionChips((current) => current.map((item) => (item.id === chip.id ? { ...item, latch: open ? "OPEN" : "CLOSED" } : item)));
-      setNotice(open ? "Открываем…" : "Закрываем…");
+      setNotice(null);
+      setToast({ text: open ? "Открыто" : "Закрыто", at: Date.now() });
       const result = await runCommand(() =>
         fetch(open ? "/api/access/points" : `/api/access/points/${chip.deviceId}/close`, {
           method: "POST",
@@ -75,8 +78,8 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
       );
       if (!result.ok || result.payload?.confirmed !== true) {
         setActionChips((current) => current.map((item) => (item.id === chip.id ? { ...item, latch: chip.latch } : item)));
+        setToast({ text: commandMessage(result.payload), at: Date.now() });
       }
-      setNotice(commandMessage(result.payload));
       return;
     }
     if (chip.scenarioId) {
@@ -121,7 +124,16 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
       setNotice(unconfirmed);
       return;
     }
-    setNotice(id === "open-gate" ? "Открываем…" : null);
+    if (id === "open-gate") {
+      setNotice(null);
+      setToast({ text: "Открыто", at: Date.now() });
+      const result = await runCommand(() => fetch(path, { method: "POST" }));
+      if (!result.ok || result.payload?.confirmed !== true) {
+        setToast({ text: commandMessage(result.payload), at: Date.now() });
+      }
+      return;
+    }
+    setNotice(null);
     const result = await runCommand(() => fetch(path, { method: "POST" }));
     setNotice(commandMessage(result.payload));
   }
@@ -164,6 +176,7 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
           {notice}
         </p>
       ) : null}
+      <StatusToast text={toast?.text ?? null} stamp={toast?.at} />
     </div>
   );
 }

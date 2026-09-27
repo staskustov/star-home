@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { StatusToast } from "@/components/ui/StatusToast";
 import { commandMessage, runCommand } from "@/lib/command";
 
 export type AccessPoint = {
@@ -16,12 +17,14 @@ export type AccessPoint = {
 export function AccessPointsList({
   points,
   canCommand = true,
+  compact = false,
 }: {
   points: AccessPoint[];
   canCommand?: boolean;
+  compact?: boolean;
 }) {
   const [rows, setRows] = useState(points);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ text: string; at: number } | null>(null);
 
   useEffect(() => {
     setRows(points);
@@ -29,14 +32,13 @@ export function AccessPointsList({
 
   async function commandPoint(pointId: string, open: boolean) {
     const previous = rows;
+    const nextStatus = open ? "Открыто" : "Закрыто";
     setRows((current) =>
       current.map((point) =>
-        point.id === pointId
-          ? { ...point, latch: open ? "OPEN" : "CLOSED", status: open ? "Открыто" : "Закрыто" }
-          : point,
+        point.id === pointId ? { ...point, latch: open ? "OPEN" : "CLOSED", status: nextStatus } : point,
       ),
     );
-    setNotice(null);
+    setToast({ text: nextStatus, at: Date.now() });
     const result = await runCommand(() =>
       fetch(open ? "/api/access/points" : `/api/access/points/${pointId}/close`, {
         method: "POST",
@@ -46,29 +48,33 @@ export function AccessPointsList({
     );
     if (!result.ok || result.payload?.confirmed !== true) {
       setRows(previous);
+      setToast({ text: commandMessage(result.payload), at: Date.now() });
     }
-    setNotice(commandMessage(result.payload));
   }
 
   if (rows.length === 0) return null;
 
   return (
     <div>
-      <ul className="grid gap-3">
+      <ul className={compact ? "grid gap-2" : "grid gap-3"}>
         {rows.map((point) => {
           const open = point.latch === "OPEN";
           const ready = point.ready !== false;
           const allow = canCommand && ready;
           return (
-            <li key={point.id} className="panel px-5 py-4">
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-[16px] text-ink">{point.name}</p>
-                  <p className="text-sm text-muted">{point.kind}</p>
+            <li key={point.id} className={compact ? "panel access-point" : "panel px-5 py-4"}>
+              {compact ? (
+                <p className="min-w-0 truncate text-[15px] text-ink">{point.name}</p>
+              ) : (
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[16px] text-ink">{point.name}</p>
+                    <p className="text-sm text-muted">{point.kind}</p>
+                  </div>
+                  <StatusBadge tone={!ready ? "warning" : open ? "success" : "info"}>{point.status ?? (open ? "Открыто" : "Закрыто")}</StatusBadge>
                 </div>
-                <StatusBadge tone={!ready ? "warning" : open ? "success" : "info"}>{point.status ?? (open ? "Открыто" : "Закрыто")}</StatusBadge>
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2">
+              )}
+              <div className={compact ? "flex shrink-0 gap-2" : "mt-3 flex flex-wrap gap-2"}>
                 <button type="button" className="btn btn-primary btn-compact" disabled={!allow || open} onClick={() => void commandPoint(point.id, true)}>
                   Открыть
                 </button>
@@ -80,11 +86,7 @@ export function AccessPointsList({
           );
         })}
       </ul>
-      {notice ? (
-        <p role="status" className="mt-3 text-[15px] text-muted">
-          {notice}
-        </p>
-      ) : null}
+      <StatusToast text={toast?.text ?? null} stamp={toast?.at} />
     </div>
   );
 }

@@ -61,7 +61,7 @@ export function HomeChipStrip({
             }}
             className="segment-item"
           >
-            <Icon name={chipIcon(chip.icon)} className="h-6 w-6" />
+            <Icon name={chipIcon(chip.icon)} className="h-5 w-5" />
             {chip.name}
           </button>
         );

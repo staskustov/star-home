@@ -831,12 +831,12 @@ select.control,
 
 .chip-row {
   display: flex;
-  gap: 4px;
-  padding: 4px;
+  gap: 3px;
+  padding: 3px;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
-  border-radius: 22px;
+  border-radius: 16px;
   border: 1px solid var(--line);
   background: var(--surface);
 }
@@ -847,8 +847,53 @@ select.control,
 
 .chip-row .segment-item {
   flex: 0 0 auto;
-  width: 88px;
-  min-width: 88px;
+  width: 80px;
+  min-width: 80px;
+  min-height: 52px;
+  gap: 3px;
+  border-radius: 13px;
+  font-size: 13px;
+}
+
+.access-point {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: 16px;
+}
+
+.access-point .btn-compact {
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: 13px;
+}
+
+.status-toast {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: color-mix(in srgb, var(--ink) 32%, transparent);
+  pointer-events: none;
+}
+
+.status-toast-card {
+  margin: 0;
+  max-width: min(20rem, calc(100vw - 3rem));
+  padding: 18px 24px;
+  border-radius: 20px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 18px;
+  font-weight: 560;
+  letter-spacing: -0.02em;
+  text-align: center;
+  box-shadow: 0 16px 40px rgba(26, 26, 26, 0.16);
 }
 
 .action-row {
