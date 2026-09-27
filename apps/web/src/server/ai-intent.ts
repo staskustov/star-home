@@ -10,7 +10,9 @@ export type AiQuery =
   | "security_status"
   | "open_doors"
   | "alerts"
-  | "energy";
+  | "energy"
+  | "room_climate"
+  | "device_channels";
 
 export type AiIntent = {
   tool: AiToolName | null;
@@ -18,15 +20,41 @@ export type AiIntent = {
   mode: "HOME" | "WORK" | "VACATION" | null;
   reply: string;
   deviceHint?: string;
+  roomHint?: string;
   command?: string;
   value?: unknown;
   scenarioHint?: string;
 };
 
+const queryAliases: Record<string, AiQuery> = {
+  status: "status",
+  visitors: "visitors",
+  balance: "balance",
+  rooms: "rooms",
+  devices: "devices",
+  device_status: "device_status",
+  security_status: "security_status",
+  open_doors: "open_doors",
+  alerts: "alerts",
+  energy: "energy",
+  room_climate: "room_climate",
+  get_room_climate: "room_climate",
+  device_channels: "device_channels",
+  get_device_channels: "device_channels",
+  get_sensor_value: "device_channels",
+};
+
+export function normalizeAiQuery(value: unknown): AiQuery | null {
+  return typeof value === "string" && value in queryAliases ? queryAliases[value] : null;
+}
+
 const empty: AiIntent = { tool: null, query: null, mode: null, reply: "" };
 
 export function intentFromPrompt(prompt: string): AiIntent {
   const text = prompt.toLowerCase();
+  if (text.includes("mqtt") || text.includes("topic") || text.includes("топик")) {
+    return { tool: null, query: null, mode: null, reply: "Технические адреса недоступны." };
+  }
   if (text.includes("ворот")) {
     return { tool: "open_gate", query: null, mode: null, reply: "Открыть ворота? Подтвердите действие." };
   }
@@ -66,7 +94,10 @@ export function intentFromPrompt(prompt: string): AiIntent {
         value: Number(match[1].replace(",", ".")),
       };
     }
-    return { ...empty, query: "device_status" };
+    return { ...empty, query: "room_climate", roomHint: roomHintFrom(text) };
+  }
+  if (text.includes("показан") || text.includes("канал") || text.includes("датчик") || text.includes("co2") || text.includes("влажност") || text.includes("освещен")) {
+    return { ...empty, query: "device_channels", deviceHint: roomHintFrom(text) || (text.includes("свет") ? "light" : "climate") };
   }
   if (text.includes("свет") || text.includes("ламп") || text.includes("штор") || text.includes("выключ") || text.includes("включ")) {
     const off = text.includes("выключ");
@@ -90,6 +121,7 @@ export function intentFromPrompt(prompt: string): AiIntent {
       scenarioHint: named?.[1]?.trim() || (text.includes("ночь") ? "ночь" : undefined),
     };
   }
+  if (text.includes("климат")) return { ...empty, query: "room_climate", roomHint: roomHintFrom(text) };
   if (text.includes("комнат") || text.includes("помещен")) return { ...empty, query: "rooms" };
   if (text.includes("устройств")) return { ...empty, query: "devices" };
   if (text.includes("двер") || text.includes("калитка") || text.includes("шлагбаум") || text.includes("замок")) {
@@ -102,4 +134,13 @@ export function intentFromPrompt(prompt: string): AiIntent {
   if (text.includes("охран") || text.includes("безопасн")) return { ...empty, query: "security_status" };
   if (text.includes("провер") || text.includes("статус") || text.includes("что дома")) return { ...empty, query: "status" };
   return empty;
+}
+
+function roomHintFrom(text: string): string | undefined {
+  const named = text.match(/(?:в|для)\s+([а-яё]+)/i);
+  if (named?.[1]) return named[1];
+  if (text.includes("гостин")) return "гостиная";
+  if (text.includes("спальн")) return "спальня";
+  if (text.includes("кухн")) return "кухня";
+  return undefined;
 }

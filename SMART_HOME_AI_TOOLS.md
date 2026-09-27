@@ -9,7 +9,9 @@
 | status | климат из показаний, режим жизни, категории |
 | rooms | имена комнат из каталога, не устройств |
 | devices | список в scope, без выдуманных статусов |
-| device_status | климат, если есть reading |
+| device_status | климат из каналов комнаты |
+| room_climate / get_room_climate | каналы климата помещения, без topic |
+| device_channels / get_device_channels | включённые каналы одного устройства в scope |
 | security_status | охрана режима + открытые точки |
 | open_doors | latch OPEN по факту |
 | alerts | FAULT и открытые тревоги |

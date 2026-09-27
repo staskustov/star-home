@@ -18,6 +18,17 @@ export function formatHumidity(percent: number): string {
   return `${new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(percent)}%`;
 }
 
+export function formatChannelValue(value: number | boolean | string | null | undefined, unit = "", precision?: number): string {
+  if (value === null || value === undefined) return "—";
+  if (typeof value === "boolean") return value ? "Да" : "Нет";
+  if (typeof value === "string") return unit ? `${value} ${unit}`.trim() : value;
+  const formatted = new Intl.NumberFormat("ru-RU", {
+    minimumFractionDigits: precision ?? (Number.isInteger(value) ? 0 : 1),
+    maximumFractionDigits: precision ?? (Number.isInteger(value) ? 0 : 1),
+  }).format(value);
+  return unit ? `${formatted} ${unit}` : formatted;
+}
+
 export function formatMoney(amount: number, currency: string): string {
   return new Intl.NumberFormat("ru-RU", {
     style: "currency",

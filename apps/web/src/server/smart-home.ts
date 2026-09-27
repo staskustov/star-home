@@ -1,6 +1,7 @@
 import { placeFromSession, type Place, type SessionRef } from "@/server/actor";
 import { findObject, findRoom, findUnit, roomsOf } from "@/server/catalog-store";
-import { deviceLabel, isOpener } from "@/server/device-kinds";
+import { capabilitiesFor, isCapability } from "@/server/device-capabilities";
+import { deviceLabel, isOpener, residentSeesDevice } from "@/server/device-kinds";
 import "./adapters/wirenboard";
 import "./adapters/protocol-stubs";
 import { executeOnAdapter } from "@/server/gateway-adapter";
@@ -14,7 +15,7 @@ import {
   findGateway,
   newId,
   readOps,
-  recordSmartHistory,
+  recordChannelHistory,
   writeOps,
   type Device,
   type DeviceCommandLog,
@@ -27,6 +28,7 @@ import {
 import { can, reaches, staffActor, type StaffActor } from "@/server/rbac/decide";
 import type { Permission } from "@/server/rbac/permissions";
 import { householdCan } from "@/server/rbac/policy";
+import { applyStateToChannels, capabilitiesTouchedByState, deriveLifecycle, persistChannels, publicChannelsOf, type DeviceLifecycle, type PublicChannel } from "@/server/device-channels";
 import { commandRisk, deviceCan, isSmartCommand, type SmartCommandName } from "@/server/smart-commands";
 
 type Failure = { ok: false; status: number; message: string };
@@ -100,6 +102,9 @@ function knownState(state: Device["state"]): NonNullable<Device["state"]> {
   if (state.brightness !== undefined) next.brightness = state.brightness;
   if (state.temperatureC !== undefined) next.temperatureC = state.temperatureC;
   if (state.humidityPercent !== undefined) next.humidityPercent = state.humidityPercent;
+  if (state.illuminanceLx !== undefined) next.illuminanceLx = state.illuminanceLx;
+  if (state.co2Ppm !== undefined) next.co2Ppm = state.co2Ppm;
+  if (state.pressureHpa !== undefined) next.pressureHpa = state.pressureHpa;
   if (state.targetC !== undefined) next.targetC = state.targetC;
   if (state.mode !== undefined) next.mode = state.mode;
   if (state.position !== undefined) next.position = state.position;
@@ -108,7 +113,13 @@ function knownState(state: Device["state"]): NonNullable<Device["state"]> {
   if (state.watts !== undefined) next.watts = state.watts;
   if (state.kwh !== undefined) next.kwh = state.kwh;
   if (state.windMs !== undefined) next.windMs = state.windMs;
+  if (state.windDeg !== undefined) next.windDeg = state.windDeg;
+  if (state.rainMm !== undefined) next.rainMm = state.rainMm;
+  if (state.uvIndex !== undefined) next.uvIndex = state.uvIndex;
   if (state.radiationUSv !== undefined) next.radiationUSv = state.radiationUSv;
+  if (state.voltageV !== undefined) next.voltageV = state.voltageV;
+  if (state.currentA !== undefined) next.currentA = state.currentA;
+  if (state.frequencyHz !== undefined) next.frequencyHz = state.frequencyHz;
   return next;
 }
 
@@ -141,6 +152,8 @@ export type SmartDeviceCard = {
   stale: boolean;
   lastSeen: string | null;
   capabilities: string[];
+  channels: PublicChannel[];
+  status: DeviceLifecycle;
   state: Device["state"];
   canCommand: boolean;
   commands: SmartCommandName[];
@@ -164,6 +177,10 @@ function asCard(device: Device, viewer: Viewer): SmartDeviceCard {
   const room = device.roomId ? findRoom(device.roomId) : undefined;
   const gateway = device.gatewayId ? findGateway(device.gatewayId) : undefined;
   const stale = isStale(device, gateway);
+  const host = {
+    ...device,
+    capabilities: device.capabilities?.length ? device.capabilities : capabilitiesFor(device.kind),
+  };
   const card: SmartDeviceCard = {
     id: device.id,
     name: device.displayName ?? device.name,
@@ -173,7 +190,9 @@ function asCard(device: Device, viewer: Viewer): SmartDeviceCard {
     availability: device.availability ?? "UNKNOWN",
     stale,
     lastSeen: device.lastSeen ?? null,
-    capabilities: device.capabilities ?? [],
+    capabilities: host.capabilities,
+    channels: publicChannelsOf(host),
+    status: device.status ?? deriveLifecycle(host),
     state: knownState(device.state),
     canCommand: canPreviewCommand(viewer, device),
     commands: commandsFor(device),
@@ -200,6 +219,7 @@ function asCard(device: Device, viewer: Viewer): SmartDeviceCard {
 function scopedDevices(viewer: Viewer, objectId?: string): Device[] {
   return readOps().devices.filter((device) => {
     if (!viewerReaches(viewer, device)) return false;
+    if (viewer.kind === "home" && !residentSeesDevice(device)) return false;
     if (objectId && device.objectId !== objectId) return false;
     return true;
   });
@@ -224,6 +244,7 @@ function findScopedDevice(viewer: Viewer, deviceId: unknown): Result<Device> {
   const device = findDevice(deviceId);
   if (!device || device.companyId !== viewerCompany(viewer)) return { ok: false, status: 404, message: "Устройство не найдено" };
   if (!viewerReaches(viewer, device)) return denied();
+  if (viewer.kind === "home" && !residentSeesDevice(device)) return denied();
   return { ok: true, value: device };
 }
 
@@ -246,7 +267,7 @@ function rememberEvent(event: Omit<SmartEvent, "id" | "seq"> & { seq?: number })
 
 function rememberHistory(point: Omit<SmartHistoryPoint, "id">): void {
   const file = readOps();
-  recordSmartHistory(file, point);
+  recordChannelHistory(file, point);
   writeOps(file);
 }
 
@@ -477,20 +498,33 @@ export function setDeviceFavorite(session: SessionRef | null, input: { deviceId?
   return { ok: true, value: { id: found.value.id, favorite } };
 }
 
-export function smartHomeHistory(session: SessionRef | null, deviceId: unknown, since?: unknown): Result<{ points: { at: string; state: Device["state"] }[] }> {
+export function smartHomeHistory(
+  session: SessionRef | null,
+  deviceId: unknown,
+  since?: unknown,
+  capability?: unknown,
+): Result<{ points: { at: string; state: Device["state"]; capability?: string }[] }> {
   const viewer = smartViewer(session);
   if (!viewer.ok) return viewer;
   const device = findScopedDevice(viewer.value, deviceId);
   if (!device.ok) return device;
   const keep = viewer.value.kind === "staff" ? 200 : 80;
   const from = typeof since === "string" && since ? Date.parse(since) : NaN;
+  const cap = isCapability(capability) ? capability : "";
   return {
     ok: true,
     value: {
       points: readOps()
-        .smartHistory.filter((point) => point.deviceId === device.value.id && (!Number.isFinite(from) || Date.parse(point.at) >= from))
+        .smartHistory.filter((point) => {
+          if (point.deviceId !== device.value.id) return false;
+          if (Number.isFinite(from) && Date.parse(point.at) < from) return false;
+          if (!cap) return true;
+          if (point.capability === cap) return true;
+          if (!point.capability && capabilitiesTouchedByState(point.state).includes(cap)) return true;
+          return false;
+        })
         .slice(-keep)
-        .map((point) => ({ at: point.at, state: point.state })),
+        .map((point) => ({ at: point.at, state: point.state, capability: point.capability })),
     },
   };
 }
@@ -603,6 +637,9 @@ export async function commandDeviceSmart(session: SessionRef | null, input: Comm
     current.lastSeen = now;
     current.availability = "ONLINE";
     current.updatedAt = now;
+    if (!current.channels?.length) persistChannels(current);
+    applyStateToChannels(current);
+    current.status = deriveLifecycle(current);
     if (queued) markGatewayCommand(queued.id, "ACKED");
   }
   writeOps(file);
@@ -707,6 +744,19 @@ export function placeDevice(
   current.planX = Math.min(100, Math.max(0, Math.round(x)));
   current.planY = Math.min(100, Math.max(0, Math.round(y)));
   writeOps(file);
+  if (viewer.value.kind === "staff") {
+    recordAudit({
+      actorUserId: viewer.value.actor.userId,
+      companyId: current.companyId,
+      objectId: current.objectId,
+      unitId: current.unitId,
+      action: "DEVICE_EDIT",
+      targetType: "device",
+      targetId: current.id,
+      target: current.name,
+      changes: [{ field: "План", from: "", to: `${current.planFloor}:${current.planX},${current.planY}` }],
+    });
+  }
   return { ok: true, value: { id: current.id } };
 }
 

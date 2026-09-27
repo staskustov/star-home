@@ -16,6 +16,8 @@ import {
   updateCatalogObject,
   updateCatalogUnit,
 } from "@/server/catalog-store";
+import { deviceLabel } from "@/server/device-kinds";
+import { readOps } from "@/server/ops-store";
 import type { AuditInput } from "@/server/audit-store";
 import { buildingHasStaff, objectHasAssignments, unitHasAssignment } from "@/server/directory";
 import { recordAudit } from "@/server/operations";
@@ -290,23 +292,43 @@ function cleanPlans(value: unknown, floors: number): { floor: number; image: str
 export function unitDetails(actor: StaffActor, unitId: string): Success<{
   id: string;
   name: string;
+  objectId: string;
   areaM2: number | null;
   floors: number;
   plans: { floor: number; image: string }[];
-  rooms: { id: string; name: string; kind: string; floor: number | null }[];
+  rooms: {
+    id: string;
+    name: string;
+    kind: string;
+    floor: number | null;
+    devices: { id: string; name: string; kind: string }[];
+  }[];
+  canCreateDevice: boolean;
 }> | Failure {
   if (!can(actor, "objects.view")) return denied;
   const unit = unitFor(actor, unitId);
   if (!unit.ok) return unit;
+  const showDevices = can(actor, "devices.view");
+  const devices = showDevices ? readOps().devices.filter((device) => device.unitId === unit.value.id && device.companyId === actor.companyId) : [];
   return {
     ok: true,
     value: {
       id: unit.value.id,
       name: unit.value.name,
+      objectId: unit.value.objectId,
       areaM2: unit.value.areaM2 ?? null,
       floors: unit.value.floors ?? 1,
       plans: (unit.value.plans ?? []).map((plan) => ({ floor: plan.floor, image: plan.image })),
-      rooms: roomsOf(unitId).map((room) => ({ id: room.id, name: room.name, kind: room.kind, floor: room.floor })),
+      rooms: roomsOf(unitId).map((room) => ({
+        id: room.id,
+        name: room.name,
+        kind: room.kind,
+        floor: room.floor,
+        devices: devices
+          .filter((device) => device.roomId === room.id)
+          .map((device) => ({ id: device.id, name: device.displayName ?? device.name, kind: deviceLabel(device.kind) })),
+      })),
+      canCreateDevice: can(actor, "devices.create"),
     },
   };
 }

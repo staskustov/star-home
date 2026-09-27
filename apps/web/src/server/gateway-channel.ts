@@ -1,7 +1,19 @@
 import { createHash, randomBytes } from "crypto";
+import { completeDiscovery } from "@/server/device-discovery";
 import { ackGatewayCommand, pullGatewayCommands } from "@/server/gateway-queue";
 import { emitLive } from "@/server/live-bus";
-import { findGateway, readOps, recordSmartHistory, writeOps, type NormalizedState } from "@/server/ops-store";
+import { mapWirenboardControl } from "@/server/adapters/wirenboard-controls";
+import {
+  applyIngestedChannels,
+  applyStateToChannels,
+  capabilitiesTouchedByState,
+  deriveLifecycle,
+  markChannelsStale,
+  persistChannels,
+  pickNormalizedState,
+  refreshChannelFreshness,
+} from "@/server/device-channels";
+import { findGateway, readOps, recordChannelHistory, writeOps } from "@/server/ops-store";
 import { can, objectFor, type StaffActor } from "@/server/rbac/decide";
 import { notifyIfAlert } from "@/server/smart-notices";
 
@@ -74,10 +86,15 @@ export function pullGateway(token: string | null): Result<{ commands: { id: stri
   };
 }
 
-export function ackGateway(token: string | null, input: { commandId?: unknown; confirmed?: unknown; state?: unknown }): Result<{ commandId: string; applied: boolean }> {
+export function ackGateway(
+  token: string | null,
+  input: { commandId?: unknown; confirmed?: unknown; state?: unknown; devices?: unknown; error?: unknown },
+): Result<{ commandId: string; applied: boolean }> {
   const gateway = gatewayByToken(token);
   if (!gateway) return { ok: false, status: 401, message: "Нет доступа" };
-  return ackGatewayCommand(gateway.id, input);
+  const result = ackGatewayCommand(gateway.id, input);
+  if (result.ok) completeDiscovery(gateway.id, typeof input.commandId === "string" ? input.commandId : "", input);
+  return result;
 }
 
 export function heartbeatGateway(token: string | null, input: { status?: unknown; version?: unknown }): Result<{ status: string }> {
@@ -91,50 +108,74 @@ export function heartbeatGateway(token: string | null, input: { status?: unknown
   if (typeof input.version === "string" && input.version.trim()) current.version = input.version.trim().slice(0, 40);
   current.lastSeen = new Date().toISOString();
   current.lastError = null;
+  const now = Date.now();
+  for (const device of file.devices.filter((item) => item.gatewayId === current.id)) {
+    if (current.status === "OFFLINE") {
+      device.availability = "OFFLINE";
+      markChannelsStale(device);
+    } else {
+      refreshChannelFreshness(device, now);
+      if (device.lastSeen) {
+        const seen = Date.parse(device.lastSeen);
+        if (!Number.isFinite(seen) || now - seen > 5 * 60_000) device.availability = "OFFLINE";
+      }
+    }
+    device.status = deriveLifecycle(device);
+  }
   writeOps(file);
-  emitLive({ objectId: current.objectId, kind: "gateway", title: `${current.name}: на связи`, gatewayId: current.id });
+  emitLive({
+    objectId: current.objectId,
+    kind: "gateway",
+    title: current.status === "OFFLINE" ? `${current.name}: нет связи` : `${current.name}: на связи`,
+    gatewayId: current.id,
+  });
   return { ok: true, value: { status: current.status } };
 }
 
 export function ingestGatewayState(
   token: string | null,
-  input: { deviceId?: unknown; externalId?: unknown; topic?: unknown; state?: unknown },
+  input: { deviceId?: unknown; externalId?: unknown; topic?: unknown; state?: unknown; channels?: unknown; value?: unknown },
 ): Result<{ applied: boolean }> {
   const gateway = gatewayByToken(token);
   if (!gateway) return { ok: false, status: 401, message: "Нет доступа" };
   const file = readOps();
+  const fromTopic = typeof input.topic === "string" ? mapWirenboardControl(input.topic, input.value ?? input.state) : null;
   const device =
     typeof input.deviceId === "string"
       ? file.devices.find((item) => item.id === input.deviceId && item.gatewayId === gateway.id)
       : typeof input.externalId === "string"
         ? file.devices.find((item) => item.externalId === input.externalId && item.gatewayId === gateway.id)
-        : undefined;
+        : fromTopic
+          ? file.devices.find((item) => item.externalId === fromTopic.externalId && item.gatewayId === gateway.id)
+          : undefined;
   if (!device || device.companyId !== gateway.companyId) return { ok: false, status: 404, message: "Устройство не найдено" };
-  const raw = input.state && typeof input.state === "object" && !Array.isArray(input.state) ? (input.state as NormalizedState) : null;
-  if (!raw) return { ok: false, status: 400, message: "Нет состояния" };
-  const next: NormalizedState = {};
-  if (typeof raw.on === "boolean") next.on = raw.on;
-  if (typeof raw.brightness === "number" && Number.isFinite(raw.brightness)) next.brightness = raw.brightness;
-  if (typeof raw.temperatureC === "number" && Number.isFinite(raw.temperatureC)) next.temperatureC = raw.temperatureC;
-  if (typeof raw.humidityPercent === "number" && Number.isFinite(raw.humidityPercent)) next.humidityPercent = raw.humidityPercent;
-  if (typeof raw.targetC === "number" && Number.isFinite(raw.targetC)) next.targetC = raw.targetC;
-  if (typeof raw.mode === "string") next.mode = raw.mode;
-  if (typeof raw.position === "number" && Number.isFinite(raw.position)) next.position = raw.position;
-  if (raw.latch === "OPEN" || raw.latch === "CLOSED") next.latch = raw.latch;
-  if (typeof raw.detected === "boolean") next.detected = raw.detected;
-  if (typeof raw.watts === "number" && Number.isFinite(raw.watts)) next.watts = raw.watts;
-  if (typeof raw.kwh === "number" && Number.isFinite(raw.kwh)) next.kwh = raw.kwh;
-  if (typeof raw.windMs === "number" && Number.isFinite(raw.windMs)) next.windMs = raw.windMs;
-  if (typeof raw.radiationUSv === "number" && Number.isFinite(raw.radiationUSv)) next.radiationUSv = raw.radiationUSv;
-  if (!Object.keys(next).length) return { ok: false, status: 400, message: "Нет состояния" };
+  const next = pickNormalizedState(input.state);
+  const incoming = [
+    ...(Array.isArray(input.channels) ? input.channels : []),
+    ...(fromTopic ? [fromTopic.channel] : []),
+  ].filter((item): item is { capability?: string | null; externalId?: string; name?: string; value?: unknown } => Boolean(item) && typeof item === "object");
+  if (!Object.keys(next).length && !incoming.length) return { ok: false, status: 400, message: "Нет состояния" };
   const current = file.devices.find((item) => item.id === device.id);
   if (!current) return { ok: false, status: 404, message: "Устройство не найдено" };
   const before = { work: current.work, detected: current.state?.detected };
-  current.state = { ...current.state, ...next };
-  if (next.latch) current.latch = next.latch;
   current.lastSeen = new Date().toISOString();
   current.availability = "ONLINE";
-  recordSmartHistory(file, { deviceId: current.id, objectId: current.objectId, at: current.lastSeen, state: next });
+  if (!current.channels?.length) persistChannels(current);
+  const fromChannels = incoming.length ? applyIngestedChannels(current, incoming, current.lastSeen) : [];
+  if (Object.keys(next).length) {
+    current.state = { ...current.state, ...next };
+    if (next.latch) current.latch = next.latch;
+    applyStateToChannels(current);
+  }
+  current.status = deriveLifecycle(current);
+  const touched = [...fromChannels, ...capabilitiesTouchedByState(next)];
+  recordChannelHistory(file, {
+    deviceId: current.id,
+    objectId: current.objectId,
+    at: current.lastSeen,
+    state: current.state ?? next,
+    capabilities: touched,
+  });
   writeOps(file);
   notifyIfAlert({
     companyId: current.companyId,

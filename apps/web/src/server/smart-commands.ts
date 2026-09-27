@@ -2,6 +2,13 @@ import { isOpener } from "@/server/device-kinds";
 import type { Capability } from "@/server/device-capabilities";
 import type { Device, NormalizedState } from "@/server/ops-store";
 
+function capabilityAllowsCommand(device: Device, capability: Capability): boolean {
+  if (device.channels?.length) {
+    return device.channels.some((channel) => channel.capability === capability && channel.enabled && channel.writable);
+  }
+  return (device.capabilities ?? []).includes(capability);
+}
+
 export const smartCommands = [
   "setPower",
   "setBrightness",
@@ -38,8 +45,7 @@ export function commandNeeds(command: SmartCommandName): Capability[] {
 }
 
 export function deviceCan(device: Device, command: SmartCommandName): boolean {
-  const caps = device.capabilities ?? [];
-  return commandNeeds(command).some((item) => caps.includes(item));
+  return commandNeeds(command).some((capability) => capabilityAllowsCommand(device, capability));
 }
 
 export function applyCommandState(state: NormalizedState | undefined, command: SmartCommandName, value: unknown): NormalizedState {

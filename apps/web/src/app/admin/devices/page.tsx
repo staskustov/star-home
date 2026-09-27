@@ -9,11 +9,13 @@ export default async function DevicesPage() {
       meters={ops.meters}
       gateways={ops.gateways}
       events={ops.events}
-      rooms={ops.rooms}
+      rooms={ops.rooms ?? []}
+      units={ops.units ?? []}
       commandLogs={ops.commandLogs}
       plans={ops.plans}
       canCommand={ops.canCommand}
       canPair={ops.canPair}
+      canCreate={ops.canCreate}
     />
   );
 }

@@ -6,11 +6,11 @@ import {
   findGateway,
   newId,
   readOps,
-  recordSmartHistory,
+  recordChannelHistory,
   writeOps,
   type GatewayCommand,
-  type NormalizedState,
 } from "@/server/ops-store";
+import { applyStateToChannels, deriveLifecycle, persistChannels, pickNormalizedState } from "@/server/device-channels";
 
 type Failure = { ok: false; status: number; message: string };
 type Success<T> = { ok: true; value: T };
@@ -68,7 +68,7 @@ export function pullGatewayCommands(gatewayId: string): GatewayCommand[] {
 
 export function ackGatewayCommand(
   gatewayId: string,
-  input: { commandId?: unknown; confirmed?: unknown; state?: unknown; error?: unknown },
+  input: { commandId?: unknown; confirmed?: unknown; state?: unknown; error?: unknown; devices?: unknown },
 ): Result<{ commandId: string; applied: boolean }> {
   if (typeof input.commandId !== "string" || !input.commandId) return { ok: false, status: 400, message: "Команда не найдена" };
   const file = readOps();
@@ -83,15 +83,19 @@ export function ackGatewayCommand(
   const confirmed = input.confirmed === true;
   row.status = confirmed ? "ACKED" : "FAILED";
   row.ackedAt = new Date().toISOString();
-  if (confirmed && input.state && typeof input.state === "object" && !Array.isArray(input.state)) {
+  const discover = row.command === "discover";
+  if (confirmed && !discover && input.state && typeof input.state === "object" && !Array.isArray(input.state)) {
     const device = file.devices.find((item) => item.id === row.deviceId && item.gatewayId === gatewayId);
     if (device) {
-      const next = input.state as NormalizedState;
+      const next = pickNormalizedState(input.state);
       device.state = { ...device.state, ...next };
       if (next.latch) device.latch = next.latch;
       device.lastSeen = row.ackedAt;
       device.availability = "ONLINE";
-      recordSmartHistory(file, { deviceId: device.id, objectId: device.objectId, at: row.ackedAt, state: next });
+      if (!device.channels?.length) persistChannels(device);
+      applyStateToChannels(device);
+      device.status = deriveLifecycle(device);
+      recordChannelHistory(file, { deviceId: device.id, objectId: device.objectId, at: row.ackedAt, state: next });
     }
   }
   writeOps(file);

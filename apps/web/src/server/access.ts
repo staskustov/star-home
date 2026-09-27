@@ -144,6 +144,7 @@ export async function requireSmartDevice(deviceId: string): Promise<{
     stale: boolean;
     lastSeen: string | null;
     capabilities: string[];
+    channels?: { capability?: string; displayName: string; unit: string; value: number | boolean | string | null }[];
     state: Record<string, unknown>;
     canCommand: boolean;
     commands: import("@/server/smart-commands").SmartCommandName[];
@@ -211,6 +212,7 @@ export async function requireRoom(roomId: string) {
       canCommand: boolean;
       commands: import("@/server/smart-commands").SmartCommandName[];
       state?: Record<string, unknown>;
+      channels?: { displayName: string; unit: string; value: number | boolean | string | null }[];
     }[];
   }>("smartHomeRoomDevices", { roomId });
   if (result.status === 401) redirect("/");

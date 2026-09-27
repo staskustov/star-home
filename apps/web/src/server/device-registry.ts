@@ -1,5 +1,14 @@
 import { findObject, findRoom } from "@/server/catalog-store";
 import { cleanCapabilities, type Capability } from "@/server/device-capabilities";
+import {
+  deriveLifecycle,
+  findDuplicateDevice,
+  mergeChannelsForCapabilities,
+  persistChannels,
+  channelsOf,
+  type DeviceLifecycle,
+  type PublicChannel,
+} from "@/server/device-channels";
 import { deviceKinds, deviceLabel, type DeviceKind } from "@/server/device-kinds";
 import { recordAudit } from "@/server/operations";
 import {
@@ -19,7 +28,7 @@ import {
 } from "@/server/ops-store";
 import { can, objectFor, reaches, unitFor, type StaffActor } from "@/server/rbac/decide";
 
-type Failure = { ok: false; status: number; message: string };
+type Failure = { ok: false; status: number; message: string; deviceId?: string };
 type Success<T> = { ok: true; value: T };
 
 const denied: Failure = { ok: false, status: 403, message: "Нет доступа" };
@@ -37,8 +46,11 @@ export type RegistryDevice = {
   typeLabel: string;
   manufacturer: string | null;
   model: string | null;
+  serialNumber: string | null;
   externalId: string | null;
   capabilities: Capability[];
+  channels: (PublicChannel & { enabled: boolean })[];
+  status: DeviceLifecycle;
   availability: DeviceAvailability;
   lastSeen: string | null;
   work: "ON" | "OFF" | "FAULT";
@@ -94,8 +106,20 @@ function asDevice(device: Device): RegistryDevice {
     typeLabel: deviceLabel(normalized.kind),
     manufacturer: normalized.manufacturer ?? null,
     model: normalized.model ?? null,
+    serialNumber: normalized.serialNumber ?? null,
     externalId: normalized.externalId ?? null,
     capabilities: normalized.capabilities ?? [],
+    channels: channelsOf(normalized).map((channel) => ({
+      id: channel.id,
+      capability: channel.capability,
+      displayName: channel.displayName,
+      unit: channel.unit,
+      value: channel.value ?? null,
+      status: channel.status,
+      writable: channel.writable,
+      enabled: channel.enabled,
+    })),
+    status: normalized.status ?? deriveLifecycle(normalized),
     availability: normalized.availability ?? "UNKNOWN",
     lastSeen: normalized.lastSeen ?? null,
     work: normalized.work === "FAULT" ? "FAULT" : normalized.work === "OFF" ? "OFF" : "ON",
@@ -210,8 +234,10 @@ export function registerDevice(
     kind: unknown;
     manufacturer?: unknown;
     model?: unknown;
+    serialNumber?: unknown;
     externalId?: unknown;
     capabilities?: unknown;
+    channels?: unknown;
   },
 ): Success<{ id: string }> | Failure {
   if (!can(actor, "devices.create")) return denied;
@@ -231,6 +257,12 @@ export function registerDevice(
   if (model && typeof model !== "string") return model;
   const externalId = cleanOptional(input.externalId, 120);
   if (externalId && typeof externalId !== "string") return externalId;
+  const serialNumber = cleanOptional(input.serialNumber, 80);
+  if (serialNumber && typeof serialNumber !== "string") return serialNumber;
+  const gatewayKey = typeof gatewayId === "string" ? gatewayId : null;
+  const externalKey = typeof externalId === "string" ? externalId : null;
+  const duplicate = findDuplicateDevice(readOps().devices, gatewayKey, externalKey);
+  if (duplicate) return { ok: false, status: 409, message: "Устройство уже добавлено.", deviceId: duplicate.id };
   const device = normalizeDevice({
     id: newId("dev"),
     companyId: object.value.companyId,
@@ -246,11 +278,14 @@ export function registerDevice(
     roomId: place.roomId,
     manufacturer: typeof manufacturer === "string" ? manufacturer : null,
     model: typeof model === "string" ? model : null,
+    serialNumber: typeof serialNumber === "string" ? serialNumber : null,
     externalId: typeof externalId === "string" ? externalId : null,
     capabilities: cleanCapabilities(input.capabilities, input.kind),
     availability: "UNKNOWN",
+    status: "UNCONFIGURED",
     updatedAt: new Date().toISOString(),
   });
+  persistChannels(device, input.channels);
   const file = readOps();
   file.devices.push(device);
   writeOps(file);
@@ -278,8 +313,10 @@ export function updateRegistryDevice(
     unitId?: unknown;
     manufacturer?: unknown;
     model?: unknown;
+    serialNumber?: unknown;
     externalId?: unknown;
     capabilities?: unknown;
+    channels?: unknown;
   },
 ): Success<{ id: string }> | Failure {
   if (!can(actor, "devices.edit")) return denied;
@@ -309,6 +346,12 @@ export function updateRegistryDevice(
   if (model && typeof model !== "string") return model;
   const externalId = input.externalId === undefined ? (device.externalId ?? null) : cleanOptional(input.externalId, 120);
   if (externalId && typeof externalId !== "string") return externalId;
+  const serialNumber = input.serialNumber === undefined ? (device.serialNumber ?? null) : cleanOptional(input.serialNumber, 80);
+  if (serialNumber && typeof serialNumber !== "string") return serialNumber;
+  const nextGateway = typeof gatewayId === "string" ? gatewayId : null;
+  const nextExternal = typeof externalId === "string" ? externalId : null;
+  const duplicate = findDuplicateDevice(file.devices, nextGateway, nextExternal, device.id);
+  if (duplicate) return { ok: false, status: 409, message: "Устройство уже добавлено.", deviceId: duplicate.id };
   const changes = [
     ...(device.name !== name ? [{ field: "Название", from: device.name, to: name }] : []),
     ...((device.roomId ?? null) !== place.roomId ? [{ field: "Помещение", from: device.roomId ?? "", to: place.roomId ?? "" }] : []),
@@ -325,12 +368,17 @@ export function updateRegistryDevice(
   device.gatewayId = typeof gatewayId === "string" ? gatewayId : null;
   device.manufacturer = typeof manufacturer === "string" ? manufacturer : null;
   device.model = typeof model === "string" ? model : null;
+  device.serialNumber = typeof serialNumber === "string" ? serialNumber : null;
   device.externalId = typeof externalId === "string" ? externalId : null;
-  if (input.capabilities !== undefined) device.capabilities = cleanCapabilities(input.capabilities, device.kind);
+  if (input.capabilities !== undefined) {
+    mergeChannelsForCapabilities(device, cleanCapabilities(input.capabilities, device.kind));
+  } else if (input.channels !== undefined) {
+    persistChannels(device, input.channels);
+  }
   device.updatedAt = new Date().toISOString();
   normalizeDevice(device);
   writeOps(file);
-  if (changes.length || input.capabilities !== undefined) {
+  if (changes.length) {
     recordAudit({
       actorUserId: actor.userId,
       companyId: actor.companyId,
@@ -341,6 +389,18 @@ export function updateRegistryDevice(
       targetId: device.id,
       target: name,
       changes,
+    });
+  }
+  if (input.capabilities !== undefined || input.channels !== undefined) {
+    recordAudit({
+      actorUserId: actor.userId,
+      companyId: actor.companyId,
+      objectId: device.objectId,
+      unitId: device.unitId,
+      action: "DEVICE_CHANNEL_CHANGED",
+      targetType: "device",
+      targetId: device.id,
+      target: name,
     });
   }
   return { ok: true, value: { id: device.id } };

@@ -59,7 +59,32 @@ describe("gateway adapters", () => {
     assert.equal(wirenboardTopic("relay_1", "setPower"), "wb/relay_1/on");
     assert.deepEqual(wirenboardPayload("setPower", true), { on: true });
     assert.deepEqual(mapWirenboardInbound("wb/relay_1/on", { on: true }), { externalId: "relay_1", state: { on: true } });
+    assert.deepEqual(mapWirenboardInbound("/devices/wb-msw3/controls/Temperature", 22.4), {
+      externalId: "wb-msw3",
+      state: { temperatureC: 22.4 },
+    });
     assert.equal(mapWirenboardInbound("other/topic", { on: true }), null);
+  });
+
+  it("groups native Wiren Board controls into one physical device", async () => {
+    const { groupWirenboardDiscovery } = await import("../../web/src/server/adapters/wirenboard-controls");
+    const found = groupWirenboardDiscovery([
+      { topic: "/devices/wb-msw3/controls/Temperature", value: 22.4 },
+      { topic: "/devices/wb-msw3/controls/Humidity", value: 48 },
+      { topic: "/devices/wb-msw3/controls/Illuminance", value: 320 },
+      { topic: "/devices/wb-msw3/controls/CO2", value: 650 },
+    ]);
+    assert.equal(found.length, 1);
+    assert.equal(found[0]?.externalId, "wb-msw3");
+    assert.deepEqual(
+      found[0]?.channels.map((channel) => [channel.capability, channel.unit, channel.value]),
+      [
+        ["temperature", "°C", 22.4],
+        ["humidity", "%", 48],
+        ["illuminance", "lx", 320],
+        ["co2", "ppm", 650],
+      ],
+    );
   });
 
   it("does not confirm wirenboard without a local broker", async () => {
@@ -242,6 +267,128 @@ describe("gateway channel", () => {
     const acked = channel.ackGateway(token, { commandId: row.id, confirmed: true, state: { on: true } });
     assert.equal(acked.ok && acked.value.applied, false);
     assert.equal(ops.readOps().devices.find((item) => item.id === "dev_expire_light")?.state?.on, false);
+  });
+
+  it("writes channel values and history per capability on ingest", async () => {
+    const { createHash } = await import("crypto");
+    const ops = await import("../../web/src/server/ops-store");
+    const channel = await import("../../web/src/server/gateway-channel");
+    const token = "d".repeat(48);
+    const file = ops.readOps();
+    file.gateways.push({
+      id: "gw_live",
+      companyId: "cmp_star",
+      objectId: "obj_siyanie",
+      unitId: null,
+      name: "Live",
+      adapter: "wirenboard",
+      status: "ONLINE",
+      version: null,
+      lastSeen: null,
+      lastError: null,
+      internalAddress: null,
+      tokenHash: createHash("sha256").update(token).digest("hex"),
+    });
+    file.devices.push({
+      id: "dev_live_msw",
+      companyId: "cmp_star",
+      objectId: "obj_siyanie",
+      unitId: "unit_24",
+      kind: "CLIMATE",
+      name: "MSW",
+      adapter: "local",
+      gatewayId: "gw_live",
+      externalId: "wb-msw3-live",
+      capabilities: ["temperature", "humidity", "illuminance", "co2"],
+    });
+    ops.writeOps(file);
+    const ingested = channel.ingestGatewayState(token, {
+      externalId: "wb-msw3-live",
+      channels: [
+        { externalId: "Temperature", value: 22.4 },
+        { externalId: "Humidity", value: 48 },
+        { externalId: "Illuminance", value: 320 },
+        { externalId: "CO2", value: 650 },
+      ],
+    });
+    assert.equal(ingested.ok, true);
+    const device = ops.readOps().devices.find((item) => item.id === "dev_live_msw");
+    assert.equal(device?.state?.temperatureC, 22.4);
+    assert.equal(device?.state?.humidityPercent, 48);
+    assert.equal(device?.channels?.find((item) => item.capability === "temperature")?.value, 22.4);
+    assert.equal(device?.channels?.find((item) => item.capability === "humidity")?.status, "LIVE");
+    const points = ops.readOps().smartHistory.filter((point) => point.deviceId === "dev_live_msw");
+    assert.ok(points.some((point) => point.capability === "temperature" && point.state.temperatureC === 22.4));
+    assert.ok(points.some((point) => point.capability === "humidity" && point.state.humidityPercent === 48));
+    assert.equal(JSON.stringify(points).includes("topic"), false);
+  });
+
+  it("marks gateway devices offline without inventing reconnect points", async () => {
+    const { createHash } = await import("crypto");
+    const ops = await import("../../web/src/server/ops-store");
+    const channel = await import("../../web/src/server/gateway-channel");
+    const token = "e".repeat(48);
+    const file = ops.readOps();
+    file.gateways.push({
+      id: "gw_gap",
+      companyId: "cmp_star",
+      objectId: "obj_siyanie",
+      unitId: null,
+      name: "Gap",
+      adapter: "wirenboard",
+      status: "ONLINE",
+      version: null,
+      lastSeen: new Date().toISOString(),
+      lastError: null,
+      internalAddress: null,
+      tokenHash: createHash("sha256").update(token).digest("hex"),
+    });
+    file.devices.push({
+      id: "dev_gap_msw",
+      companyId: "cmp_star",
+      objectId: "obj_siyanie",
+      unitId: "unit_24",
+      kind: "CLIMATE",
+      name: "Разрыв",
+      adapter: "local",
+      gatewayId: "gw_gap",
+      externalId: "wb-msw3-gap",
+      capabilities: ["temperature", "humidity"],
+      state: { temperatureC: 21 },
+    });
+    ops.writeOps(file);
+    assert.equal(channel.ingestGatewayState(token, { deviceId: "dev_gap_msw", state: { temperatureC: 21 } }).ok, true);
+    const aged = ops.readOps();
+    for (const point of aged.smartHistory.filter((item) => item.deviceId === "dev_gap_msw")) {
+      point.at = new Date(Date.now() - 10 * 60_000).toISOString();
+    }
+    ops.writeOps(aged);
+    assert.equal(channel.heartbeatGateway(token, { status: "OFFLINE" }).ok, true);
+    const offline = ops.readOps().devices.find((item) => item.id === "dev_gap_msw");
+    assert.equal(offline?.availability, "OFFLINE");
+    assert.equal(offline?.state?.temperatureC, 21);
+    assert.equal(offline?.channels?.find((item) => item.capability === "temperature")?.status, "STALE");
+    const before = ops.readOps().smartHistory.filter((point) => point.deviceId === "dev_gap_msw" && point.capability === "temperature").length;
+    assert.equal(channel.heartbeatGateway(token, { status: "ONLINE" }).ok, true);
+    const reconnect = ops.readOps().devices.find((item) => item.id === "dev_gap_msw");
+    assert.equal(reconnect?.availability, "OFFLINE");
+    assert.equal(
+      ops.readOps().smartHistory.filter((point) => point.deviceId === "dev_gap_msw" && point.capability === "temperature").length,
+      before,
+    );
+    assert.equal(channel.ingestGatewayState(token, { deviceId: "dev_gap_msw", state: { temperatureC: 23.1 } }).ok, true);
+    const after = ops.readOps();
+    const live = after.devices.find((item) => item.id === "dev_gap_msw");
+    assert.equal(live?.availability, "ONLINE");
+    assert.equal(live?.state?.temperatureC, 23.1);
+    const temps = after.smartHistory.filter((point) => point.deviceId === "dev_gap_msw" && point.capability === "temperature");
+    assert.ok(temps.length >= 2);
+    assert.equal(temps.at(-1)?.state.temperatureC, 23.1);
+    const first = Date.parse(temps[0]?.at ?? "");
+    const last = Date.parse(temps.at(-1)?.at ?? "");
+    assert.ok(last - first >= 60_000);
+    const invented = temps.filter((point) => point.state.temperatureC === 22);
+    assert.equal(invented.length, 0);
   });
 
   it("downsamples history instead of inventing points", async () => {

@@ -96,8 +96,10 @@ function fail(status: number, message: string): Reply {
   return { status, body: { message } };
 }
 
-function asReply(result: { ok: true; value: unknown } | { ok: false; status: number; message: string }, status = 200): Reply {
-  if (!result.ok) return fail(result.status, result.message);
+function asReply(result: { ok: true; value: unknown } | { ok: false; status: number; message: string; deviceId?: string }, status = 200): Reply {
+  if (!result.ok) {
+    return { status: result.status, body: result.deviceId ? { message: result.message, deviceId: result.deviceId } : { message: result.message } };
+  }
   return ok(result.value, status);
 }
 
@@ -182,7 +184,7 @@ const methodPolicy: Record<string, Route> = {
   smartHomeRooms: session(async (current, input) => asReply((await import("./smart-home")).smartHomeRooms(current, input.objectId))),
   smartHomeRoomDevices: session(async (current, input) => asReply((await import("./smart-home")).smartHomeRoomDevices(current, input.roomId))),
   smartHomeEvents: session(async (current, input) => asReply((await import("./smart-home")).smartHomeEvents(current, input.objectId))),
-  smartHomeHistory: session(async (current, input) => asReply((await import("./smart-home")).smartHomeHistory(current, input.deviceId, input.since))),
+  smartHomeHistory: session(async (current, input) => asReply((await import("./smart-home")).smartHomeHistory(current, input.deviceId, input.since, input.capability))),
   smartHomeCommandLog: session(async (current, input) => asReply((await import("./smart-home")).smartHomeCommandLog(current, input.objectId))),
   setDeviceFavorite: session(async (current, input) => asReply((await import("./smart-home")).setDeviceFavorite(current, input))),
   rotateGateway: staff("devices.edit", (actor, input) => import("./gateway-channel").then((mod) => mod.rotateGateway(actor, input.gatewayId))),
@@ -226,6 +228,8 @@ const methodPolicy: Record<string, Route> = {
   updateRoom: staff("objects.structure.edit", (actor, input) => updateRoom(actor, { roomId: input.roomId, name: input.name, kind: input.kind, floor: input.floor })),
   removeRoom: staff("objects.structure.edit", (actor, input) => removeRoom(actor, input.roomId)),
   listDevices: staff("devices.view", (actor, input) => listRegistryDevices(actor, input.objectId)),
+  discoverDevices: staff("devices.create", (actor, input) => import("./device-discovery").then((mod) => mod.startDiscovery(actor, input.gatewayId)), 201),
+  discoveryScan: staff("devices.view", (actor, input) => import("./device-discovery").then((mod) => mod.getDiscovery(actor, input.scanId))),
   registerDevice: staff(
     "devices.create",
     (actor, input) =>
@@ -239,8 +243,10 @@ const methodPolicy: Record<string, Route> = {
         kind: input.kind,
         manufacturer: input.manufacturer,
         model: input.model,
+        serialNumber: input.serialNumber,
         externalId: input.externalId,
         capabilities: input.capabilities,
+        channels: input.channels,
       }),
     201,
   ),
@@ -256,8 +262,10 @@ const methodPolicy: Record<string, Route> = {
         unitId: input.unitId,
         manufacturer: input.manufacturer,
         model: input.model,
+        serialNumber: input.serialNumber,
         externalId: input.externalId,
         capabilities: input.capabilities,
+        channels: input.channels,
       }),
   ),
   removeDevice: staff("devices.delete", (actor, input) => removeRegistryDevice(actor, input.deviceId)),
@@ -325,6 +333,7 @@ export const rpcReads: ReadonlySet<string> = new Set([
   "tree",
   "unitDetails",
   "listDevices",
+  "discoveryScan",
   "listGateways",
   "residents",
   "settings",
@@ -359,6 +368,7 @@ const guardedMethods: Partial<Record<string, AuditAction>> = {
   updateRoom: "ROOM_EDIT",
   removeRoom: "ROOM_DELETE",
   registerDevice: "DEVICE_CREATE",
+  discoverDevices: "DEVICE_DISCOVER",
   updateDevice: "DEVICE_EDIT",
   removeDevice: "DEVICE_DELETE",
   createGateway: "GATEWAY_CREATE",

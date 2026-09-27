@@ -1,6 +1,8 @@
-import { formatHumidity, formatMoney, formatTemperature } from "@/lib/format";
-import { intentFromPrompt, type AiQuery, type AiToolName } from "@/server/ai-intent";
+import { formatChannelValue, formatHumidity, formatMoney, formatTemperature } from "@/lib/format";
+import { intentFromPrompt, normalizeAiQuery, type AiQuery, type AiToolName } from "@/server/ai-intent";
 import { placeFromSession, type Place, type SessionRef } from "@/server/actor";
+import { publicChannelsOf } from "@/server/device-channels";
+import { residentSeesDevice } from "@/server/device-kinds";
 import { modeForUnit, modesForObject, setUnitMode } from "@/server/life-mode-store";
 import { createPass, createRequest, openGate, payOldest } from "@/server/operations";
 import { roomsOf } from "@/server/catalog-store";
@@ -16,6 +18,8 @@ type Proposal = {
   reply: string;
   pending: PendingTool | null;
   query: AiQuery | null;
+  roomHint?: string;
+  deviceHint?: string;
 };
 
 const allowedTools = new Set<AiToolName>(["open_gate", "create_pass", "create_request", "pay", "switch_mode", "control_device", "set_temperature", "run_scenario"]);
@@ -30,13 +34,17 @@ const allowedQueries = new Set<AiQuery>([
   "open_doors",
   "alerts",
   "energy",
+  "room_climate",
+  "device_channels",
 ]);
 const lifeModes = new Set(["HOME", "WORK", "VACATION"]);
 
 const unconfirmed: Proposal = { reply: "Не удалось подтвердить выполнение.", pending: null, query: null };
 
 function unitDevices(place: Place): Device[] {
-  return readOps().devices.filter((device) => device.objectId === place.objectId && (device.unitId === place.unitId || device.unitId === null));
+  return readOps().devices.filter(
+    (device) => device.objectId === place.objectId && (device.unitId === place.unitId || device.unitId === null) && residentSeesDevice(device),
+  );
 }
 
 function pickDevice(place: Place, hint?: string): Device | undefined {
@@ -71,13 +79,13 @@ async function propose(prompt: string, role: Place["role"], place: Place): Promi
         } | null)
       : null;
     const tool = payload?.tool ?? null;
-    const query = payload?.query ?? null;
+    const query = normalizeAiQuery(payload?.query);
     const mode = payload?.mode ?? null;
-    if (!payload || (tool && !allowedTools.has(tool as AiToolName)) || (query && !allowedQueries.has(query as AiQuery))) return unconfirmed;
+    if (!payload || (tool && !allowedTools.has(tool as AiToolName)) || (payload.query && (!query || !allowedQueries.has(query)))) return unconfirmed;
     if (tool === "switch_mode" && !lifeModes.has(mode ?? "")) return unconfirmed;
     suggestion = {
       tool: (tool as AiToolName | null) ?? null,
-      query: tool ? null : ((query as AiQuery | null) ?? null),
+      query: tool ? null : query,
       mode: tool === "switch_mode" ? (mode as "HOME" | "WORK" | "VACATION") : null,
       reply: payload.reply || "",
       command: payload.command ?? suggestion.command,
@@ -120,14 +128,45 @@ async function propose(prompt: string, role: Place["role"], place: Place): Promi
     };
     return { reply: suggestion.reply || `Управление «${device.name}». Подтвердите действие.`, pending, query: null };
   }
-  if (suggestion.query) return { reply: "", pending: null, query: suggestion.query };
-  if (!suggestion.tool) return { reply: "", pending: null, query: null };
+  if (suggestion.query) return { reply: "", pending: null, query: suggestion.query, roomHint: suggestion.roomHint, deviceHint: suggestion.deviceHint };
+  if (!suggestion.tool) return { reply: suggestion.reply, pending: null, query: null };
   const pending: PendingTool = { name: suggestion.tool, token: newId("confirm") };
   if (suggestion.tool === "switch_mode" && suggestion.mode) pending.mode = suggestion.mode;
   return { reply: suggestion.reply, pending, query: null };
 }
 
-function answer(place: Place, query: AiQuery): string {
+function describeChannels(device: Device): string {
+  const rows = publicChannelsOf(device).filter((channel) => channel.value !== null && channel.value !== undefined);
+  if (!rows.length) return "";
+  return rows.map((channel) => `${channel.displayName} ${formatChannelValue(channel.value, channel.unit)}`).join(". ");
+}
+
+function answerRoomClimate(place: Place, roomHint?: string): string {
+  const rooms = roomsOf(place.unitId);
+  const room = roomHint
+    ? rooms.find((item) => item.name.toLowerCase().includes(roomHint.toLowerCase()))
+    : rooms.find((item) => item.kind === "LIVING") ?? rooms.find((item) => item.kind !== "STREET");
+  const devices = unitDevices(place).filter((device) => (room ? device.roomId === room.id : Boolean(device.roomId)));
+  const climate = devices.filter((device) => publicChannelsOf(device).some((channel) => channel.capability === "temperature" || channel.capability === "humidity"));
+  if (!climate.length) return room ? `В помещении «${room.name}» показаний климата нет.` : "Показаний климата нет.";
+  return climate
+    .map((device) => {
+      const facts = describeChannels(device);
+      return facts ? `${room?.name ?? device.displayName ?? device.name}: ${facts}.` : "";
+    })
+    .filter(Boolean)
+    .join(" ");
+}
+
+function answerDeviceChannels(place: Place, hint?: string): string {
+  const device = pickDevice(place, hint) ?? unitDevices(place).find((item) => publicChannelsOf(item).length);
+  if (!device) return "Показаний нет.";
+  const facts = describeChannels(device);
+  if (!facts) return `У «${device.displayName ?? device.name}» показаний нет.`;
+  return `${device.displayName ?? device.name}: ${facts}.`;
+}
+
+function answer(place: Place, query: AiQuery, roomHint?: string, deviceHint?: string): string {
   const signals = homeSignals(place.unitId, place.objectId);
   const devices = unitDevices(place);
   if (query === "visitors") {
@@ -148,12 +187,8 @@ function answer(place: Place, query: AiQuery): string {
     if (!devices.length) return "Устройств нет.";
     return devices.map((device) => `${device.displayName ?? device.name}: ${device.availability === "OFFLINE" ? "нет связи" : device.work === "FAULT" ? "неисправно" : "на связи"}`).join(". ");
   }
-  if (query === "device_status") {
-    const climate = devices.find((device) => device.kind === "CLIMATE");
-    const reading = climate ? readOps().readings.find((item) => item.deviceId === climate.id) : undefined;
-    if (!reading) return "Показаний климата нет.";
-    return `Сейчас ${formatTemperature(reading.temperatureC)}. Влажность ${formatHumidity(reading.humidityPercent)}.`;
-  }
+  if (query === "device_status" || query === "room_climate") return answerRoomClimate(place, roomHint);
+  if (query === "device_channels") return answerDeviceChannels(place, deviceHint);
   if (query === "open_doors") {
     const open = devices.filter((device) => (device.kind === "GATE" || device.kind === "WICKET" || device.kind === "BARRIER" || device.kind === "LOCK") && (device.latch === "OPEN" || device.state?.latch === "OPEN"));
     if (!open.length) return "Открытых дверей и ворот нет.";
@@ -198,7 +233,7 @@ export async function askAssistant(place: Place, prompt: string): Promise<AiRepl
     const mode = modesForObject(place.objectId).find((item) => item.mode === modeForUnit(place.unitId));
     const temperature = signals.climate ? formatTemperature(signals.climate.temperatureC) : "нет данных";
     const reply = proposal.query
-      ? answer(place, proposal.query)
+      ? answer(place, proposal.query, proposal.roomHint, proposal.deviceHint)
       : proposal.reply || `Сейчас ${temperature}. Режим «${mode?.label ?? modeForUnit(place.unitId)}». Могу открыть ворота, оформить пропуск, создать заявку или оплатить счёт.`;
     const file = readOps();
     file.turns.unshift({

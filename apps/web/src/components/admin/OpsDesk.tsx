@@ -2,11 +2,14 @@
 
 import { useState, type ReactNode } from "react";
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAdminPreview } from "@/components/admin/AdminPreview";
+import { DeviceAddWizard } from "@/components/admin/DeviceAddWizard";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { ViewToggle, useViewMode } from "@/components/ui/ViewToggle";
 import { commandMessage, runCommand } from "@/lib/command";
+import { formatChannelValue } from "@/lib/format";
 
 const FloorPlan = dynamic(() => import("@/components/home/FloorPlan").then((mod) => ({ default: mod.FloorPlan })), { ssr: false });
 import { formatMoney } from "@/lib/format";
@@ -356,21 +359,79 @@ export function PaymentDesk({
   );
 }
 
+type DeskChannel = {
+  id: string;
+  capability: string;
+  displayName: string;
+  unit: string;
+  value: number | boolean | string | null;
+  status: string;
+  writable: boolean;
+  enabled: boolean;
+};
+
 type DeskDevice = {
   id?: string;
   objectId: string;
   name: string;
   kind: string;
+  kindCode?: string;
   state: string;
   availability?: string;
+  status?: string;
   lastSeen?: string | null;
   adapter?: string;
   gatewayName?: string | null;
   lastError?: string | null;
+  place?: string;
+  roomId?: string | null;
+  roomName?: string | null;
+  unitId?: string | null;
+  unitName?: string | null;
+  channels?: DeskChannel[];
   planFloor?: number | null;
   planX?: number | null;
   planY?: number | null;
 };
+
+type DeskRoom = { id: string; objectId: string; unitId?: string; unitName?: string; name: string; kind?: string };
+type DeskUnit = { id: string; objectId: string; name: string };
+type DeviceFilter = "all" | "online" | "offline" | "unconfigured" | "object" | "home";
+
+const deviceFilters: { id: DeviceFilter; label: string }[] = [
+  { id: "all", label: "Все" },
+  { id: "online", label: "На связи" },
+  { id: "offline", label: "Нет связи" },
+  { id: "unconfigured", label: "Без настройки" },
+  { id: "object", label: "Объект" },
+  { id: "home", label: "Дом" },
+];
+
+function deviceStatus(device: DeskDevice): string {
+  if (device.status === "UNCONFIGURED") return "Без настройки";
+  if (device.status === "OFFLINE" || device.availability === "OFFLINE") return "Нет связи";
+  if (device.status === "ONLINE" || device.availability === "ONLINE") return "На связи";
+  if (device.status === "DEGRADED") return "Частично";
+  if (device.status === "ERROR") return "Ошибка";
+  if (device.status === "DISABLED") return "Выключено";
+  if (device.status === "DISCOVERED") return "Найдено";
+  return device.state;
+}
+
+function devicePlace(device: DeskDevice): string {
+  if (device.place === "STREET") return "Улица посёлка";
+  if (device.place === "OBJECT") return "Объект";
+  return [device.unitName, device.roomName].filter(Boolean).join(" · ") || "Дом";
+}
+
+function matchesFilter(device: DeskDevice, filter: DeviceFilter): boolean {
+  if (filter === "online") return device.status === "ONLINE" || device.availability === "ONLINE";
+  if (filter === "offline") return device.status === "OFFLINE" || device.availability === "OFFLINE";
+  if (filter === "unconfigured") return device.status === "UNCONFIGURED";
+  if (filter === "object") return device.place === "OBJECT";
+  if (filter === "home") return device.place === "ROOM";
+  return true;
+}
 
 export function DeviceDesk({
   devices,
@@ -378,31 +439,53 @@ export function DeviceDesk({
   gateways = [],
   events = [],
   rooms = [],
+  units = [],
   commandLogs = [],
   plans = [],
   canCommand = false,
   canPair = false,
+  canCreate = false,
 }: {
   devices: DeskDevice[];
   meters?: { objectId: string; name: string; value: string; unit: string }[];
   gateways?: { id: string; objectId: string; name: string; adapter: string; status: string; lastSeen: string | null; lastError: string | null; paired?: boolean; connectedDevices: number }[];
   events?: { id: string; objectId: string; title: string; at: string; result: string; severity?: string; source?: string }[];
-  rooms?: { id: string; objectId: string; name: string }[];
+  rooms?: DeskRoom[];
+  units?: DeskUnit[];
   commandLogs?: { id: string; objectId: string; at: string; deviceId: string; command: string; result: string; source: string; risk: string }[];
   plans?: { unitId: string; unitName: string; objectId?: string; floors: { floor: number; image: string; pins: { deviceId: string; name: string; x: number; y: number }[] }[] }[];
   canCommand?: boolean;
   canPair?: boolean;
+  canCreate?: boolean;
 }) {
   const [view, setView] = useViewMode("devices");
   const router = useRouter();
+  const { selected, can } = useAdminPreview();
+  const allowCreate = canCreate || can("devices.create");
   const rows = useObjectRows(devices);
   const readings = useObjectRows(meters);
   const hubs = useObjectRows(gateways);
   const log = useObjectRows(events);
   const places = useObjectRows(rooms);
+  const derivedHouses = (() => {
+    const seen = new Map<string, DeskUnit>();
+    for (const row of units) seen.set(row.id, row);
+    for (const room of rooms) {
+      if (!room.unitId || seen.has(room.unitId)) continue;
+      seen.set(room.unitId, { id: room.unitId, objectId: room.objectId, name: room.unitName || room.unitId });
+    }
+    for (const device of devices) {
+      if (!device.unitId || seen.has(device.unitId)) continue;
+      seen.set(device.unitId, { id: device.unitId, objectId: device.objectId, name: device.unitName || device.unitId });
+    }
+    return [...seen.values()];
+  })();
+  const houses = useObjectRows(derivedHouses);
   const commands = useObjectRows(commandLogs);
   const maps = useObjectRows(plans.map((plan) => ({ ...plan, objectId: plan.objectId ?? "" })).filter((plan) => plan.objectId));
   const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<DeviceFilter>("all");
+  const [adding, setAdding] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [pairToken, setPairToken] = useState<string | null>(null);
@@ -492,15 +575,56 @@ export function DeviceDesk({
   }
 
   const filtered = rows.filter((device) => {
+    if (!matchesFilter(device, filter)) return false;
     const text = query.trim().toLowerCase();
     if (!text) return true;
-    return device.name.toLowerCase().includes(text) || device.kind.toLowerCase().includes(text) || (device.gatewayName ?? "").toLowerCase().includes(text);
+    return (
+      device.name.toLowerCase().includes(text) ||
+      device.kind.toLowerCase().includes(text) ||
+      (device.gatewayName ?? "").toLowerCase().includes(text) ||
+      (device.roomName ?? "").toLowerCase().includes(text) ||
+      (device.unitName ?? "").toLowerCase().includes(text)
+    );
   });
 
   return (
     <Shell title="Устройства">
-      <ViewToggle value={view} onChange={setView} />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <ViewToggle value={view} onChange={setView} />
+        {allowCreate && selected ? (
+          <button type="button" className="btn btn-primary btn-compact" onClick={() => setAdding(true)}>
+            Добавить
+          </button>
+        ) : null}
+      </div>
+      {adding && selected ? (
+        <DeviceAddWizard
+          objectId={selected.id}
+          gateways={hubs}
+          rooms={places.map((room) => ({
+            id: room.id,
+            objectId: room.objectId,
+            unitId: room.unitId ?? "",
+            unitName: room.unitName ?? "",
+            name: room.name,
+          }))}
+          units={houses}
+          onClose={() => setAdding(false)}
+        />
+      ) : null}
       <input value={query} onChange={(event) => setQuery(event.target.value)} className="control" placeholder="Поиск по имени или типу" />
+      <div className="flex flex-wrap gap-2">
+        {deviceFilters.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={`btn btn-compact ${filter === item.id ? "btn-primary" : "btn-secondary"}`}
+            onClick={() => setFilter(item.id)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
       <List empty="Шлюзов нет.">
         {hubs.map((gateway) => (
           <li key={gateway.id} className="px-5 py-4">
@@ -538,19 +662,32 @@ export function DeviceDesk({
               <li key={device.id ?? `${device.objectId}-${device.name}`} className="panel p-5">
                 <p className="text-[16px] text-ink">{device.name}</p>
                 <p className="mt-2 text-sm text-muted">
-                  {device.kind} · {device.state}
-                  {device.availability ? ` · ${device.availability}` : ""}
+                  {device.kind} · {deviceStatus(device)} · {devicePlace(device)}
                 </p>
-                <p className="mt-1 text-sm text-muted">
-                  {device.gatewayName ?? device.adapter ?? "локально"}
-                  {device.lastSeen ? ` · ${device.lastSeen}` : ""}
-                </p>
+                {(device.channels ?? []).filter((channel) => channel.enabled).length ? (
+                  <p className="mt-1 text-sm text-muted">
+                    {(device.channels ?? [])
+                      .filter((channel) => channel.enabled)
+                      .slice(0, 4)
+                      .map((channel) => `${channel.displayName} ${formatChannelValue(channel.value, channel.unit)}`)
+                      .join(" · ")}
+                  </p>
+                ) : (
+                  <p className="mt-1 text-sm text-muted">{device.state}</p>
+                )}
                 {device.lastError ? <p className="mt-1 text-sm text-danger">{device.lastError}</p> : null}
-                {canCommand && device.id ? (
-                  <button type="button" className="btn btn-secondary btn-compact mt-3" onClick={() => void testCommand(device.id as string, "setPower")}>
-                    Тест
-                  </button>
-                ) : null}
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {device.id ? (
+                    <Link href={`/admin/devices/${device.id}`} className="btn btn-secondary btn-compact">
+                      Открыть
+                    </Link>
+                  ) : null}
+                  {canCommand && device.id ? (
+                    <button type="button" className="btn btn-secondary btn-compact" onClick={() => void testCommand(device.id as string, "setPower")}>
+                      Тест
+                    </button>
+                  ) : null}
+                </div>
               </li>
             ))
           )}
@@ -561,15 +698,30 @@ export function DeviceDesk({
             <li key={device.id ?? `${device.objectId}-${device.name}`} className="px-5 py-4">
               <p className="text-[16px] text-ink">{device.name}</p>
               <p className="text-sm text-muted">
-                {device.kind} · {device.state}
-                {device.lastSeen ? ` · ${device.lastSeen}` : ""}
+                {device.kind} · {deviceStatus(device)} · {devicePlace(device)}
               </p>
-              {device.lastError ? <p className="mt-1 text-sm text-danger">{device.lastError}</p> : null}
-              {canCommand && device.id ? (
-                <button type="button" className="btn btn-secondary btn-compact mt-3" onClick={() => void testCommand(device.id as string, "setPower")}>
-                  Тест
-                </button>
+              {(device.channels ?? []).filter((channel) => channel.enabled).length ? (
+                <p className="mt-1 text-sm text-muted">
+                  {(device.channels ?? [])
+                    .filter((channel) => channel.enabled)
+                    .slice(0, 4)
+                    .map((channel) => `${channel.displayName} ${formatChannelValue(channel.value, channel.unit)}`)
+                    .join(" · ")}
+                </p>
               ) : null}
+              {device.lastError ? <p className="mt-1 text-sm text-danger">{device.lastError}</p> : null}
+              <div className="mt-3 flex flex-wrap gap-2">
+                {device.id ? (
+                  <Link href={`/admin/devices/${device.id}`} className="btn btn-secondary btn-compact">
+                    Открыть
+                  </Link>
+                ) : null}
+                {canCommand && device.id ? (
+                  <button type="button" className="btn btn-secondary btn-compact" onClick={() => void testCommand(device.id as string, "setPower")}>
+                    Тест
+                  </button>
+                ) : null}
+              </div>
             </li>
           ))}
         </List>
@@ -623,7 +775,7 @@ export function DeviceDesk({
             <option value="">Помещение или улица дома</option>
             {places.map((room) => (
               <option key={room.id} value={room.id}>
-                {room.name}
+                {room.unitName ? `${room.unitName} · ${room.name}` : room.name}
               </option>
             ))}
           </select>

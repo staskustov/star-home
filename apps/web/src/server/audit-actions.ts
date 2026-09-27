@@ -61,6 +61,8 @@ export const auditActions = {
   DEVICE_CREATE: { label: "Устройство подключено", category: "ENGINEERING" },
   DEVICE_EDIT: { label: "Устройство настроено", category: "ENGINEERING" },
   DEVICE_DELETE: { label: "Устройство отключено", category: "ENGINEERING" },
+  DEVICE_DISCOVER: { label: "Поиск устройств", category: "ENGINEERING" },
+  DEVICE_CHANNEL_CHANGED: { label: "Каналы устройства", category: "ENGINEERING" },
   GATEWAY_CREATE: { label: "Шлюз добавлен", category: "ENGINEERING" },
   GATEWAY_EDIT: { label: "Шлюз изменён", category: "ENGINEERING" },
   GATEWAY_DELETE: { label: "Шлюз удалён", category: "ENGINEERING" },

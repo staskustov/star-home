@@ -201,6 +201,8 @@ describe("another company", () => {
       ["removeRoom", { roomId: "room_rival" }],
       ["listDevices", { objectId: rival.objectId }],
       ["registerDevice", { objectId: rival.objectId, name: "Захват", kind: "LIGHTING" }],
+      ["discoverDevices", { gatewayId: "gw_rival" }],
+      ["discoveryScan", { scanId: "scan_rival" }],
       ["updateDevice", { deviceId: "dev_rival", name: "Захват" }],
       ["removeDevice", { deviceId: "dev_rival" }],
       ["listGateways", { objectId: rival.objectId }],

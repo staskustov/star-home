@@ -2,7 +2,14 @@ import { createHash, randomBytes } from "crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
 import { capabilitiesFor, type Capability } from "@/server/device-capabilities";
-import { deviceLabel, isOpener, type DeviceKind } from "@/server/device-kinds";
+import {
+  capabilitiesTouchedByState,
+  deriveLifecycle,
+  stateSliceForCapability,
+  type DeviceChannel,
+  type DeviceLifecycle,
+} from "@/server/device-channels";
+import { deviceLabel, isOpener, residentSeesDevice, type DeviceKind } from "@/server/device-kinds";
 import { findObject, findRoom, roomsOf } from "@/server/catalog-store";
 import { boundValue, remember } from "@/server/store-bind";
 import type { AccessEvent } from "@/types/domain";
@@ -74,6 +81,9 @@ export type NormalizedState = {
   brightness?: number;
   temperatureC?: number;
   humidityPercent?: number;
+  illuminanceLx?: number;
+  co2Ppm?: number;
+  pressureHpa?: number;
   targetC?: number;
   mode?: string;
   position?: number;
@@ -82,7 +92,13 @@ export type NormalizedState = {
   watts?: number;
   kwh?: number;
   windMs?: number;
+  windDeg?: number;
+  rainMm?: number;
+  uvIndex?: number;
   radiationUSv?: number;
+  voltageV?: number;
+  currentA?: number;
+  frequencyHz?: number;
 };
 
 export const devicePlaces = ["OBJECT", "STREET", "ROOM"] as const;
@@ -113,7 +129,10 @@ export type Device = {
   externalId?: string | null;
   manufacturer?: string | null;
   model?: string | null;
+  serialNumber?: string | null;
   capabilities?: Capability[];
+  channels?: DeviceChannel[];
+  status?: DeviceLifecycle;
   availability?: DeviceAvailability;
   lastSeen?: string | null;
   state?: NormalizedState;
@@ -252,6 +271,7 @@ export type SmartHistoryPoint = {
   objectId: string;
   at: string;
   state: NormalizedState;
+  capability?: Capability;
 };
 
 export type PendingSmartCommand = {
@@ -280,6 +300,26 @@ export type GatewayCommand = {
   createdAt: string;
   expiresAt?: string;
   ackedAt?: string;
+};
+
+export type DiscoveryScan = {
+  id: string;
+  companyId: string;
+  objectId: string;
+  gatewayId: string;
+  commandId: string;
+  status: "pending" | "completed" | "error";
+  createdAt: string;
+  completedAt?: string;
+  error?: string;
+  devices: {
+    externalId: string;
+    manufacturer: string | null;
+    model: string | null;
+    online: boolean;
+    channels: { externalId: string; capability: string | null; displayName: string; unit: string; value: number | boolean | string | null }[];
+    alreadyRegistered?: { deviceId: string; name: string };
+  }[];
 };
 
 export type DeviceCommandLog = {
@@ -390,6 +430,7 @@ type OpsFile = {
   smartHistory: SmartHistoryPoint[];
   pendingSmart: PendingSmartCommand[];
   gatewayCommands: GatewayCommand[];
+  discoveryScans: DiscoveryScan[];
   commandLogs: DeviceCommandLog[];
   favorites: DeviceFavorite[];
   scenarios: Scenario[];
@@ -657,6 +698,7 @@ function seed(): OpsFile {
     smartHistory: [],
     pendingSmart: [],
     gatewayCommands: [],
+    discoveryScans: [],
     commandLogs: [],
     favorites: [],
     scenarios: [],
@@ -714,9 +756,11 @@ export function normalizeDevice(device: Device, reading?: DeviceReading): Device
   device.externalId ??= null;
   device.manufacturer ??= null;
   device.model ??= null;
+  device.serialNumber ??= null;
   device.capabilities = device.capabilities?.length ? device.capabilities : capabilitiesFor(device.kind);
   device.availability ??= "UNKNOWN";
   device.lastSeen ??= null;
+  device.status = device.status ?? deriveLifecycle(device);
   device.planFloor ??= null;
   device.planX ??= null;
   device.planY ??= null;
@@ -743,16 +787,41 @@ export function normalizeDevice(device: Device, reading?: DeviceReading): Device
 }
 
 export function recordSmartHistory(file: OpsFile, point: Omit<SmartHistoryPoint, "id">): void {
-  const last = [...file.smartHistory].reverse().find((item) => item.deviceId === point.deviceId);
-  const nextAt = Date.parse(point.at);
+  const touched = point.capability ? [] : capabilitiesTouchedByState(point.state);
+  const capability = point.capability ?? (touched.length === 1 ? touched[0] : undefined);
+  const row = capability ? { ...point, capability } : point;
+  const last = [...file.smartHistory].reverse().find((item) => item.deviceId === row.deviceId && (item.capability ?? null) === (row.capability ?? null));
+  const nextAt = Date.parse(row.at);
   const prevAt = last ? Date.parse(last.at) : NaN;
   if (last && Number.isFinite(nextAt) && Number.isFinite(prevAt) && nextAt - prevAt < seriesStepMs) {
-    last.at = point.at;
-    last.state = point.state;
+    last.at = row.at;
+    last.state = row.state;
+    last.capability = row.capability;
   } else {
-    file.smartHistory.push({ ...point, id: newId("hist") });
+    file.smartHistory.push({ ...row, id: newId("hist") });
   }
   trimSmartLayers(file);
+}
+
+export function recordChannelHistory(
+  file: OpsFile,
+  point: { deviceId: string; objectId: string; at: string; state: NormalizedState; capabilities?: Capability[] },
+): void {
+  const caps = point.capabilities?.length ? point.capabilities : capabilitiesTouchedByState(point.state);
+  if (!caps.length) {
+    recordSmartHistory(file, point);
+    return;
+  }
+  for (const capability of [...new Set(caps)]) {
+    const slice = stateSliceForCapability(capability, point.state);
+    recordSmartHistory(file, {
+      deviceId: point.deviceId,
+      objectId: point.objectId,
+      at: point.at,
+      capability,
+      state: Object.keys(slice).length ? slice : point.state,
+    });
+  }
 }
 
 export function expireGatewayCommands(file: OpsFile, now = Date.now()): void {
@@ -796,6 +865,7 @@ function normalize(file: OpsFile): OpsFile {
   file.smartHistory ??= [];
   file.pendingSmart ??= [];
   file.gatewayCommands ??= [];
+  file.discoveryScans ??= [];
   file.commandLogs ??= [];
   file.favorites ??= [];
   file.scenarios ??= [];
@@ -1023,13 +1093,10 @@ export function homeSignals(unitId: string, objectId: string): {
       const latest = (file.meterReadings ?? []).filter((item) => item.meterId === meter.id).at(-1);
       return { name: meter.name, value: latest ? latest.value.toString().replace(".", ",") : "—", unit: meter.unit };
     });
-  const categories = [
-    ...new Set(
-      file.devices
-        .filter((device) => device.objectId === objectId && (device.unitId === unitId || device.unitId === null))
-        .map((device) => deviceLabel(device.kind)),
-    ),
-  ];
+  const visible = file.devices.filter(
+    (device) => device.objectId === objectId && (device.unitId === unitId || device.unitId === null) && residentSeesDevice(device),
+  );
+  const categories = [...new Set(visible.map((device) => deviceLabel(device.kind)))];
   return {
     climate: reading ? { temperatureC: reading.temperatureC, humidityPercent: reading.humidityPercent } : null,
     visitor: pass ? { title: pass.guestName, detail: pass.detail } : null,
@@ -1046,9 +1113,7 @@ export function homeSignals(unitId: string, objectId: string): {
     cameras: file.devices
       .filter((device) => device.kind === "CAMERA" && device.unitId === unitId)
       .map((device) => ({ name: device.name, state: device.work === "OFF" ? "Отключено" : device.work === "FAULT" ? "Неисправно" : "На связи" })),
-    devices: file.devices
-      .filter((device) => device.objectId === objectId && (device.unitId === unitId || device.unitId === null))
-      .map((device) => {
+    devices: visible.map((device) => {
         const opener = isOpener(device.kind);
         const caps = device.capabilities ?? [];
         return {
@@ -1068,9 +1133,7 @@ export function homeSignals(unitId: string, objectId: string): {
           roomName: device.roomId ? findRoom(device.roomId)?.name ?? null : null,
         };
       }),
-    facts: homeFacts(
-      file.devices.filter((device) => device.objectId === objectId && (device.unitId === unitId || device.unitId === null)),
-    ),
+    facts: homeFacts(visible),
     controller: homeController(file.gateways.filter((gateway) => gateway.objectId === objectId)),
     weather: outdoorWeatherOf(file.devices.filter((device) => device.objectId === objectId && device.kind === "WEATHER")),
   };

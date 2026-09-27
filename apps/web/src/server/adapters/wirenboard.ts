@@ -1,4 +1,5 @@
 import { registerGatewayAdapter, type AdapterResult, type GatewayAdapter } from "@/server/gateway-adapter";
+import { channelValueToState, mapWirenboardControl } from "@/server/adapters/wirenboard-controls";
 import { applyCommandState, isSmartCommand } from "@/server/smart-commands";
 import type { Device, NormalizedState } from "@/server/ops-store";
 
@@ -29,6 +30,11 @@ export function wirenboardPayload(command: string, value: unknown): WbPayload {
 }
 
 export function mapWirenboardInbound(topic: string, payload: unknown): { externalId: string; state: NormalizedState } | null {
+  const native = mapWirenboardControl(topic, payload);
+  if (native) {
+    const state = channelValueToState(native.channel.capability, native.channel.value);
+    return Object.keys(state).length ? { externalId: native.externalId, state } : { externalId: native.externalId, state: {} };
+  }
   const match = /^wb\/([^/]+)\/(on|brightness|target|position|temperature|humidity)$/.exec(topic);
   if (!match) return null;
   const [, externalId, leaf] = match;

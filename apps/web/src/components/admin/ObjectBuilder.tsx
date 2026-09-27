@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useAdminPreview } from "@/components/admin/AdminPreview";
+import { DeviceAddWizard } from "@/components/admin/DeviceAddWizard";
 import { ViewToggle, useViewMode, type ViewMode } from "@/components/ui/ViewToggle";
 import { plural } from "@/lib/format";
 import { objectPresentation } from "@/lib/object-presentation";
@@ -148,6 +150,7 @@ export function ObjectBuilder({ tree }: { tree: CatalogTree }) {
             <UnitFilter count={tree.units.length} query={query} onQuery={setQuery} />
             <UnitList
               units={visibleUnits(tree.units, query)}
+              objectId={tree.object.id}
               view={view}
               editable={tree.can.structure}
               pendingDelete={pendingDelete}
@@ -165,6 +168,7 @@ export function ObjectBuilder({ tree }: { tree: CatalogTree }) {
             {tree.buildings?.map((building) => (
               <BuildingBlock
                 key={building.id}
+                objectId={tree.object.id}
                 building={building}
                 editable={tree.can.structure}
                 removable={tree.can.buildings}
@@ -305,6 +309,7 @@ function unitMeta(unit: CatalogUnitNode): string {
 
 function UnitList({
   units,
+  objectId,
   view,
   editable,
   pendingDelete,
@@ -314,6 +319,7 @@ function UnitList({
   onRemove,
 }: {
   units: CatalogUnitNode[];
+  objectId: string;
   view: ViewMode;
   editable: boolean;
   pendingDelete: string | null;
@@ -329,6 +335,7 @@ function UnitList({
         {units.map((unit) => (
           <UnitRow
             key={unit.id}
+            objectId={objectId}
             unit={unit}
             view={view}
             editable={editable}
@@ -347,6 +354,7 @@ function UnitList({
       {units.map((unit) => (
         <UnitRow
           key={unit.id}
+          objectId={objectId}
           unit={unit}
           view={view}
           editable={editable}
@@ -362,6 +370,7 @@ function UnitList({
 }
 
 function UnitRow({
+  objectId,
   unit,
   view,
   editable,
@@ -371,6 +380,7 @@ function UnitRow({
   onBlocked,
   onRemove,
 }: {
+  objectId: string;
   unit: CatalogUnitNode;
   view: ViewMode;
   editable: boolean;
@@ -408,6 +418,7 @@ function UnitRow({
     return (
       <li className={view === "blocks" ? "panel p-5" : "px-5 py-3"}>
         <UnitEditor
+          objectId={objectId}
           unit={unit}
           onSave={onSave}
           onClose={() => setEditing(false)}
@@ -440,21 +451,27 @@ function UnitRow({
 }
 
 function UnitEditor({
+  objectId,
   unit,
   onSave,
   onClose,
 }: {
+  objectId: string;
   unit: CatalogUnitNode;
   onSave: (id: string, patch: UnitPatch) => Promise<boolean>;
   onClose: () => void;
 }) {
+  const { can } = useAdminPreview();
   const [name, setName] = useState(unit.name);
   const [area, setArea] = useState(unit.areaM2 == null ? "" : String(unit.areaM2));
   const [floors, setFloors] = useState(unit.floors ?? 1);
   const [plans, setPlans] = useState<{ floor: number; image: string }[]>([]);
-  const [rooms, setRooms] = useState<{ id: string; name: string; kind: string; floor: number | null }[]>([]);
+  const [rooms, setRooms] = useState<{ id: string; name: string; kind: string; floor: number | null; devices?: { id: string; name: string; kind: string }[] }[]>([]);
   const [roomName, setRoomName] = useState("");
   const [roomFloor, setRoomFloor] = useState("");
+  const [addingRoomId, setAddingRoomId] = useState<string | null>(null);
+  const [gateways, setGateways] = useState<{ id: string; objectId: string; name: string; adapter: string; status: string }[]>([]);
+  const [canCreateDevice, setCanCreateDevice] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -462,13 +479,21 @@ function UnitEditor({
     let alive = true;
     fetch(`/api/catalog/units/${unit.id}`)
       .then((response) => response.json().catch(() => null))
-      .then((payload: { plans?: { floor: number; image: string }[]; floors?: number; areaM2?: number | null; name?: string; rooms?: { id: string; name: string; kind: string; floor: number | null }[] } | null) => {
+      .then((payload: {
+        plans?: { floor: number; image: string }[];
+        floors?: number;
+        areaM2?: number | null;
+        name?: string;
+        rooms?: { id: string; name: string; kind: string; floor: number | null; devices?: { id: string; name: string; kind: string }[] }[];
+        canCreateDevice?: boolean;
+      } | null) => {
         if (!alive || !payload) return;
         setPlans(Array.isArray(payload.plans) ? payload.plans : []);
         setRooms(Array.isArray(payload.rooms) ? payload.rooms : []);
         if (typeof payload.floors === "number") setFloors(payload.floors);
         if (payload.areaM2 != null) setArea(String(payload.areaM2));
         if (payload.name) setName(payload.name);
+        setCanCreateDevice(payload.canCreateDevice === true);
         setLoaded(true);
       })
       .catch(() => {
@@ -515,7 +540,17 @@ function UnitEditor({
     if (saved) onClose();
   }
 
+  useEffect(() => {
+    fetch(`/api/smart-home/gateways?objectId=${objectId}`)
+      .then((response) => response.json().catch(() => null))
+      .then((payload: { gateways?: { id: string; objectId: string; name: string; adapter: string; status: string }[] } | null) => {
+        if (Array.isArray(payload?.gateways)) setGateways(payload.gateways);
+      })
+      .catch(() => undefined);
+  }, [objectId]);
+
   return (
+    <>
     <form onSubmit={save} className="grid gap-4">
       <label className="block">
         <span className="text-sm text-muted">Название</span>
@@ -565,29 +600,49 @@ function UnitEditor({
       <div className="grid gap-3">
         <p className="text-sm text-muted">Помещения</p>
         {rooms.length ? (
-          <ul className="grid gap-2">
+          <ul className="grid gap-4">
             {rooms.map((room) => (
-              <li key={room.id} className="flex items-center justify-between gap-3 text-[15px]">
-                <span className="min-w-0 truncate text-ink">
-                  {room.name}
-                  {room.floor ? ` · ${room.floor} этаж` : ""}
-                </span>
-                <button
-                  type="button"
-                  className="text-sm text-muted"
-                  onClick={async () => {
-                    setError(null);
-                    const response = await fetch(`/api/catalog/rooms/${room.id}`, { method: "DELETE" });
-                    const payload = (await response.json().catch(() => null)) as { message?: string } | null;
-                    if (!response.ok) {
-                      setError(payload?.message ?? "Не удалось удалить помещение");
-                      return;
-                    }
-                    setRooms((current) => current.filter((item) => item.id !== room.id));
-                  }}
-                >
-                  Удалить
-                </button>
+              <li key={room.id} className="grid gap-2">
+                <div className="flex items-center justify-between gap-3 text-[15px]">
+                  <span className="min-w-0 truncate text-ink">
+                    {room.name}
+                    {room.floor ? ` · ${room.floor} этаж` : ""}
+                  </span>
+                  <button
+                    type="button"
+                    className="text-sm text-muted"
+                    onClick={async () => {
+                      setError(null);
+                      const response = await fetch(`/api/catalog/rooms/${room.id}`, { method: "DELETE" });
+                      const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+                      if (!response.ok) {
+                        setError(payload?.message ?? "Не удалось удалить помещение");
+                        return;
+                      }
+                      setRooms((current) => current.filter((item) => item.id !== room.id));
+                    }}
+                  >
+                    Удалить
+                  </button>
+                </div>
+                {(room.devices ?? []).length ? (
+                  <ul className="grid gap-1 pl-1">
+                    {(room.devices ?? []).map((device) => (
+                      <li key={device.id}>
+                        <Link href={`/admin/devices/${device.id}`} className="text-sm text-muted transition-colors hover:text-ink">
+                          {device.name} · {device.kind}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-muted">Устройств нет.</p>
+                )}
+                {canCreateDevice || can("devices.create") ? (
+                  <button type="button" className="btn btn-secondary btn-compact w-fit" onClick={() => setAddingRoomId(room.id)}>
+                    Добавить устройство
+                  </button>
+                ) : null}
               </li>
             ))}
           </ul>
@@ -628,7 +683,7 @@ function UnitEditor({
                 setError(payload?.message ?? "Не удалось добавить помещение");
                 return;
               }
-              setRooms((current) => [...current, { id: payload?.id ?? roomName, name: roomName, kind: "OTHER", floor: roomFloor ? Number(roomFloor) : null }]);
+              setRooms((current) => [...current, { id: payload?.id ?? roomName, name: roomName, kind: "OTHER", floor: roomFloor ? Number(roomFloor) : null, devices: [] }]);
               setRoomName("");
               setRoomFloor("");
             }}
@@ -647,10 +702,34 @@ function UnitEditor({
         </button>
       </div>
     </form>
+    {addingRoomId ? (
+      <div className="mt-4">
+        <DeviceAddWizard
+          objectId={objectId}
+          gateways={gateways}
+          rooms={rooms.map((room) => ({ id: room.id, objectId, unitId: unit.id, unitName: unit.name, name: room.name }))}
+          units={[{ id: unit.id, objectId, name: unit.name }]}
+          initialPlace="ROOM"
+          initialUnitId={unit.id}
+          initialRoomId={addingRoomId}
+          onClose={() => {
+            setAddingRoomId(null);
+            fetch(`/api/catalog/units/${unit.id}`)
+              .then((response) => response.json().catch(() => null))
+              .then((payload: { rooms?: { id: string; name: string; kind: string; floor: number | null; devices?: { id: string; name: string; kind: string }[] }[] } | null) => {
+                if (Array.isArray(payload?.rooms)) setRooms(payload.rooms);
+              })
+              .catch(() => undefined);
+          }}
+        />
+      </div>
+    ) : null}
+    </>
   );
 }
 
 function BuildingBlock({
+  objectId,
   building,
   editable,
   removable,
@@ -671,6 +750,7 @@ function BuildingBlock({
   onRemoveUnit,
   onRemoveBuilding,
 }: {
+  objectId: string;
   building: CatalogBuildingNode;
   editable: boolean;
   removable: boolean;
@@ -754,6 +834,7 @@ function BuildingBlock({
           <UnitFilter count={building.units.length} query={query} onQuery={setQuery} />
           <UnitList
             units={visibleUnits(building.units, query)}
+            objectId={objectId}
             view={view}
             editable={editable}
             pendingDelete={pendingDelete}

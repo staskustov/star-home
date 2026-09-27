@@ -1,10 +1,12 @@
 import { formatHumidity, formatTemperature } from "@/lib/format";
-import { findUnit, roomsOf, unitIdsOf } from "@/server/catalog-store";
+import { findRoom, findUnit, roomsOf, unitIdsOf, unitIdsOfBuilding } from "@/server/catalog-store";
+import { capabilitiesFor } from "@/server/device-capabilities";
+import { channelsOf, deriveLifecycle } from "@/server/device-channels";
 import { deviceLabel, isOpener } from "@/server/device-kinds";
 import { listAudit } from "@/server/audit-store";
 import { auditRow, auditVisible, shortTime } from "@/server/audit-view";
 import { readOps } from "@/server/ops-store";
-import { can, reaches, type Scoped, type StaffActor } from "@/server/rbac/decide";
+import { can, objectsInScope, reaches, type Scoped, type StaffActor } from "@/server/rbac/decide";
 import type { Permission } from "@/server/rbac/permissions";
 
 const deskAuditLimit = 100;
@@ -129,17 +131,47 @@ export function deskFor(actor: StaffActor, section: DeskSection) {
     return {
       devices: mine(file.devices).map((device) => {
         const gateway = device.gatewayId ? file.gateways.find((item) => item.id === device.gatewayId) : undefined;
+        const room = device.roomId ? findRoom(device.roomId) : undefined;
+        const unit = device.unitId ? findUnit(device.unitId) : undefined;
+        const host = {
+          ...device,
+          capabilities: device.capabilities?.length ? device.capabilities : capabilitiesFor(device.kind),
+        };
         return {
           id: device.id,
           objectId: device.objectId,
           name: device.name,
           kind: deviceLabel(device.kind),
+          kindCode: device.kind,
           state: deviceState(device, file.readings),
           availability: device.availability ?? "UNKNOWN",
+          status: device.status ?? deriveLifecycle(host),
           lastSeen: device.lastSeen,
           adapter: device.adapter,
+          gatewayId: device.gatewayId ?? null,
           gatewayName: gateway?.name ?? null,
           lastError: gateway?.lastError ?? null,
+          place: device.place ?? (device.roomId ? "ROOM" : "OBJECT"),
+          roomId: device.roomId ?? null,
+          roomName: room?.name ?? null,
+          unitId: device.unitId ?? null,
+          unitName: unit?.name ?? null,
+          manufacturer: device.manufacturer ?? null,
+          model: device.model ?? null,
+          serialNumber: device.serialNumber ?? null,
+          externalId: device.externalId ?? null,
+          capabilities: device.capabilities ?? [],
+          channels: channelsOf(host).map((channel) => ({
+            id: channel.id,
+            capability: channel.capability,
+            displayName: channel.displayName,
+            unit: channel.unit,
+            value: channel.value ?? null,
+            status: channel.status,
+            writable: channel.writable,
+            enabled: channel.enabled,
+            externalId: channel.externalId,
+          })),
           planFloor: device.planFloor ?? null,
           planX: device.planX ?? null,
           planY: device.planY ?? null,
@@ -198,13 +230,29 @@ export function deskFor(actor: StaffActor, section: DeskSection) {
           },
         ];
       }),
-      rooms: [...new Set(mine(file.devices).map((device) => device.objectId))].flatMap((objectId) =>
-        unitIdsOf(objectId).flatMap((unitId) =>
-          roomsOf(unitId).map((room) => ({ id: room.id, objectId: room.objectId, name: room.name })),
+      rooms: objectsInScope(actor).flatMap((object) =>
+        (actor.scope.buildingId && actor.scope.objectId === object.id ? unitIdsOfBuilding(actor.scope.buildingId) : unitIdsOf(object.id)).flatMap((unitId) =>
+          roomsOf(unitId).map((room) => ({
+            id: room.id,
+            objectId: room.objectId,
+            unitId: room.unitId,
+            unitName: findUnit(room.unitId)?.name ?? "",
+            name: room.name,
+            kind: room.kind,
+          })),
         ),
+      ),
+      units: objectsInScope(actor).flatMap((object) =>
+        (actor.scope.buildingId && actor.scope.objectId === object.id ? unitIdsOfBuilding(actor.scope.buildingId) : unitIdsOf(object.id)).map((unitId) => ({
+          id: unitId,
+          objectId: object.id,
+          name: findUnit(unitId)?.name ?? unitId,
+        })),
       ),
       canCommand: can(actor, "devices.command"),
       canPair: can(actor, "devices.edit"),
+      canCreate: can(actor, "devices.create"),
+      canTechnical: can(actor, "engineering.view"),
       meters: mine(file.meters).map((meter) => {
         const latest = file.meterReadings.filter((reading) => reading.meterId === meter.id).at(-1);
         return { objectId: meter.objectId, name: meter.name, value: latest ? String(latest.value).replace(".", ",") : "—", unit: meter.unit };

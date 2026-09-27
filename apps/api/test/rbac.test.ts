@@ -280,6 +280,245 @@ describe("smart home registry", () => {
     const after = (await rpc("listDevices", { objectId: "obj_siyanie" }, objectAdmin)).body as { devices: { id: string }[] };
     assert.ok(!after.devices.some((item) => item.id === deviceId));
   });
+
+  it("registers one multi-channel device and rejects a duplicate external id", async () => {
+    const gateway = await rpc("createGateway", { objectId: "obj_siyanie", name: "WB MSW Gateway", adapter: "wirenboard" }, objectAdmin);
+    assert.equal(gateway.status, 201);
+    const gatewayId = (gateway.body as { id: string }).id;
+    const created = await rpc(
+      "registerDevice",
+      {
+        objectId: "obj_siyanie",
+        unitId: "unit_24",
+        roomId: "room_24_living",
+        gatewayId,
+        name: "Климатический датчик",
+        kind: "CLIMATE",
+        manufacturer: "Wiren Board",
+        model: "WB-MSW3",
+        serialNumber: "MSW3-001",
+        externalId: "wb-msw3",
+        capabilities: ["temperature", "humidity", "illuminance", "co2"],
+      },
+      objectAdmin,
+    );
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    const deviceId = (created.body as { id: string }).id;
+    const listed = (await rpc("listDevices", { objectId: "obj_siyanie" }, objectAdmin)).body as {
+      devices: {
+        id: string;
+        status: string;
+        serialNumber: string | null;
+        channels: { capability: string; unit: string; displayName: string; value: unknown }[];
+      }[];
+    };
+    const matches = listed.devices.filter((item) => item.id === deviceId);
+    assert.equal(matches.length, 1);
+    const device = matches[0];
+    assert.ok(device);
+    assert.equal(device.status, "UNCONFIGURED");
+    assert.equal(device.serialNumber, "MSW3-001");
+    assert.deepEqual(
+      device.channels.map((channel) => [channel.capability, channel.unit]),
+      [
+        ["temperature", "°C"],
+        ["humidity", "%"],
+        ["illuminance", "lx"],
+        ["co2", "ppm"],
+      ],
+    );
+    const seed = listed.devices.filter((item) => item.id === "dev_climate_24");
+    assert.equal(seed.length, 1);
+    assert.ok(seed[0]?.channels.some((channel) => channel.capability === "temperature" && channel.value === 22.4));
+
+    const duplicate = await rpc(
+      "registerDevice",
+      {
+        objectId: "obj_siyanie",
+        roomId: "room_24_bedroom",
+        gatewayId,
+        name: "Копия",
+        kind: "CLIMATE",
+        externalId: "wb-msw3",
+      },
+      objectAdmin,
+    );
+    assert.equal(duplicate.status, 409);
+    assert.equal((duplicate.body as { message: string; deviceId?: string }).message, "Устройство уже добавлено.");
+    assert.equal((duplicate.body as { deviceId?: string }).deviceId, deviceId);
+    assert.equal((await rpc("registerDevice", { objectId: "obj_siyanie", name: "Чужой", kind: "CLIMATE" }, resident)).status, 403);
+  });
+
+  it("renames and disables a channel without exposing it to the resident", async () => {
+    const created = await rpc(
+      "registerDevice",
+      {
+        objectId: "obj_siyanie",
+        roomId: "room_24_living",
+        name: "Датчик зала",
+        kind: "CLIMATE",
+        capabilities: ["temperature", "humidity", "illuminance", "co2"],
+      },
+      objectAdmin,
+    );
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    const deviceId = (created.body as { id: string }).id;
+    const listed = (await rpc("listDevices", { objectId: "obj_siyanie" }, objectAdmin)).body as {
+      devices: { id: string; channels: { capability: string; displayName: string; enabled: boolean }[] }[];
+    };
+    const device = listed.devices.find((item) => item.id === deviceId);
+    assert.ok(device);
+    const patched = await rpc(
+      "updateDevice",
+      {
+        deviceId,
+        channels: device.channels.map((channel) =>
+          channel.capability === "illuminance"
+            ? { ...channel, enabled: false }
+            : channel.capability === "temperature"
+              ? { ...channel, displayName: "Температура зала" }
+              : channel,
+        ),
+      },
+      objectAdmin,
+    );
+    assert.equal(patched.status, 200, JSON.stringify(patched.body));
+    const after = (await rpc("listDevices", { objectId: "obj_siyanie" }, objectAdmin)).body as {
+      devices: { id: string; channels: { capability: string; displayName: string; enabled: boolean }[] }[];
+    };
+    const next = after.devices.find((item) => item.id === deviceId);
+    assert.equal(next?.channels.find((channel) => channel.capability === "illuminance")?.enabled, false);
+    assert.equal(next?.channels.find((channel) => channel.capability === "temperature")?.displayName, "Температура зала");
+    const card = (await rpc("smartHomeDevice", { deviceId }, resident)).body as {
+      device: { channels?: { capability: string; displayName: string }[]; technical?: unknown };
+    };
+    assert.equal((card.device.channels ?? []).find((channel) => channel.capability === "temperature")?.displayName, "Температура зала");
+    assert.ok(!(card.device.channels ?? []).some((channel) => channel.capability === "illuminance"));
+    assert.equal(card.device.technical, undefined);
+    assert.equal((await rpc("updateDevice", { deviceId, channels: device.channels }, resident)).status, 403);
+    const audit = (await import("../../web/src/server/audit-store")).listAudit();
+    assert.ok(audit.some((row) => row.action === "DEVICE_CHANNEL_CHANGED" && row.targetId === deviceId));
+  });
+
+  it("does not command a channel that is not writable", async () => {
+    const created = await rpc(
+      "registerDevice",
+      {
+        objectId: "obj_siyanie",
+        roomId: "room_24_living",
+        name: "Термостат зала",
+        kind: "CLIMATE",
+        capabilities: ["temperature", "humidity", "thermostat"],
+      },
+      objectAdmin,
+    );
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    const deviceId = (created.body as { id: string }).id;
+    const listed = (await rpc("listDevices", { objectId: "obj_siyanie" }, objectAdmin)).body as {
+      devices: { id: string; channels: { capability: string; writable: boolean; enabled: boolean }[] }[];
+    };
+    const device = listed.devices.find((item) => item.id === deviceId);
+    assert.ok(device);
+    const patched = await rpc(
+      "updateDevice",
+      {
+        deviceId,
+        channels: device.channels.map((channel) => (channel.capability === "thermostat" ? { ...channel, writable: false } : channel)),
+      },
+      objectAdmin,
+    );
+    assert.equal(patched.status, 200, JSON.stringify(patched.body));
+    assert.equal((await rpc("commandDeviceSmart", { deviceId, command: "setTemperature", value: 21 }, resident)).status, 400);
+    const card = (await rpc("smartHomeDevice", { deviceId }, resident)).body as { device: { commands: string[] } };
+    assert.ok(!card.device.commands.includes("setTemperature"));
+  });
+
+  it("keeps history when a device is moved to another room", async () => {
+    await rpc("commandDeviceSmart", { deviceId: "dev_light_24", command: "setPower", value: true }, resident);
+    const before = (await rpc("smartHomeHistory", { deviceId: "dev_light_24" }, objectAdmin)).body as { points: { at: string }[] };
+    assert.ok(before.points.length >= 1);
+    const moved = await rpc("updateDevice", { deviceId: "dev_light_24", roomId: "room_24_bedroom" }, objectAdmin);
+    assert.equal(moved.status, 200, JSON.stringify(moved.body));
+    const after = (await rpc("smartHomeHistory", { deviceId: "dev_light_24" }, objectAdmin)).body as { points: { at: string }[] };
+    assert.equal(after.points.length, before.points.length);
+    const card = (await rpc("smartHomeDevice", { deviceId: "dev_light_24" }, objectAdmin)).body as { device: { roomId: string | null } };
+    assert.equal(card.device.roomId, "room_24_bedroom");
+    await rpc("updateDevice", { deviceId: "dev_light_24", roomId: "room_24_living" }, objectAdmin);
+  });
+
+  it("discovers a Wiren Board device through the gateway queue without binding a room", async () => {
+    const created = await rpc("createGateway", { objectId: "obj_siyanie", name: "WB Discover", adapter: "wirenboard" }, objectAdmin);
+    assert.equal(created.status, 201);
+    const gatewayId = (created.body as { id: string }).id;
+    const paired = await rpc("pairGateway", { gatewayId }, admin);
+    const token = (paired.body as { token: string }).token;
+    assert.equal((await rpc("discoverDevices", { gatewayId }, resident)).status, 403);
+    const started = await rpc("discoverDevices", { gatewayId }, objectAdmin);
+    assert.equal(started.status, 201, JSON.stringify(started.body));
+    const scanId = (started.body as { scanId: string; status: string }).scanId;
+    assert.equal((started.body as { status: string }).status, "pending");
+    const pending = (await rpc("discoveryScan", { scanId }, objectAdmin)).body as { status: string; devices: unknown[] };
+    assert.equal(pending.status, "pending");
+    assert.deepEqual(pending.devices, []);
+
+    const channel = await import("../../web/src/server/gateway-channel");
+    const pulled = channel.pullGateway(token);
+    assert.equal(pulled.ok, true);
+    const command = pulled.ok ? pulled.value.commands.find((item) => item.command === "discover") : undefined;
+    assert.ok(command);
+    const acked = channel.ackGateway(token, {
+      commandId: command.id,
+      confirmed: true,
+      devices: [
+        { topic: "/devices/wb-msw3-scan/controls/Temperature", value: 22.4 },
+        { topic: "/devices/wb-msw3-scan/controls/Humidity", value: 48 },
+        { topic: "/devices/wb-msw3-scan/controls/Illuminance", value: 320 },
+        { topic: "/devices/wb-msw3-scan/controls/CO2", value: 650 },
+      ],
+    });
+    assert.equal(acked.ok && acked.value.applied, true);
+    const done = (await rpc("discoveryScan", { scanId }, objectAdmin)).body as {
+      status: string;
+      devices: {
+        externalId: string;
+        alreadyRegistered?: { deviceId: string };
+        channels: { capability: string; unit: string; value: unknown }[];
+      }[];
+    };
+    assert.equal(done.status, "completed");
+    assert.equal(done.devices.length, 1);
+    assert.equal(done.devices[0]?.externalId, "wb-msw3-scan");
+    assert.equal(done.devices[0]?.alreadyRegistered, undefined);
+    assert.equal(done.devices[0]?.channels.length, 4);
+    const listed = (await rpc("listDevices", { objectId: "obj_siyanie" }, objectAdmin)).body as { devices: { externalId: string | null }[] };
+    assert.ok(!listed.devices.some((item) => item.externalId === "wb-msw3-scan"));
+
+    const registered = await rpc(
+      "registerDevice",
+      {
+        objectId: "obj_siyanie",
+        roomId: "room_24_living",
+        gatewayId,
+        name: "Климат гостиной",
+        kind: "CLIMATE",
+        externalId: "wb-msw3-scan",
+        capabilities: ["temperature", "humidity", "illuminance", "co2"],
+      },
+      objectAdmin,
+    );
+    assert.equal(registered.status, 201);
+    const again = await rpc("discoverDevices", { gatewayId }, objectAdmin);
+    const nextId = (again.body as { scanId: string }).scanId;
+    const nextPull = channel.pullGateway(token);
+    const nextCommand = nextPull.ok ? nextPull.value.commands.find((item) => item.command === "discover") : undefined;
+    assert.ok(nextCommand);
+    channel.ackGateway(token, { commandId: nextCommand.id, confirmed: true, devices: [{ topic: "/devices/wb-msw3-scan/controls/Temperature", value: 22.7 }] });
+    const marked = (await rpc("discoveryScan", { scanId: nextId }, objectAdmin)).body as {
+      devices: { alreadyRegistered?: { deviceId: string; name: string } }[];
+    };
+    assert.equal(marked.devices[0]?.alreadyRegistered?.deviceId, (registered.body as { id: string }).id);
+    assert.equal((await rpc("discoveryScan", { scanId }, resident)).status, 403);
+  });
 });
 
 describe("smart home commands", () => {
@@ -335,12 +574,21 @@ describe("smart home commands", () => {
     assert.ok(home.home.rooms.some((room) => room.name === "Гостиная"));
     assert.ok(!home.home.rooms.some((room) => room.name === "Детская"));
     const devices = (await rpc("smartHomeDevices", {}, resident)).body as {
-      devices: { id: string; technical?: unknown; endpoint?: string }[];
+      devices: { id: string; technical?: unknown; endpoint?: string; channels?: { capability: string }[] }[];
     };
     const light = devices.devices.find((item) => item.id === "dev_light_24");
     assert.ok(light);
     assert.equal(light.technical, undefined);
-    assert.equal(JSON.stringify(light).includes("endpoint"), false);
+    assert.ok((light.channels ?? []).some((channel) => channel.capability === "power"));
+    const raw = JSON.stringify(light);
+    assert.equal(raw.includes("endpoint"), false);
+    assert.equal(raw.includes("externalId"), false);
+    assert.equal(raw.includes("topic"), false);
+    const climate = devices.devices.find((item) => item.id === "dev_climate_24");
+    assert.ok(climate);
+    assert.equal(climate.technical, undefined);
+    assert.ok((climate.channels ?? []).some((channel) => channel.capability === "temperature"));
+    assert.ok((climate.channels ?? []).some((channel) => channel.capability === "humidity"));
   });
 
   it("runs a life-mode scenario without executing HIGH steps", async () => {
@@ -493,6 +741,8 @@ describe("smart home commands", () => {
     assert.equal((await rpc("placeDevice", { deviceId: "dev_light_24", planFloor: 1, planX: 40, planY: 60 }, objectAdmin)).status, 200);
     const floors = ((await rpc("floorPlan", {}, resident)).body as { floors: { pins: { deviceId: string; x: number }[] }[] }).floors;
     assert.ok(floors.some((floor) => floor.pins.some((pin) => pin.deviceId === "dev_light_24" && pin.x === 40)));
+    const audit = (await import("../../web/src/server/audit-store")).listAudit();
+    assert.ok(audit.some((row) => row.action === "DEVICE_EDIT" && row.targetId === "dev_light_24" && row.changes?.some((change) => change.field === "План")));
   });
 
   it("runs EVENT steps except HIGH", async () => {
@@ -538,11 +788,11 @@ describe("smart home commands", () => {
       resident,
     );
     assert.equal(created.status, 201, JSON.stringify(created.body));
-    await rpc("commandDeviceSmart", { deviceId: "dev_light_24", command: "setPower", value: false }, resident);
+    await rpc("commandDeviceSmart", { deviceId: "dev_light_24", command: "setPower", value: false }, objectAdmin);
     assert.equal((await rpc("smartHomeStatus", {}, resident)).status, 200);
     const first = (await rpc("smartHomeDevice", { deviceId: "dev_light_24" }, resident)).body as { device: { state?: { on?: boolean } } };
     assert.equal(first.device.state?.on, true);
-    await rpc("commandDeviceSmart", { deviceId: "dev_light_24", command: "setPower", value: false }, resident);
+    await rpc("commandDeviceSmart", { deviceId: "dev_light_24", command: "setPower", value: false }, objectAdmin);
     assert.equal((await rpc("smartHomeStatus", {}, resident)).status, 200);
     const second = (await rpc("smartHomeDevice", { deviceId: "dev_light_24" }, resident)).body as { device: { state?: { on?: boolean } } };
     assert.equal(second.device.state?.on, false);
@@ -570,7 +820,45 @@ describe("smart home commands", () => {
     assert.equal(living.temperatureC, 22.4);
     const room = await rpc("smartHomeRoomDevices", { roomId: living.id }, resident);
     assert.equal(room.status, 200);
-    assert.ok(((room.body as { devices: { id: string }[] }).devices).some((device) => device.id === "dev_light_24"));
+    const roomDevices = (room.body as {
+      devices: { id: string; channels?: { capability: string; displayName: string; value: unknown }[]; technical?: unknown }[];
+    }).devices;
+    assert.ok(roomDevices.some((device) => device.id === "dev_light_24"));
+    const climate = roomDevices.find((device) => device.id === "dev_climate_24");
+    assert.ok(climate);
+    assert.ok((climate.channels ?? []).some((channel) => channel.capability === "temperature" && channel.value === 22.4));
+    assert.ok((climate.channels ?? []).some((channel) => channel.capability === "humidity"));
+    const raw = JSON.stringify(climate);
+    assert.equal(raw.includes("topic"), false);
+    assert.equal(raw.includes("externalId"), false);
+    assert.equal(climate.technical, undefined);
+  });
+
+  it("hides object-level engineering from the resident and keeps gates", async () => {
+    const created = await rpc(
+      "registerDevice",
+      { objectId: "obj_siyanie", name: "Насос ЛОС", kind: "POWER", place: "OBJECT" },
+      objectAdmin,
+    );
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    const deviceId = (created.body as { id: string }).id;
+    const listed = (await rpc("listDevices", { objectId: "obj_siyanie" }, objectAdmin)).body as { devices: { id: string }[] };
+    assert.ok(listed.devices.some((item) => item.id === deviceId));
+    const cards = (await rpc("smartHomeDevices", {}, resident)).body as { devices: { id: string }[] };
+    assert.ok(!cards.devices.some((item) => item.id === deviceId));
+    assert.ok(cards.devices.some((item) => item.id === "dev_gate_siyanie"));
+    const home = (await rpc("home", null, resident)).body as { home: { devices: { id: string }[] } };
+    assert.ok(!home.home.devices.some((item) => item.id === deviceId));
+    assert.ok(home.home.devices.some((item) => item.id === "dev_gate_siyanie"));
+    const opened = await rpc("smartHomeDevice", { deviceId }, resident);
+    assert.ok(opened.status === 403 || opened.status === 404, JSON.stringify(opened.body));
+    const details = (await rpc("unitDetails", { unitId: "unit_24" }, objectAdmin)).body as {
+      canCreateDevice?: boolean;
+      rooms: { name: string; devices?: { id: string }[] }[];
+    };
+    assert.equal(details.canCreateDevice, true);
+    const living = details.rooms.find((room) => room.name === "Гостиная");
+    assert.ok(living?.devices?.some((device) => device.id === "dev_light_24"));
   });
 
   it("edits EVENT and SCHEDULE scenarios and can disable them", async () => {
@@ -669,6 +957,9 @@ describe("smart home commands", () => {
     const future = await rpc("smartHomeHistory", { deviceId: "dev_light_24", since: "2999-01-01T00:00:00.000Z" }, resident);
     assert.equal(future.status, 200);
     assert.equal(((future.body as { points: unknown[] }).points).length, 0);
+    const power = await rpc("smartHomeHistory", { deviceId: "dev_light_24", capability: "power" }, resident);
+    assert.equal(power.status, 200);
+    assert.ok(((power.body as { points: { capability?: string }[] }).points).every((point) => !point.capability || point.capability === "power"));
   });
 
   it("writes a command log and hides it from the resident", async () => {
@@ -701,6 +992,20 @@ describe("smart home commands", () => {
     const asked = await rpc("ask", { prompt: "какие комнаты" }, resident);
     assert.equal(asked.status, 200);
     assert.match((asked.body as { reply: string }).reply, /Гостиная|Спальня/);
+    const climate = await rpc("ask", { prompt: "климат в гостиной" }, resident);
+    assert.equal(climate.status, 200);
+    const climateReply = (climate.body as { reply: string }).reply;
+    assert.match(climateReply, /22[,.]4|Температура/);
+    assert.equal(climateReply.includes("topic"), false);
+    assert.equal(climateReply.includes("mqtt"), false);
+    const channels = await rpc("ask", { prompt: "показания датчика" }, resident);
+    assert.equal(channels.status, 200);
+    const channelReply = (channels.body as { reply: string }).reply;
+    assert.match(channelReply, /Температура|Влажность|Климат/);
+    assert.equal(channelReply.includes("externalId"), false);
+    const mqtt = await rpc("ask", { prompt: "какой mqtt topic у датчика" }, resident);
+    assert.equal(mqtt.status, 200);
+    assert.match((mqtt.body as { reply: string }).reply, /недоступн/i);
     if (light) {
       delete light.state?.watts;
       ops.writeOps(file);
