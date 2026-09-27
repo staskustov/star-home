@@ -24,7 +24,7 @@ export function WeatherStrip({ weather }: { weather?: OutdoorWeather | null }) {
           { key: "wind", icon: "wind", color: "#0f766e", label: "Ветер", value: num(weather?.windMs ?? null, " м/с") },
           { key: "humidity", icon: "drop", color: "#1d4ed8", label: "Влажность", value: num(weather?.humidityPercent ?? null, "%") },
           { key: "radiation", icon: "radiation", color: "#a16207", label: "Радиация", value: num(weather?.radiationUSv ?? null, " мкЗв/ч") },
-        ].filter((item) => item.value);
+        ].filter((item): item is { key: string; icon: string; color: string; label: string; value: string } => Boolean(item.value));
 
   return (
     <div className="weather-strip" aria-label="Показатели">

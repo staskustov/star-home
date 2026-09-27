@@ -57,7 +57,7 @@ export default async function RoomsPage() {
       ) : (
         <ul className="panel mt-4 overflow-hidden">
           {rooms.map((room) => {
-            const extras = [room.lights ? `Свет ${room.lights.on} из ${room.lights.total}` : null, room.curtain != null ? `Шторы ${room.curtain}%` : null].filter(Boolean);
+            const extras = [room.lights ? `Свет ${room.lights.on} из ${room.lights.total}` : null, room.curtain != null ? `Шторы ${room.curtain}%` : null].filter((item): item is string => Boolean(item));
             return (
               <li key={room.id} className="list-row">
                 <Link href={`/rooms/${room.id}`} className="-my-1 flex min-w-0 flex-1 items-center gap-[14px] py-1">
