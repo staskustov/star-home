@@ -145,11 +145,13 @@ export function HomeChipEditor({
             <span className="text-[13px] text-muted">Или готовая кнопка</span>
             <Select value={action} onChange={(event) => setAction(event.target.value as typeof action)} wrapClassName="mt-1 w-full">
               <option value="">Не выбирать</option>
-              {homeChipActions.map((item) => (
-                <option key={item} value={item}>
-                  {actionLabels[item]}
-                </option>
-              ))}
+              {homeChipActions
+                .filter((item) => item !== "open-gate")
+                .map((item) => (
+                  <option key={item} value={item}>
+                    {actionLabels[item]}
+                  </option>
+                ))}
             </Select>
           </label>
           <button type="submit" className="btn btn-primary">

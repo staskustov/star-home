@@ -647,7 +647,9 @@ describe("smart home commands", () => {
     assert.ok((home.home.facts.lights.on ?? 0) >= 1);
     assert.ok(home.home.scenarioChips.some((chip) => chip.lifeMode === "HOME"));
     assert.ok(home.home.scenarioChips.some((chip) => chip.action === "night"));
-    assert.ok(home.home.actionChips.some((chip) => chip.action === "open-gate" && (chip.latch === "OPEN" || chip.latch === "CLOSED")));
+    assert.ok(!home.home.actionChips.some((chip) => chip.action === "open-gate"));
+    assert.ok(home.home.actionChips.some((chip) => chip.action === "guests"));
+    assert.ok(home.home.actionChips.some((chip) => chip.action === "security"));
     assert.ok(home.home.actionChips.some((chip) => chip.action === "open-point"));
     assert.ok(home.home.accessPoints.some((point) => point.id === "dev_gate_siyanie"));
     assert.ok(home.home.accessPoints.some((point) => point.id === "dev_wicket_siyanie"));
@@ -723,6 +725,43 @@ describe("smart home commands", () => {
     assert.ok(object?.chips.scenarios.some((item) => item.id === chip.id));
     assert.equal((await rpc("removeHomeChip", { objectId: "obj_siyanie", chipId: chip.id }, resident)).status, 403);
     assert.equal((await rpc("removeHomeChip", { objectId: "obj_siyanie", chipId: chip.id }, admin)).status, 200);
+  });
+
+  it("lets admin color home metrics and hides readings the sensor did not send", async () => {
+    const saved = await rpc(
+      "saveHomeMetrics",
+      {
+        objectId: "obj_siyanie",
+        items: [
+          { key: "temperature", label: "Температура", icon: "thermo", color: "#ff6600", enabled: true, sort: 10 },
+          { key: "co2", label: "CO₂", icon: "co2", color: "#118811", enabled: true, sort: 20 },
+        ],
+      },
+      admin,
+    );
+    assert.equal(saved.status, 200, JSON.stringify(saved.body));
+    const home = (
+      (await rpc("home", null, resident)).body as {
+        home: { weather: { metrics: { key: string; color: string; value: string }[]; co2Ppm: number | null } };
+      }
+    ).home;
+    const temp = home.weather.metrics.find((item) => item.key === "temperature");
+    assert.equal(temp?.color, "#ff6600");
+    assert.ok(temp?.value);
+    assert.ok(!home.weather.metrics.some((item) => item.key === "co2"));
+    assert.equal(home.weather.co2Ppm, null);
+  });
+
+  it("stores a guest pass as a from-to window", async () => {
+    const created = await rpc(
+      "addPass",
+      { guestName: "Анна", from: "2026-09-28T10:00:00.000Z", to: "2026-09-28T18:00:00.000Z" },
+      resident,
+    );
+    assert.equal(created.status, 200, JSON.stringify(created.body));
+    const access = (await rpc("access", null, resident)).body as { passes: { guestName: string; detail: string }[] };
+    const row = access.passes.find((item) => item.guestName === "Анна");
+    assert.ok(row?.detail.includes("—"));
   });
 
   it("runs lights-off and keeps the night scenario", async () => {

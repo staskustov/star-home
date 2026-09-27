@@ -75,6 +75,7 @@ export const auditActions = {
   MODE_SWITCH: { label: "Смена режима дома", category: "SETTINGS" },
   HOME_LAYOUT: { label: "Главный экран", category: "SETTINGS" },
   HOME_CHIP: { label: "Плитка главного экрана", category: "SETTINGS" },
+  HOME_METRICS: { label: "Показатели на главной", category: "SETTINGS" },
   AUDIT_EXPORT: { label: "Выгрузка журнала", category: "RBAC" },
 } as const satisfies Record<string, { label: string; category: AuditCategory }>;
 

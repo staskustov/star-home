@@ -64,7 +64,10 @@ export function AccessPointsList({
           return (
             <li key={point.id} className={compact ? "panel access-point" : "panel px-5 py-4"}>
               {compact ? (
-                <p className="min-w-0 truncate text-[15px] text-ink">{point.name}</p>
+                <div className="min-w-0">
+                  <p className="truncate text-[15px] text-ink">{point.name}</p>
+                  <p className="mt-0.5 text-[13px] text-muted">{point.status ?? (open ? "Открыто" : "Закрыто")}</p>
+                </div>
               ) : (
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">

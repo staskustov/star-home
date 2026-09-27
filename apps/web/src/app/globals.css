@@ -913,6 +913,17 @@ select.control,
   min-width: 148px;
 }
 
+.action-row-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  overflow: visible;
+}
+
+.action-row-pair .action-tile {
+  min-width: 0;
+  width: 100%;
+}
+
 @media (min-width: 1024px) {
   .home-stack {
     gap: 1.75rem;

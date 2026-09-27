@@ -21,7 +21,7 @@ export function HomeActionStrip({
 }) {
   if (!chips.length) return null;
   return (
-    <div role="list" aria-label="Быстрые кнопки" className="action-row">
+    <div role="list" aria-label="Быстрые кнопки" className={chips.length === 2 ? "action-row action-row-pair" : "action-row"}>
       {chips.map((chip) => {
         const status = chip.stale ? "Нет связи" : chip.latch === "OPEN" ? "Открыто" : chip.latch === "CLOSED" ? "Закрыто" : null;
         return (

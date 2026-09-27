@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
+import { GuestPassDialog } from "@/components/access/GuestPassDialog";
+import { CameraBlock } from "@/components/home/CameraBlock";
 import { HomeAccessBlock } from "@/components/home/HomeAccessBlock";
 import { HomeActionStrip, type ActionChipTile } from "@/components/home/HomeActionStrip";
 import { HomeChipStrip, type HomeChipTile } from "@/components/home/HomeChipStrip";
@@ -14,8 +16,22 @@ import { commandMessage, runCommand, unconfirmed } from "@/lib/command";
 import { greetingForHour } from "@/lib/greeting";
 import type { LifeMode, ResidentHome } from "@/types/domain";
 
-const CameraBlock = dynamic(() => import("@/components/home/CameraBlock").then((mod) => ({ default: mod.CameraBlock })));
 const SecuritySheet = dynamic(() => import("@/components/home/SecuritySheet").then((mod) => ({ default: mod.SecuritySheet })));
+
+function visibleActionChips(data: ResidentHome): ActionChipTile[] {
+  const fromLayout = (data.actionChips ?? []).filter((chip) => chip.action !== "open-gate");
+  if (fromLayout.length) return fromLayout;
+  const icons: Record<string, ActionChipTile["icon"]> = { guests: "guests", security: "security", pay: "payments" };
+  return (data.quickActions ?? [])
+    .filter((item) => item.id !== "open-gate" && (data.canPay || item.id !== "pay"))
+    .map((item) => ({
+      id: item.id,
+      name: item.label,
+      icon: icons[item.id] ?? "settings",
+      kind: "ACTION",
+      action: item.id,
+    }));
+}
 
 export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
   const router = useRouter();
@@ -23,11 +39,12 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [toast, setToast] = useState<{ text: string; at: number } | null>(null);
   const [securityOpen, setSecurityOpen] = useState(false);
-  const [actionChips, setActionChips] = useState(data.actionChips ?? []);
+  const [guestOpen, setGuestOpen] = useState(false);
+  const [actionChips, setActionChips] = useState(() => visibleActionChips(data));
 
   useEffect(() => {
-    setActionChips(data.actionChips ?? []);
-  }, [data.actionChips]);
+    setActionChips(visibleActionChips(data));
+  }, [data]);
   const current = data.lifeModes.find((item) => item.mode === mode) ?? data.lifeModes[0];
   const greeting = greetingForHour(new Date().getHours(), data.residentName);
 
@@ -99,7 +116,7 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
 
   async function onAction(id: string) {
     if (id === "guests") {
-      router.push("/access");
+      setGuestOpen(true);
       return;
     }
     if (id === "security") {
@@ -154,14 +171,15 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
 
       <WeatherStrip weather={data.weather} />
       <SecuritySheet open={securityOpen} onClose={() => setSecurityOpen(false)} />
+      <GuestPassDialog open={guestOpen} onClose={() => setGuestOpen(false)} canCreate={data.canPass !== false} />
       <HomeChipStrip chips={data.scenarioChips ?? []} label="Сценарии" activeMode={current.mode} onSelect={onChip} />
 
       {data.controller?.message ? (
         <p className="panel px-5 py-4 text-[15px] text-warning">{data.controller.message}</p>
       ) : null}
 
-      <HomeAccessBlock points={data.accessPoints ?? []} canCommand={data.canGate !== false} />
       <CameraBlock cameras={data.cameras} />
+      <HomeAccessBlock points={data.accessPoints ?? []} canCommand={data.canGate !== false} />
       <HomeActionStrip chips={actionChips} onSelect={onChip} />
 
       <HomeHero

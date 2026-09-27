@@ -124,6 +124,9 @@ export type ResidentHome = {
     humidityPercent: number | null;
     windMs: number | null;
     radiationUSv: number | null;
+    co2Ppm?: number | null;
+    organics?: number | null;
+    metrics?: { key: string; label: string; icon: string; color: string; value: string }[];
   } | null;
   scenarioChips?: {
     id: string;
@@ -188,6 +191,7 @@ export type ResidentHome = {
   canGate?: boolean;
   canCommand?: boolean;
   canPay?: boolean;
+  canPass?: boolean;
   facts?: {
     lights: { on: number; total: number } | null;
     doors: { open: string[] } | null;

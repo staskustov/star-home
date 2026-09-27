@@ -50,6 +50,9 @@ export type DashboardObject = {
     humidityPercent: number | null;
     windMs: number | null;
     radiationUSv: number | null;
+    co2Ppm?: number | null;
+    organics?: number | null;
+    metrics?: { key: string; label: string; icon: string; color: string; value: string }[];
   };
 };
 

@@ -1,10 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { AccessPointsList, type AccessPoint } from "@/components/access/AccessPointsList";
+import { GuestPassForm } from "@/components/access/GuestPassForm";
 import { StatusBadge } from "@/components/ui/StatusBadge";
-import { commandMessage, runCommand, unconfirmed } from "@/lib/command";
 import type { AccessEvent } from "@/types/domain";
 
 export function AccessPanel({
@@ -20,33 +18,6 @@ export function AccessPanel({
   points?: AccessPoint[];
   events: AccessEvent[];
 }) {
-  const router = useRouter();
-  const [guestName, setGuestName] = useState("");
-  const [detail, setDetail] = useState("");
-  const [vehicle, setVehicle] = useState("");
-  const [notice, setNotice] = useState<string | null>(null);
-
-  async function add(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setNotice(null);
-    const result = await runCommand(() =>
-      fetch("/api/access/passes", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ guestName, detail, vehicle }),
-      }),
-    );
-    if (!result.ok) {
-      setNotice(commandMessage(result.payload, unconfirmed));
-      return;
-    }
-    setGuestName("");
-    setDetail("");
-    setVehicle("");
-    setNotice("Пропуск сохранён.");
-    router.refresh();
-  }
-
   return (
     <section>
       <h1 className="text-[32px] tracking-[-0.03em] text-ink">Доступ</h1>
@@ -57,19 +28,12 @@ export function AccessPanel({
         </div>
       ) : null}
       {canCreate ? (
-        <form onSubmit={add} className="mt-8 space-y-3 panel p-5">
-          <Field label="Гость" value={guestName} onChange={setGuestName} />
-          <Field label="Срок" value={detail} onChange={setDetail} />
-          <Field label="Автомобиль" value={vehicle} onChange={setVehicle} />
-          <button type="submit" className="btn btn-primary">
-            Оформить пропуск
-          </button>
-          {notice ? <p className="text-sm text-muted">{notice}</p> : null}
-        </form>
+        <div className="mt-8">
+          <GuestPassForm />
+        </div>
       ) : (
         <p className="mt-8 text-[15px] text-muted">Пропуск оформляет житель.</p>
       )}
-      {!canCreate && notice ? <p className="mt-3 text-sm text-muted">{notice}</p> : null}
       <ul className="mt-6 divide-y divide-line panel">
         {passes.length === 0 ? (
           <li className="px-5 py-4 text-[15px] text-muted">Гостей нет.</li>
@@ -103,14 +67,5 @@ export function AccessPanel({
         )}
       </ul>
     </section>
-  );
-}
-
-function Field({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
-  return (
-    <label className="block">
-      <span className="text-sm text-muted">{label}</span>
-      <input value={value} onChange={(event) => onChange(event.target.value)} className="control mt-2" />
-    </label>
   );
 }

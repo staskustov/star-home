@@ -23,7 +23,9 @@ export type IconName =
   | "bell"
   | "night"
   | "wind"
-  | "radiation";
+  | "radiation"
+  | "co2"
+  | "organics";
 
 const paths: Record<IconName, ReactNode> = {
   home: (
@@ -270,6 +272,20 @@ const paths: Record<IconName, ReactNode> = {
       <path d="M12 6.2 9.6 10.4A4 4 0 0 1 12 9.6a4 4 0 0 1 2.4.8Z" />
       <path d="m7.1 16.6 4.3-1.2A4 4 0 0 1 9.6 13.2 4 4 0 0 1 8.4 15Z" />
       <path d="m16.9 16.6-4.3-1.2A4 4 0 0 0 14.4 13.2 4 4 0 0 0 15.6 15Z" />
+    </>
+  ),
+  co2: (
+    <>
+      <circle cx="8.5" cy="13" r="3" />
+      <circle cx="15.5" cy="11" r="2.4" />
+      <path d="M5 18.5h14" />
+    </>
+  ),
+  organics: (
+    <>
+      <path d="M12 20V9" />
+      <path d="M12 9c0-4 4.2-6 7-6-1 4.2-4 6.4-7 6.4" />
+      <path d="M12 11c0-3.4-3.8-5.4-6.5-5.4 1 3.6 3.5 5.4 6.5 5.4" />
     </>
   ),
 };

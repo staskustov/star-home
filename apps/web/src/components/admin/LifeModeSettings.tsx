@@ -3,11 +3,15 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { HomeChipEditor } from "@/components/admin/HomeChipEditor";
+import { HomeMetricsEditor } from "@/components/admin/HomeMetricsEditor";
 import { useAdminPreview } from "@/components/admin/AdminPreview";
 import { ThemePalette } from "@/components/shell/ThemePalette";
 import { lifeModeChecks, type LifeModeCheck, type LifeModeSetting } from "@/types/domain";
 
 type Chip = Parameters<typeof HomeChipEditor>[0]["chips"];
+type Metrics = Parameters<typeof HomeMetricsEditor>[0] extends { items: infer I; available: infer A }
+  ? { items: I; available: A }
+  : never;
 
 export function LifeModeSettings({
   objects,
@@ -17,6 +21,7 @@ export function LifeModeSettings({
     objectId: string;
     modes: LifeModeSetting[];
     chips: Chip;
+    metrics: Metrics;
     scenarios: { id: string; name: string }[];
   }[];
   canEdit: boolean;
@@ -38,6 +43,7 @@ export function LifeModeSettings({
       objectName={selected.name}
       modes={current.modes}
       chips={current.chips}
+      metrics={current.metrics ?? { items: [], available: [] }}
       scenarios={current.scenarios}
       canEdit={canEdit}
     />
@@ -49,6 +55,7 @@ function ModeEditor({
   objectName,
   modes,
   chips,
+  metrics,
   scenarios,
   canEdit,
 }: {
@@ -56,6 +63,7 @@ function ModeEditor({
   objectName: string;
   modes: LifeModeSetting[];
   chips: Chip;
+  metrics: Metrics;
   scenarios: { id: string; name: string }[];
   canEdit: boolean;
 }) {
@@ -165,6 +173,7 @@ function ModeEditor({
       ) : null}
       {saved ? <p className="mt-4 text-sm text-muted">Сохранено: {saved}.</p> : null}
       <HomeChipEditor objectId={objectId} chips={chips} scenarios={scenarios} canEdit={canEdit} />
+      <HomeMetricsEditor objectId={objectId} items={metrics.items} available={metrics.available} canEdit={canEdit} />
     </div>
   );
 }

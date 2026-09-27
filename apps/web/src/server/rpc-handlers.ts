@@ -41,6 +41,7 @@ import {
   placesFor,
 } from "@/server/directory";
 import { homeLayoutFor, removeHomeChipFor, saveHomeChipFor, saveHomeLayoutFor } from "@/server/home-chips";
+import { saveHomeMetricsFor } from "@/server/home-metrics";
 import { saveModeFor, settingsFor, switchModeFor } from "@/server/life-modes";
 import { loginLimited, noteLoginFailure, noteLoginSuccess } from "@/server/login-limit";
 import { homeSignals, markNoticesRead, readOps } from "@/server/ops-store";
@@ -165,7 +166,8 @@ const methodPolicy: Record<string, Route> = {
   openGate: household((current) => openGateFor(current)),
   openPoint: household((current, input) => openPointFor(current, input.pointId)),
   closePoint: household((current, input) => closePointFor(current, input.pointId)),
-  addPass: household((current, input) => addPassFor(current, input.guestName, input.detail, input.vehicle)),
+  addPass: household((current, input) => addPassFor(current, input.guestName, input.detail, input.vehicle, input.from, input.to)),
+  saveHomeMetrics: staff("settings.edit", (actor, input) => saveHomeMetricsFor(actor, input)),
   pay: household((current) => payFor(current)),
   alarm: household((current) => alarmFor(current)),
   securityDesk: session(securityDesk),
@@ -542,7 +544,7 @@ function home(session: SessionRef): Reply {
   const bills = householdCan(membership.role, "payments.view");
   const ownRequestsOnly = selfOnlyOf(membership.role).has("service.view");
   const layout = homeLayoutFor(session.userId, base.unit.id, base.object.id, base.object.companyId);
-  const actionChips = layout.actionChips.filter((chip) => pays || chip.action !== "pay");
+  const actionChips = layout.actionChips.filter((chip) => chip.action !== "open-gate" && (pays || chip.action !== "pay"));
   return ok({
     home: {
       ...base,
@@ -577,6 +579,7 @@ function home(session: SessionRef): Reply {
       securityPhone: findObject(base.object.id)?.securityPhone ?? null,
       canSecurity: householdCan(membership.role, "security.alarm.raise"),
       canGate: householdCan(membership.role, "access.gate.open"),
+      canPass: householdCan(membership.role, "access.pass.create"),
       canCommand: householdCan(membership.role, "devices.command"),
       canPay: pays,
       scenarioChips: layout.scenarioChips,

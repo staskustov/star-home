@@ -15,6 +15,7 @@ import {
   type RequestStatus,
   type ServiceRequest,
 } from "@/server/ops-store";
+import { timeZone } from "@/server/time-zone";
 
 export type { Place };
 
@@ -100,7 +101,7 @@ export async function closeAccessPoint(place: Place, pointId: string): Promise<{
   return closeDevice(place, accessPoint(place.objectId, place.unitId, pointId));
 }
 
-export function createPass(place: Place, guestName: string, detail: string, vehicle = ""): Pass {
+export function createPass(place: Place, guestName: string, detail: string, vehicle = "", from?: string | null, to?: string | null): Pass {
   const file = readOps();
   const pass: Pass = {
     id: newId("pass"),
@@ -111,6 +112,8 @@ export function createPass(place: Place, guestName: string, detail: string, vehi
     detail,
     vehicle,
     code: newId("code").slice(-8).toUpperCase(),
+    from: from ?? null,
+    to: to ?? null,
   };
   file.passes.unshift(pass);
   writeOps(file);
@@ -351,15 +354,48 @@ export async function closePointFor(session: SessionRef | null, pointId: unknown
   return { ok: true as const, value: await closeAccessPoint(place.value, pointId) };
 }
 
-export async function addPassFor(session: SessionRef | null, guestName: unknown, detail: unknown, vehicle?: unknown) {
+export async function addPassFor(
+  session: SessionRef | null,
+  guestName: unknown,
+  detail: unknown,
+  vehicle?: unknown,
+  from?: unknown,
+  to?: unknown,
+) {
   const place = placeFromSession(session, "access.pass.create");
   if (!place.ok) return place;
   const name = clean(guestName, "Введите имя гостя", 80);
   if (typeof name !== "string") return name;
-  const note = clean(detail, "Введите срок или комментарий", 160);
+  const range = passRange(from, to);
+  if (range && "ok" in range && range.ok === false) return range;
+  const note = range
+    ? range.detail
+    : clean(detail, "Укажите срок доступа", 160);
   if (typeof note !== "string") return note;
   const car = typeof vehicle === "string" ? vehicle.trim().replace(/\s+/g, " ").slice(0, 40) : "";
-  return { ok: true as const, value: createPass(place.value, name, note, car) };
+  return {
+    ok: true as const,
+    value: createPass(place.value, name, note, car, range && "from" in range ? range.from : null, range && "to" in range ? range.to : null),
+  };
+}
+
+function passRange(from: unknown, to: unknown): { from: string; to: string; detail: string } | { ok: false; status: number; message: string } | null {
+  if ((from === undefined || from === null || from === "") && (to === undefined || to === null || to === "")) return null;
+  const start = parseWhen(from);
+  const end = parseWhen(to);
+  if (!start || !end) return { ok: false, status: 400, message: "Укажите срок от и до" };
+  if (end <= start) return { ok: false, status: 400, message: "Срок до должен быть позже начала" };
+  const stamp = (value: Date) =>
+    value
+      .toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone })
+      .replace(",", "");
+  return { from: start.toISOString(), to: end.toISOString(), detail: `${stamp(start)} — ${stamp(end)}` };
+}
+
+function parseWhen(value: unknown): Date | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date : null;
 }
 
 export async function addRequestFor(session: SessionRef | null, category: unknown, text: unknown, fileName?: string) {

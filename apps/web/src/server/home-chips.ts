@@ -119,7 +119,6 @@ function defaultsFor(objectId: string, companyId: string): HomeChip[] {
     { id: `chip_${objectId}_work`, companyId, objectId, name: label("WORK", "На работе"), icon: lifeModeIcons.WORK, kind: "LIFE_MODE", strip: "scenarios", lifeMode: "WORK", sort: 20, locked: true },
     { id: `chip_${objectId}_vacation`, companyId, objectId, name: label("VACATION", "В отпуске"), icon: lifeModeIcons.VACATION, kind: "LIFE_MODE", strip: "scenarios", lifeMode: "VACATION", sort: 30, locked: true },
     { id: `chip_${objectId}_night`, companyId, objectId, name: "Ночь", icon: "night", kind: "ACTION", strip: "scenarios", action: "night", sort: 40, locked: true },
-    { id: `chip_${objectId}_gate`, companyId, objectId, name: "Ворота", icon: "gate", kind: "ACTION", strip: "actions", action: "open-gate", sort: 10, locked: true },
     { id: `chip_${objectId}_security`, companyId, objectId, name: "Охрана", icon: "security", kind: "ACTION", strip: "actions", action: "security", sort: 20, locked: true },
     { id: `chip_${objectId}_guests`, companyId, objectId, name: "Гости", icon: "guests", kind: "ACTION", strip: "actions", action: "guests", sort: 30, locked: true },
     ...readOps()
@@ -151,10 +150,19 @@ function defaultIds(objectId: string, strip: "scenarios" | "actions"): string[] 
   return defaultsFor(objectId, "").filter((chip) => chip.strip === strip).map((chip) => chip.id);
 }
 
+function isQuickGate(chip: { action?: string | null }): boolean {
+  return chip.action === "open-gate";
+}
+
 function pickChips(objectId: string, companyId: string, ids: string[] | undefined, strip: "scenarios" | "actions"): HomeChipView[] {
-  const chips = ensureChipsFor(objectId, companyId).filter((chip) => chip.strip === strip);
-  const selected = ids ?? defaultIds(objectId, strip);
+  const chips = ensureChipsFor(objectId, companyId).filter((chip) => chip.strip === strip && !isQuickGate(chip));
   const byId = new Map(chips.map((chip) => [chip.id, chip]));
+  const requested = ids ?? defaultIds(objectId, strip);
+  const chosen = requested.filter((id) => byId.has(id));
+  const selected =
+    strip === "actions" && ids && ids.length > 0 && chosen.length === 0
+      ? defaultIds(objectId, strip).filter((id) => byId.has(id))
+      : chosen;
   const locked = strip === "scenarios" ? chips.filter((chip) => chip.locked).map(asView) : [];
   const extra = selected.flatMap((id) => {
     const chip = byId.get(id);
@@ -167,7 +175,7 @@ export function chipsForObject(objectId: string, companyId: string) {
   const chips = ensureChipsFor(objectId, companyId).map(asView);
   return {
     scenarios: chips.filter((chip) => chip.strip === "scenarios"),
-    actions: chips.filter((chip) => chip.strip === "actions"),
+    actions: chips.filter((chip) => chip.strip === "actions" && !isQuickGate(chip)),
   };
 }
 

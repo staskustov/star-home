@@ -24,6 +24,8 @@ export type Pass = {
   detail: string;
   vehicle: string;
   code: string;
+  from?: string | null;
+  to?: string | null;
 };
 
 export const requestStatuses = ["CREATED", "ACCEPTED", "ASSIGNED", "IN_PROGRESS", "WAITING", "DONE", "CLOSED"] as const;
@@ -96,6 +98,7 @@ export type NormalizedState = {
   rainMm?: number;
   uvIndex?: number;
   radiationUSv?: number;
+  organics?: number;
   voltageV?: number;
   currentA?: number;
   frequencyHz?: number;
@@ -440,6 +443,33 @@ type OpsFile = {
   pushDevices: PushDevice[];
   homeChips: HomeChip[];
   homeLayouts: HomeLayout[];
+  homeMetrics: HomeMetricsRow[];
+};
+
+export const homeMetricKeys = ["temperature", "humidity", "wind", "radiation", "co2", "organics"] as const;
+export type HomeMetricKey = (typeof homeMetricKeys)[number];
+
+export type HomeMetricSetting = {
+  key: HomeMetricKey;
+  label: string;
+  icon: string;
+  color: string;
+  enabled: boolean;
+  sort: number;
+};
+
+export type HomeMetricsRow = {
+  objectId: string;
+  companyId: string;
+  items: HomeMetricSetting[];
+};
+
+export type WeatherMetricView = {
+  key: HomeMetricKey;
+  label: string;
+  icon: string;
+  color: string;
+  value: string;
 };
 
 const filePath = path.join(process.cwd(), "data", "ops.json");
@@ -708,6 +738,7 @@ function seed(): OpsFile {
     pushDevices: [],
     homeChips: [],
     homeLayouts: [],
+    homeMetrics: [],
   };
 }
 
@@ -875,6 +906,7 @@ function normalize(file: OpsFile): OpsFile {
   file.pushDevices ??= [];
   file.homeChips ??= [];
   file.homeLayouts ??= [];
+  file.homeMetrics ??= [];
   for (const request of file.requests ?? []) {
     if ((request.status as string) === "NEW") request.status = "CREATED";
   }
@@ -1091,6 +1123,9 @@ export function homeSignals(unitId: string, objectId: string): {
     humidityPercent: number | null;
     windMs: number | null;
     radiationUSv: number | null;
+    co2Ppm: number | null;
+    organics: number | null;
+    metrics: WeatherMetricView[];
   };
 } {
   const file = load();
@@ -1149,12 +1184,45 @@ export function homeSignals(unitId: string, objectId: string): {
       }),
     facts: homeFacts(visible),
     controller: homeController(file.gateways.filter((gateway) => gateway.objectId === objectId)),
-    weather: outdoorWeatherOf(file.devices.filter((device) => device.objectId === objectId && device.kind === "WEATHER")),
+    weather: outdoorWeather(objectId),
   };
 }
 
+export const homeMetricCatalog: Record<HomeMetricKey, { label: string; icon: string; color: string; suffix: string }> = {
+  temperature: { label: "Температура", icon: "thermo", color: "#c2410c", suffix: "°" },
+  humidity: { label: "Влажность", icon: "drop", color: "#1d4ed8", suffix: "%" },
+  wind: { label: "Ветер", icon: "wind", color: "#0f766e", suffix: " м/с" },
+  radiation: { label: "Радиация", icon: "radiation", color: "#a16207", suffix: " мкЗв/ч" },
+  co2: { label: "CO₂", icon: "co2", color: "#15803d", suffix: " ppm" },
+  organics: { label: "Органика", icon: "organics", color: "#6d28d9", suffix: "" },
+};
+
+export function defaultMetricItems(): HomeMetricSetting[] {
+  return (["temperature", "humidity", "wind", "radiation"] as const).map((key, index) => ({
+    key,
+    label: homeMetricCatalog[key].label,
+    icon: homeMetricCatalog[key].icon,
+    color: homeMetricCatalog[key].color,
+    enabled: true,
+    sort: (index + 1) * 10,
+  }));
+}
+
+export function metricsSettingsFor(objectId: string): HomeMetricSetting[] {
+  const row = load().homeMetrics.find((item) => item.objectId === objectId);
+  if (row?.items.length) return [...row.items].sort((left, right) => left.sort - right.sort || left.label.localeCompare(right.label, "ru"));
+  return defaultMetricItems();
+}
+
 export function outdoorWeather(objectId: string) {
-  return outdoorWeatherOf(load().devices.filter((device) => device.objectId === objectId && device.kind === "WEATHER"));
+  const values = outdoorWeatherOf(load().devices.filter((device) => device.objectId === objectId && device.kind === "WEATHER"));
+  const metrics = metricsSettingsFor(objectId)
+    .filter((item) => item.enabled)
+    .flatMap((item) => {
+      const value = formatWeatherMetric(item.key, values);
+      return value ? [{ key: item.key, label: item.label, icon: item.icon, color: item.color, value }] : [];
+    });
+  return { ...values, metrics };
 }
 
 function outdoorWeatherOf(devices: Device[]) {
@@ -1169,7 +1237,36 @@ function outdoorWeatherOf(devices: Device[]) {
     humidityPercent: numbers((device) => device.state?.humidityPercent) ?? staticOutdoorWeather.humidityPercent,
     windMs: numbers((device) => device.state?.windMs) ?? staticOutdoorWeather.windMs,
     radiationUSv: numbers((device) => device.state?.radiationUSv) ?? staticOutdoorWeather.radiationUSv,
+    co2Ppm: numbers((device) => device.state?.co2Ppm),
+    organics: numbers((device) => device.state?.organics),
   };
+}
+
+function formatWeatherMetric(
+  key: HomeMetricKey,
+  values: {
+    temperatureC: number | null;
+    humidityPercent: number | null;
+    windMs: number | null;
+    radiationUSv: number | null;
+    co2Ppm: number | null;
+    organics: number | null;
+  },
+): string | null {
+  const raw =
+    key === "temperature"
+      ? values.temperatureC
+      : key === "humidity"
+        ? values.humidityPercent
+        : key === "wind"
+          ? values.windMs
+          : key === "radiation"
+            ? values.radiationUSv
+            : key === "co2"
+              ? values.co2Ppm
+              : values.organics;
+  if (raw === null || !Number.isFinite(raw)) return null;
+  return `${String(raw).replace(".", ",")}${homeMetricCatalog[key].suffix}`;
 }
 
 function homeController(gateways: Gateway[]): {
