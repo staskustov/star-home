@@ -1170,7 +1170,6 @@ select.control,
   overflow: hidden;
   width: 100%;
   margin-top: 0.7rem;
-  mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
 }
 
 .weather-ticker-track {
@@ -1179,10 +1178,17 @@ select.control,
   align-items: center;
   gap: 1.35rem;
   animation: weather-ticker 22s linear infinite;
+  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
 }
 
 .weather-ticker-photo {
+  margin-right: -1.25rem;
+  margin-left: -1.25rem;
+  width: auto;
+  padding: 0.55rem 0;
+  background: rgba(12, 10, 8, 0.52);
   color: #f7f1e8;
+  backdrop-filter: blur(8px);
 }
 
 @keyframes weather-ticker {
