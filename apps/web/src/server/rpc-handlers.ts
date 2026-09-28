@@ -41,6 +41,7 @@ import {
   placesFor,
 } from "@/server/directory";
 import { homeLayoutFor, removeHomeChipFor, saveHomeChipFor, saveHomeLayoutFor } from "@/server/home-chips";
+import { saveHomeCoverFor, coverFor } from "@/server/home-cover";
 import { saveHomeMetricsFor } from "@/server/home-metrics";
 import { saveModeFor, settingsFor, switchModeFor } from "@/server/life-modes";
 import { loginLimited, noteLoginFailure, noteLoginSuccess } from "@/server/login-limit";
@@ -168,6 +169,7 @@ const methodPolicy: Record<string, Route> = {
   closePoint: household((current, input) => closePointFor(current, input.pointId)),
   addPass: household((current, input) => addPassFor(current, input.guestName, input.detail, input.vehicle, input.from, input.to)),
   saveHomeMetrics: staff("settings.edit", (actor, input) => saveHomeMetricsFor(actor, input)),
+  saveHomeCover: session((current, input) => asReply(saveHomeCoverFor(current, input))),
   pay: household((current) => payFor(current)),
   alarm: household((current) => alarmFor(current)),
   securityDesk: session(securityDesk),
@@ -386,6 +388,8 @@ const guardedMethods: Partial<Record<string, AuditAction>> = {
   saveMode: "MODE_SETTINGS",
   switchMode: "MODE_SWITCH",
   saveHomeLayout: "HOME_LAYOUT",
+  saveHomeMetrics: "HOME_METRICS",
+  saveHomeCover: "HOME_COVER",
   saveHomeChip: "HOME_CHIP",
   removeHomeChip: "HOME_CHIP",
   openObjectGate: "OPEN_GATE",
@@ -544,6 +548,15 @@ function home(session: SessionRef): Reply {
   const bills = householdCan(membership.role, "payments.view");
   const ownRequestsOnly = selfOnlyOf(membership.role).has("service.view");
   const layout = homeLayoutFor(session.userId, base.unit.id, base.object.id, base.object.companyId);
+  const file = readOps();
+  const now = Date.now();
+  const guestCount = file.passes.filter((pass) => {
+    if (pass.unitId !== base.unit.id) return false;
+    if (pass.from && Date.parse(pass.from) > now) return false;
+    if (pass.to && Date.parse(pass.to) < now) return false;
+    return true;
+  }).length;
+  const securityOpen = file.alarms.some((alarm) => alarm.objectId === base.object.id && alarm.status === "OPEN");
   const actionChips = layout.actionChips.filter((chip) => chip.action !== "open-gate" && (pays || chip.action !== "pay"));
   return ok({
     home: {
@@ -595,6 +608,10 @@ function home(session: SessionRef): Reply {
       canPass: householdCan(membership.role, "access.pass.create"),
       canCommand: householdCan(membership.role, "devices.command"),
       canPay: pays,
+      cover: coverFor(base.object.id, base.unit.id),
+      canEditCover: true,
+      guestCount,
+      securityStatus: securityOpen ? "Тревога" : "Норма",
       scenarioChips: layout.scenarioChips,
       actionChips,
       quickActions: actionChips.map((chip) => ({ id: chip.action ?? chip.id, label: chip.name })),

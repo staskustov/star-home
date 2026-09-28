@@ -752,6 +752,40 @@ describe("smart home commands", () => {
     assert.equal(home.weather.co2Ppm, null);
   });
 
+  it("lets resident and admin set the home cover", async () => {
+    const objectPhoto =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const unitPhoto =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+    const object = await rpc("saveHomeCover", { photo: objectPhoto, scope: "object", objectId: "obj_siyanie" }, admin);
+    assert.equal(object.status, 200, JSON.stringify(object.body));
+    const afterObject = ((await rpc("home", null, resident)).body as { home: { cover: string; canEditCover: boolean; guestCount: number; securityStatus: string } }).home;
+    assert.equal(afterObject.cover, objectPhoto);
+    assert.equal(afterObject.canEditCover, true);
+    assert.equal(typeof afterObject.guestCount, "number");
+    assert.ok(afterObject.securityStatus);
+    const unit = await rpc("saveHomeCover", { photo: unitPhoto }, resident);
+    assert.equal(unit.status, 200, JSON.stringify(unit.body));
+    const afterUnit = ((await rpc("home", null, resident)).body as { home: { cover: string } }).home;
+    assert.equal(afterUnit.cover, unitPhoto);
+    assert.equal((await rpc("saveHomeCover", { photo: null }, resident)).status, 200);
+    const afterClear = ((await rpc("home", null, resident)).body as { home: { cover: string } }).home;
+    assert.equal(afterClear.cover, objectPhoto);
+    const settings = (await rpc("settings", null, admin)).body as { objects: { objectId: string; cover: string }[] };
+    assert.equal(settings.objects.find((item) => item.objectId === "obj_siyanie")?.cover, objectPhoto);
+    const people = await import("../../web/src/server/people-store");
+    const visitor = people.createPerson({ login: "cover.guest", name: "Гость", passwordHash: "x" });
+    const guest = people.createResidentMembership({
+      userId: visitor.id,
+      companyId: "cmp_star",
+      objectId: "obj_siyanie",
+      unitId: "unit_24",
+      role: "GUEST",
+      expiresAt: "2999-01-01T00:00:00",
+    });
+    assert.equal((await rpc("saveHomeCover", { photo: unitPhoto }, { userId: visitor.id, membershipId: guest.id })).status, 403);
+  });
+
   it("stores a guest pass as a from-to window", async () => {
     const created = await rpc(
       "addPass",

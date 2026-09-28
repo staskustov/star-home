@@ -237,6 +237,8 @@ describe("another company", () => {
       ["teamRemove", { membershipId: rival.adminId }],
       ["saveMode", { objectId: rival.objectId, setting: { mode: "HOME" } }],
       ["saveHomeChip", { objectId: rival.objectId, name: "Захват", icon: "night", strip: "scenarios", action: "night" }],
+      ["saveHomeCover", { objectId: rival.objectId, scope: "object", photo: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==" }],
+      ["saveHomeMetrics", { objectId: rival.objectId, items: [{ key: "temperature", color: "#ff6600" }] }],
       ["removeHomeChip", { objectId: rival.objectId, chipId: "chip_x" }],
       ["openObjectGate", { objectId: rival.objectId }],
       ["cameraFrame", { objectId: rival.objectId, deviceId: "dev_camera_rival" }],

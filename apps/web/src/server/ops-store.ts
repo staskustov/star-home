@@ -444,6 +444,14 @@ type OpsFile = {
   homeChips: HomeChip[];
   homeLayouts: HomeLayout[];
   homeMetrics: HomeMetricsRow[];
+  homeCovers: HomeCoverRow[];
+};
+
+export type HomeCoverRow = {
+  objectId: string;
+  companyId: string;
+  unitId: string | null;
+  photo: string;
 };
 
 export const homeMetricKeys = ["temperature", "humidity", "wind", "radiation", "co2", "organics"] as const;
@@ -739,6 +747,7 @@ function seed(): OpsFile {
     homeChips: [],
     homeLayouts: [],
     homeMetrics: [],
+    homeCovers: [],
   };
 }
 
@@ -907,6 +916,7 @@ function normalize(file: OpsFile): OpsFile {
   file.homeChips ??= [];
   file.homeLayouts ??= [];
   file.homeMetrics ??= [];
+  file.homeCovers ??= [];
   for (const request of file.requests ?? []) {
     if ((request.status as string) === "NEW") request.status = "CREATED";
   }
@@ -1160,7 +1170,7 @@ export function homeSignals(unitId: string, objectId: string): {
       .map((invoice) => ({ title: invoice.title, amount: invoice.amount, currency: invoice.currency })),
     categories,
     cameras: file.devices
-      .filter((device) => device.kind === "CAMERA" && device.unitId === unitId)
+      .filter((device) => device.kind === "CAMERA" && device.objectId === objectId && (device.unitId === unitId || device.unitId === null))
       .map((device) => ({ name: device.name, state: device.work === "OFF" ? "Отключено" : device.work === "FAULT" ? "Неисправно" : "На связи" })),
     devices: visible.map((device) => {
         const opener = isOpener(device.kind);

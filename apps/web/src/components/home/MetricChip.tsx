@@ -33,19 +33,21 @@ export function MetricChip({
   label,
   value,
   compact = false,
+  onPhoto = false,
 }: {
   icon: string;
   color: string;
   label?: string;
   value: string;
   compact?: boolean;
+  onPhoto?: boolean;
 }) {
   return (
     <span className="weather-metric">
       <span className="inline-flex shrink-0" style={{ color }}>
         <Icon name={asMetricIcon(icon)} className={compact ? "h-3.5 w-3.5" : "h-4 w-4"} />
       </span>
-      {label ? <span className="text-ink">{label}</span> : null}
+      {label ? <span className={onPhoto ? "on-photo-muted" : "text-ink"}>{label}</span> : null}
       <span style={{ color }}>{value}</span>
     </span>
   );

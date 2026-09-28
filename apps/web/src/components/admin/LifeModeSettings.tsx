@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { HomeChipEditor } from "@/components/admin/HomeChipEditor";
+import { HomeCoverEditor } from "@/components/admin/HomeCoverEditor";
 import { HomeMetricsEditor } from "@/components/admin/HomeMetricsEditor";
 import { useAdminPreview } from "@/components/admin/AdminPreview";
 import { ThemePalette } from "@/components/shell/ThemePalette";
@@ -22,6 +23,7 @@ export function LifeModeSettings({
     modes: LifeModeSetting[];
     chips: Chip;
     metrics: Metrics;
+    cover?: string;
     scenarios: { id: string; name: string }[];
   }[];
   canEdit: boolean;
@@ -44,6 +46,7 @@ export function LifeModeSettings({
       modes={current.modes}
       chips={current.chips}
       metrics={current.metrics ?? { items: [], available: [] }}
+      cover={current.cover ?? "/images/house-dusk.jpg"}
       scenarios={current.scenarios}
       canEdit={canEdit}
     />
@@ -56,6 +59,7 @@ function ModeEditor({
   modes,
   chips,
   metrics,
+  cover,
   scenarios,
   canEdit,
 }: {
@@ -64,6 +68,7 @@ function ModeEditor({
   modes: LifeModeSetting[];
   chips: Chip;
   metrics: Metrics;
+  cover: string;
   scenarios: { id: string; name: string }[];
   canEdit: boolean;
 }) {
@@ -173,6 +178,7 @@ function ModeEditor({
       ) : null}
       {saved ? <p className="mt-4 text-sm text-muted">Сохранено: {saved}.</p> : null}
       <HomeChipEditor objectId={objectId} chips={chips} scenarios={scenarios} canEdit={canEdit} />
+      <HomeCoverEditor objectId={objectId} photo={cover} canEdit={canEdit} />
       <HomeMetricsEditor objectId={objectId} items={metrics.items} available={metrics.available} canEdit={canEdit} />
     </div>
   );

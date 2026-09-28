@@ -9,6 +9,7 @@ import {
   updateModeSetting,
 } from "@/server/life-mode-store";
 import { chipsForObject } from "@/server/home-chips";
+import { coverFor } from "@/server/home-cover";
 import { metricsEditorFor } from "@/server/home-metrics";
 import { readOps } from "@/server/ops-store";
 import { can, objectFor, objectsInScope, wholeObject, type StaffActor } from "@/server/rbac/decide";
@@ -104,6 +105,7 @@ export function settingsFor(actor: StaffActor) {
       modes: modesForObject(object.id),
       chips: chipsForObject(object.id, object.companyId),
       metrics: metricsEditorFor(object.id),
+      cover: coverFor(object.id),
       scenarios: readOps()
         .scenarios.filter((scenario) => scenario.objectId === object.id && scenario.companyId === object.companyId)
         .map((scenario) => ({ id: scenario.id, name: scenario.name })),

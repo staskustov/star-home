@@ -2,16 +2,30 @@
 
 import { useEffect, useRef, useState } from "react";
 
-const box = 280;
-const output = 256;
-
-export function PhotoCrop({ file, onCancel, onDone }: { file: File; onCancel: () => void; onDone: (photo: string) => void }) {
+export function PhotoCrop({
+  file,
+  onCancel,
+  onDone,
+  ratio = 1,
+  round = true,
+  outputWidth = 256,
+}: {
+  file: File;
+  onCancel: () => void;
+  onDone: (photo: string) => void;
+  ratio?: number;
+  round?: boolean;
+  outputWidth?: number;
+}) {
   const image = useRef<HTMLImageElement | null>(null);
   const [ready, setReady] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const drag = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null);
   const [src, setSrc] = useState("");
+  const boxW = round ? 280 : 255;
+  const boxH = Math.round(boxW / ratio);
+  const outputH = Math.round(outputWidth / ratio);
 
   useEffect(() => {
     const next = URL.createObjectURL(file);
@@ -31,7 +45,7 @@ export function PhotoCrop({ file, onCancel, onDone }: { file: File; onCancel: ()
   function cover() {
     const picture = image.current;
     if (!picture) return 1;
-    return Math.max(box / picture.naturalWidth, box / picture.naturalHeight);
+    return Math.max(boxW / picture.naturalWidth, boxH / picture.naturalHeight);
   }
 
   function clamp(next: { x: number; y: number }, scale: number) {
@@ -39,8 +53,8 @@ export function PhotoCrop({ file, onCancel, onDone }: { file: File; onCancel: ()
     if (!picture) return next;
     const width = picture.naturalWidth * scale;
     const height = picture.naturalHeight * scale;
-    const maxX = Math.max(0, (width - box) / 2);
-    const maxY = Math.max(0, (height - box) / 2);
+    const maxX = Math.max(0, (width - boxW) / 2);
+    const maxY = Math.max(0, (height - boxH) / 2);
     return { x: Math.min(maxX, Math.max(-maxX, next.x)), y: Math.min(maxY, Math.max(-maxY, next.y)) };
   }
 
@@ -49,19 +63,20 @@ export function PhotoCrop({ file, onCancel, onDone }: { file: File; onCancel: ()
     if (!picture) return;
     const scale = cover() * zoom;
     const canvas = document.createElement("canvas");
-    canvas.width = output;
-    canvas.height = output;
+    canvas.width = outputWidth;
+    canvas.height = outputH;
     const context = canvas.getContext("2d");
     if (!context) return;
-    const ratio = output / box;
-    const width = picture.naturalWidth * scale * ratio;
-    const height = picture.naturalHeight * scale * ratio;
-    const left = output / 2 + offset.x * ratio - width / 2;
-    const top = output / 2 + offset.y * ratio - height / 2;
+    const ratioX = outputWidth / boxW;
+    const ratioY = outputH / boxH;
+    const width = picture.naturalWidth * scale * ratioX;
+    const height = picture.naturalHeight * scale * ratioY;
+    const left = outputWidth / 2 + offset.x * ratioX - width / 2;
+    const top = outputH / 2 + offset.y * ratioY - height / 2;
     context.fillStyle = "#111";
-    context.fillRect(0, 0, output, output);
+    context.fillRect(0, 0, outputWidth, outputH);
     context.drawImage(picture, left, top, width, height);
-    onDone(canvas.toDataURL("image/jpeg", 0.82));
+    onDone(canvas.toDataURL("image/jpeg", 0.74));
   }
 
   const scale = cover() * zoom;
@@ -75,8 +90,8 @@ export function PhotoCrop({ file, onCancel, onDone }: { file: File; onCancel: ()
         </h2>
         <p className="mt-1 text-[13px] text-muted">Перетащите снимок и подберите масштаб.</p>
         <div
-          className="relative mx-auto mt-4 overflow-hidden rounded-full border border-line"
-          style={{ width: box, height: box, touchAction: "none" }}
+          className={`relative mx-auto mt-4 overflow-hidden border border-line ${round ? "rounded-full" : "rounded-[28px]"}`}
+          style={{ width: boxW, height: boxH, touchAction: "none" }}
           onPointerDown={(event) => {
             (event.currentTarget as HTMLDivElement).setPointerCapture(event.pointerId);
             drag.current = { x: event.clientX, y: event.clientY, ox: offset.x, oy: offset.y };
@@ -105,8 +120,8 @@ export function PhotoCrop({ file, onCancel, onDone }: { file: File; onCancel: ()
                 width: picture.naturalWidth * scale,
                 height: picture.naturalHeight * scale,
                 position: "absolute",
-                left: box / 2 + offset.x - (picture.naturalWidth * scale) / 2,
-                top: box / 2 + offset.y - (picture.naturalHeight * scale) / 2,
+                left: boxW / 2 + offset.x - (picture.naturalWidth * scale) / 2,
+                top: boxH / 2 + offset.y - (picture.naturalHeight * scale) / 2,
               }}
             />
           ) : (

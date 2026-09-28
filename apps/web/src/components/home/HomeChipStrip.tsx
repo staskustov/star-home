@@ -43,9 +43,10 @@ export function HomeChipStrip({
 
   if (!chips.length) return null;
   const activeId = pickedId ?? modeChipId;
+  const even = chips.length === 4;
 
   return (
-    <div role="list" aria-label={label} className="chip-row">
+    <div role="list" aria-label={label} className={even ? "chip-row chip-row-even" : "chip-row"}>
       {chips.map((chip) => {
         const selected = chip.id === activeId;
         return (

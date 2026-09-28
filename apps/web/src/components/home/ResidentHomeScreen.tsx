@@ -2,14 +2,16 @@
 
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { GuestPassDialog } from "@/components/access/GuestPassDialog";
 import { CameraBlock } from "@/components/home/CameraBlock";
-import { HomeAccessBlock } from "@/components/home/HomeAccessBlock";
-import { HomeActionStrip, type ActionChipTile } from "@/components/home/HomeActionStrip";
+import type { ActionChipTile } from "@/components/home/HomeActionStrip";
 import { HomeChipStrip, type HomeChipTile } from "@/components/home/HomeChipStrip";
+import { HomeCover } from "@/components/home/HomeCover";
 import { HomeHero } from "@/components/home/HomeHero";
-import { WeatherStrip } from "@/components/home/WeatherStrip";
+import { HomeQuickGrid } from "@/components/home/HomeQuickGrid";
+import { Icon } from "@/components/icons";
 import { LiveRefresh } from "@/components/pwa/LiveRefresh";
 import { StatusToast } from "@/components/ui/StatusToast";
 import { commandMessage, runCommand, unconfirmed } from "@/lib/command";
@@ -18,19 +20,40 @@ import type { LifeMode, ResidentHome } from "@/types/domain";
 
 const SecuritySheet = dynamic(() => import("@/components/home/SecuritySheet").then((mod) => ({ default: mod.SecuritySheet })));
 
+function visibleScenarioChips(data: ResidentHome): HomeChipTile[] {
+  const fromLayout = data.scenarioChips ?? [];
+  if (fromLayout.length) return fromLayout;
+  const icons: Record<string, string> = { HOME: "house", WORK: "work", VACATION: "travel" };
+  return [
+    ...data.lifeModes.map((mode) => ({
+      id: mode.mode,
+      name: mode.label,
+      icon: icons[mode.mode] ?? "house",
+      kind: "LIFE_MODE" as const,
+      lifeMode: mode.mode,
+    })),
+    { id: "night", name: "Ночь", icon: "night", kind: "ACTION", action: "night" },
+  ];
+}
+
 function visibleActionChips(data: ResidentHome): ActionChipTile[] {
   const fromLayout = (data.actionChips ?? []).filter((chip) => chip.action !== "open-gate");
   if (fromLayout.length) return fromLayout;
   const icons: Record<string, ActionChipTile["icon"]> = { guests: "guests", security: "security", pay: "payments" };
-  return (data.quickActions ?? [])
+  const mapped = (data.quickActions ?? [])
     .filter((item) => item.id !== "open-gate" && (data.canPay || item.id !== "pay"))
     .map((item) => ({
       id: item.id,
       name: item.label,
       icon: icons[item.id] ?? "settings",
-      kind: "ACTION",
+      kind: "ACTION" as const,
       action: item.id,
     }));
+  if (mapped.length) return mapped;
+  return [
+    { id: "security", name: "Охрана", icon: "security", kind: "ACTION", action: "security" },
+    { id: "guests", name: "Гости", icon: "guests", kind: "ACTION", action: "guests" },
+  ];
 }
 
 export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
@@ -41,9 +64,11 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
   const [securityOpen, setSecurityOpen] = useState(false);
   const [guestOpen, setGuestOpen] = useState(false);
   const [actionChips, setActionChips] = useState(() => visibleActionChips(data));
+  const [points, setPoints] = useState(data.accessPoints ?? []);
 
   useEffect(() => {
     setActionChips(visibleActionChips(data));
+    setPoints(data.accessPoints ?? []);
   }, [data]);
   const current = data.lifeModes.find((item) => item.mode === mode) ?? data.lifeModes[0];
   const greeting = greetingForHour(new Date().getHours(), data.residentName);
@@ -83,6 +108,9 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
     }
     if ("latch" in chip && chip.deviceId && (chip.action === "open-gate" || chip.action === "open-point" || chip.latch)) {
       const open = chip.latch !== "OPEN";
+      setPoints((current) =>
+        current.map((point) => (point.id === chip.deviceId ? { ...point, latch: open ? "OPEN" : "CLOSED", status: open ? "Открыто" : "Закрыто" } : point)),
+      );
       setActionChips((current) => current.map((item) => (item.id === chip.id ? { ...item, latch: open ? "OPEN" : "CLOSED" } : item)));
       setNotice(null);
       setToast({ text: open ? "Открыто" : "Закрыто", at: Date.now() });
@@ -94,6 +122,7 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
         }),
       );
       if (!result.ok || result.payload?.confirmed !== true) {
+        setPoints(data.accessPoints ?? []);
         setActionChips((current) => current.map((item) => (item.id === chip.id ? { ...item, latch: chip.latch } : item)));
         setToast({ text: commandMessage(result.payload), at: Date.now() });
       }
@@ -160,41 +189,58 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
   return (
     <div className="home-stack">
       <LiveRefresh />
-      <header>
-        <h1 suppressHydrationWarning className="text-[28px] leading-[1.1] tracking-[-0.035em] text-ink sm:text-[34px]">
-          {greeting}
-        </h1>
-        <p className="mt-2 text-[15px] text-muted">
-          {data.object.name} · {data.unit.name}
-        </p>
-      </header>
-
-      <WeatherStrip weather={data.weather} />
-      <SecuritySheet open={securityOpen} onClose={() => setSecurityOpen(false)} />
-      <GuestPassDialog open={guestOpen} onClose={() => setGuestOpen(false)} canCreate={data.canPass !== false} />
-      <HomeChipStrip chips={data.scenarioChips ?? []} label="Сценарии" activeMode={current.mode} onSelect={onChip} />
-
-      {data.controller?.message ? (
-        <p className="panel px-5 py-4 text-[15px] text-warning">{data.controller.message}</p>
-      ) : null}
-
-      <CameraBlock cameras={data.cameras} />
-      <HomeAccessBlock points={data.accessPoints ?? []} canCommand={data.canGate !== false} />
-      <HomeActionStrip chips={actionChips} onSelect={onChip} />
-
-      <HomeHero
-        unitName={data.unit.name}
-        rooms={data.rooms}
+      <HomeCover
+        photo={data.cover ?? "/images/house-dusk.jpg"}
+        place={`${data.object.name} · ${data.unit.name}`}
+        greeting={greeting}
         temperatureC={data.climate?.temperatureC ?? null}
         humidityPercent={data.climate?.humidityPercent ?? null}
         metrics={data.weather?.metrics}
+        canEdit={data.canEditCover !== false}
       />
+      <div className="home-body">
+        <HomeChipStrip chips={visibleScenarioChips(data)} label="Сценарии" activeMode={current.mode} onSelect={onChip} />
 
-      {notice ? (
-        <p role="status" className="fade-in text-[15px] text-muted">
-          {notice}
-        </p>
-      ) : null}
+        {data.controller?.message ? (
+          <p className="panel px-5 py-4 text-[15px] text-warning">{data.controller.message}</p>
+        ) : null}
+
+        <CameraBlock cameras={data.cameras} />
+        <HomeQuickGrid
+          points={points}
+          chips={actionChips}
+          guestCount={data.guestCount ?? 0}
+          securityStatus={data.securityStatus ?? "Норма"}
+          onSelect={onChip}
+        />
+
+        <HomeHero
+          unitName={data.unit.name}
+          rooms={data.rooms}
+          temperatureC={data.climate?.temperatureC ?? null}
+          humidityPercent={data.climate?.humidityPercent ?? null}
+          metrics={data.weather?.metrics}
+        />
+
+        <Link href="/payments" className="panel flex items-center gap-3 px-4 py-3">
+          <span className="tile-icon">
+            <Icon name="payments" className="h-[18px] w-[18px]" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[16px] text-ink">Коммунальные платежи</span>
+            <span className="mt-0.5 block text-[13px] text-muted">{data.balance ? "Оплатите услуги поселка" : "Открытых счетов нет"}</span>
+          </span>
+          <Icon name="chevron" className="h-4 w-4 shrink-0 text-muted" />
+        </Link>
+
+        {notice ? (
+          <p role="status" className="fade-in text-[15px] text-muted">
+            {notice}
+          </p>
+        ) : null}
+      </div>
+      <SecuritySheet open={securityOpen} onClose={() => setSecurityOpen(false)} />
+      <GuestPassDialog open={guestOpen} onClose={() => setGuestOpen(false)} canCreate={data.canPass !== false} />
       <StatusToast text={toast?.text ?? null} stamp={toast?.at} />
     </div>
   );

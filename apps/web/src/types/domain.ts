@@ -192,6 +192,10 @@ export type ResidentHome = {
   canCommand?: boolean;
   canPay?: boolean;
   canPass?: boolean;
+  cover?: string;
+  canEditCover?: boolean;
+  guestCount?: number;
+  securityStatus?: string;
   facts?: {
     lights: { on: number; total: number } | null;
     doors: { open: string[] } | null;
