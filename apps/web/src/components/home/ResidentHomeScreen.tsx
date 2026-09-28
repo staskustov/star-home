@@ -190,7 +190,7 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
     <div className="home-stack">
       <LiveRefresh />
       <HomeCover
-        photo={data.cover ?? "/images/house-dusk.jpg"}
+        sky
         place={`${data.object.name} · ${data.unit.name}`}
         greeting={greeting}
         weather={data.weather}
