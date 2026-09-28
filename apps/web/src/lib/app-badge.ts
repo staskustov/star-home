@@ -17,5 +17,7 @@ export function syncAppBadge(count: number): void {
   const next = Math.max(0, Math.floor(count));
   applyBadge(navigator, next);
   if (!("serviceWorker" in navigator)) return;
-  void navigator.serviceWorker.ready.then((registration) => applyBadge(registration, next)).catch(() => undefined);
+  void navigator.serviceWorker.ready
+    .then((registration) => applyBadge(registration as BadgeHost, next))
+    .catch(() => undefined);
 }

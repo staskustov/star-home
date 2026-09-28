@@ -1,5 +1,4 @@
-import { readFile } from "fs/promises";
-import path from "path";
+import { NextResponse } from "next/server";
 
 const files: Record<string, string> = {
   "16": "icon-16.png",
@@ -13,28 +12,9 @@ const files: Record<string, string> = {
   maskable: "icon-maskable-512.png",
 };
 
-export async function GET(_request: Request, { params }: { params: Promise<{ size: string }> }) {
+export async function GET(request: Request, { params }: { params: Promise<{ size: string }> }) {
   const { size } = await params;
   const name = files[size];
   if (!name) return new Response("Not found", { status: 404 });
-  const candidates = [
-    path.join(process.cwd(), "public/brand/icons", name),
-    path.join(process.cwd(), "apps/web/public/brand/icons", name),
-  ];
-  let bytes: Buffer | null = null;
-  for (const file of candidates) {
-    try {
-      bytes = await readFile(file);
-      break;
-    } catch {
-      bytes = null;
-    }
-  }
-  if (!bytes) return new Response("Not found", { status: 404 });
-  return new Response(new Uint8Array(bytes), {
-    headers: {
-      "content-type": "image/png",
-      "cache-control": "public, max-age=86400",
-    },
-  });
+  return NextResponse.redirect(new URL(`/brand/icons/${name}`, request.url), 308);
 }
