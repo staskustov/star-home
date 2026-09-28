@@ -2,7 +2,7 @@ import { placeFromSession, type SessionRef } from "@/server/actor";
 import { findBuilding, findObject, findUnit } from "@/server/catalog-store";
 import { findUserById } from "@/server/directory";
 import { recordAudit } from "@/server/operations";
-import { clock, newId, readOps, writeOps, type SecurityChatMessage } from "@/server/ops-store";
+import { addNotice, clock, newId, readOps, writeOps, type SecurityChatMessage } from "@/server/ops-store";
 import { listMemberships } from "@/server/people-store";
 import { can, objectFor, reaches, type StaffActor } from "@/server/rbac/decide";
 import { householdCan } from "@/server/rbac/policy";
@@ -60,7 +60,10 @@ function pushSecurityStaff(companyId: string, objectId: string, title: string, b
       )
       .map((membership) => membership.userId),
   );
-  for (const userId of ids) pushNotice(userId, body, title);
+  for (const userId of ids) {
+    addNotice({ companyId, userId, title, body, severity: title === "SOS" ? "ALERT" : "INFO" });
+    pushNotice(userId, body, title);
+  }
 }
 
 function asRow(message: SecurityChatMessage, viewerId: string): SecurityChatRow {
@@ -240,6 +243,12 @@ export function sendSecurityReplyFor(actor: StaffActor, input: { objectId?: unkn
       membership.status !== "REVOKED",
   );
   for (const membership of people) {
+    addNotice({
+      companyId: object.value.companyId,
+      userId: membership.userId,
+      title: "Охрана",
+      body: text,
+    });
     pushNotice(membership.userId, text, "Охрана");
   }
   return { ok: true, value: { id: message.id } };

@@ -1083,6 +1083,34 @@ export function markNoticesRead(userId: string): Notice[] {
   return noticesForUser(userId);
 }
 
+export function unreadNoticeCount(userId: string): number {
+  return load().notices.filter((notice) => notice.userId === userId && !notice.readAt).length;
+}
+
+export function addNotice(input: {
+  companyId: string;
+  userId: string;
+  title: string;
+  body: string;
+  severity?: "INFO" | "WARNING" | "ALERT";
+}): boolean {
+  const file = load();
+  const recent = file.notices.find((notice) => notice.userId === input.userId && notice.title === input.title && notice.body === input.body);
+  if (recent && Date.parse(recent.at) > Date.now() - 10 * 60_000) return false;
+  file.notices.unshift({
+    id: newId("note"),
+    companyId: input.companyId,
+    userId: input.userId,
+    title: input.title,
+    body: input.body,
+    at: clock(),
+    severity: input.severity ?? "INFO",
+  });
+  file.notices = file.notices.slice(0, 200);
+  persist(file);
+  return true;
+}
+
 export function auditForObject(objectId: string): AuditEntry[] {
   return load().audit.filter((entry) => entry.objectId === objectId);
 }

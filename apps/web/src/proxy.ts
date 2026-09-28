@@ -15,7 +15,18 @@ export async function proxy(request: NextRequest) {
     return NextResponse.json({ message: "Запрос отклонён" }, { status: 403 });
   }
   const session = readSessionToken(request.cookies.get(sessionCookie)?.value);
-  const isPublic = pathname === "/" || pathname === "/forgot-password" || pathname === "/api/auth/login" || pathname === "/api/auth/logout" || pathname === "/offline.html" || pathname === "/favicon.svg" || pathname === "/app-icon.svg";
+  const isPublic =
+    pathname === "/" ||
+    pathname === "/forgot-password" ||
+    pathname === "/api/auth/login" ||
+    pathname === "/api/auth/logout" ||
+    pathname === "/offline.html" ||
+    pathname === "/favicon.svg" ||
+    pathname === "/favicon.ico" ||
+    pathname === "/app-icon.svg" ||
+    pathname === "/apple-touch-icon.png" ||
+    pathname === "/apple-touch-icon-precomposed.png" ||
+    pathname === "/api/push";
 
   if (!session) {
     if (isPublic) return NextResponse.next();
@@ -38,5 +49,7 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|favicon.svg|app-icon.svg|manifest.webmanifest|sw.js|offline.html|pwa-icon|images/|brand/).*)"],
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|favicon.svg|app-icon.svg|apple-touch-icon.png|apple-touch-icon-precomposed.png|manifest.webmanifest|sw.js|offline.html|pwa-icon|images/|brand/).*)",
+  ],
 };

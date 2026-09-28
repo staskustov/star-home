@@ -15,6 +15,7 @@ import webpush from "web-push";
 import { WebSocketServer, type WebSocket } from "ws";
 import { intentFromPrompt } from "../../web/src/server/ai-intent";
 import { bindFiles, bindLive, bindPush, bindStore, storesFlushed } from "../../web/src/server/store-bind";
+import { mergeTargets, pushJson, sendToTargets } from "../../web/src/server/web-push-deliver";
 import { freshRpc, internalSecret } from "../../web/src/server/internal-secret";
 import { readLiveToken } from "../../web/src/server/live-token";
 import { bindLoginLimit } from "../../web/src/server/login-limit";
@@ -399,6 +400,7 @@ async function main(): Promise<void> {
 
   const keys = vapid();
   process.env.STAR_HOME_VAPID_PUBLIC = keys.publicKey;
+  process.env.STAR_HOME_VAPID_PRIVATE = keys.privateKey;
   webpush.setVapidDetails(process.env.STAR_HOME_VAPID_SUBJECT ?? "mailto:star-home@localhost", keys.publicKey, keys.privateKey);
   const pushRuntime = globalThis as typeof globalThis & {
     __starSavePush?: (row: { userId: string; endpoint: string; p256dh: string; auth: string }) => Promise<void>;
@@ -411,19 +413,11 @@ async function main(): Promise<void> {
     });
   };
   bindPush(async (userId, body, title) => {
-    const subscriptions = await prisma.pushSubscription.findMany({ where: { userId } });
     const heading = title || "STAR HOME";
-    const sos = heading === "SOS";
-    await Promise.all(
-      subscriptions.map((subscription) =>
-        webpush
-          .sendNotification(
-            { endpoint: subscription.endpoint, keys: { p256dh: subscription.p256dh, auth: subscription.auth } },
-            JSON.stringify({ title: heading, body, url: sos ? "/security" : "/", sos }),
-          )
-          .catch(() => undefined),
-      ),
-    );
+    const fromDb = await prisma.pushSubscription.findMany({ where: { userId } });
+    await sendToTargets(mergeTargets(fromDb, userId), pushJson(userId, heading, body), async (endpoint) => {
+      await prisma.pushSubscription.deleteMany({ where: { endpoint } }).catch(() => undefined);
+    });
   });
 
   bindFiles(async (input) => {

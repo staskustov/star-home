@@ -45,7 +45,7 @@ import { saveHomeCoverFor, coverFor } from "@/server/home-cover";
 import { saveHomeMetricsFor } from "@/server/home-metrics";
 import { saveModeFor, settingsFor, switchModeFor } from "@/server/life-modes";
 import { loginLimited, noteLoginFailure, noteLoginSuccess } from "@/server/login-limit";
-import { homeSignals, markNoticesRead, readOps } from "@/server/ops-store";
+import { homeSignals, markNoticesRead, readOps, unreadNoticeCount } from "@/server/ops-store";
 import { deskFor, deskSections, isDeskSection, residentAccess, residentNotices } from "@/server/ops-view";
 import {
   addPassFor,
@@ -641,6 +641,7 @@ function profile(session: SessionRef): Reply {
     choosePlaces: homeMemberships(session.userId).length > 1,
     adminMembershipId: admin?.id ?? null,
     notices: residentNotices(session.userId),
+    unread: unreadNoticeCount(session.userId),
     photo: user.photo ?? null,
     homeLayout: layout
       ? {
@@ -655,7 +656,7 @@ function profile(session: SessionRef): Reply {
 
 function readNotices(session: SessionRef): Reply {
   markNoticesRead(session.userId);
-  return ok({ notices: residentNotices(session.userId) });
+  return ok({ notices: residentNotices(session.userId), unread: 0 });
 }
 
 function saveProfilePhoto(session: SessionRef, input: Input): Reply {

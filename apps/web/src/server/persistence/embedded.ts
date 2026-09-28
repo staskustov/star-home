@@ -8,6 +8,7 @@ import { bindLoginLimit } from "@/server/login-limit";
 import { projectLatest } from "@/server/persistence/project";
 import { touchPulse } from "@/server/persistence/pulse";
 import { bindFiles, bindLive, bindPush, bindStore, forgetStores, storeNames } from "@/server/store-bind";
+import { applyVapid, mergeTargets, pushJson, sendToTargets, vapidReady } from "@/server/web-push-deliver";
 
 type Held = { body: unknown; version: number };
 
@@ -30,6 +31,7 @@ const loginWindowMs = 10 * 60 * 1000;
 const state = globalThis as typeof globalThis & {
   __starEmbedded?: Embedded;
   __starSavePush?: (row: { userId: string; endpoint: string; p256dh: string; auth: string }) => Promise<void>;
+  __starVapidReady?: boolean;
 };
 
 function databaseUrl(): string {
@@ -86,7 +88,8 @@ function embedded(): Embedded {
   const publicKey = process.env.STAR_HOME_VAPID_PUBLIC;
   const privateKey = process.env.STAR_HOME_VAPID_PRIVATE;
   if (publicKey && privateKey) {
-    webpush.setVapidDetails(process.env.STAR_HOME_VAPID_SUBJECT ?? "mailto:star-home@localhost", publicKey, privateKey);
+    applyVapid();
+    state.__starVapidReady = true;
   }
   state.__starSavePush = async (row) => {
     await db().pushSubscription.upsert({
@@ -96,21 +99,16 @@ function embedded(): Embedded {
     });
   };
   bindPush((userId, body, title) => {
-    if (!publicKey || !privateKey) return;
     const heading = title || "STAR HOME";
-    const sos = heading === "SOS";
-    const delivery = runtime.prisma.pushSubscription.findMany({ where: { userId } }).then((subscriptions) =>
-      Promise.all(
-        subscriptions.map((subscription) =>
-          webpush
-            .sendNotification(
-              { endpoint: subscription.endpoint, keys: { p256dh: subscription.p256dh, auth: subscription.auth } },
-              JSON.stringify({ title: heading, body, url: sos ? "/security" : "/", sos }),
-            )
-            .catch(() => undefined),
-        ),
-      ),
-    );
+    const payload = pushJson(userId, heading, body);
+    const delivery = (async () => {
+      await ensureVapid(runtime);
+      if (!vapidReady()) return;
+      const fromDb = await runtime.prisma.pushSubscription.findMany({ where: { userId } });
+      await sendToTargets(mergeTargets(fromDb, userId), payload, async (endpoint) => {
+        await runtime.prisma.pushSubscription.deleteMany({ where: { endpoint } }).catch(() => undefined);
+      });
+    })();
     runtime.pending.push(delivery);
   });
 
@@ -125,6 +123,42 @@ function embedded(): Embedded {
 
   state.__starEmbedded = runtime;
   return runtime;
+}
+
+function vapidFrom(body: unknown): { publicKey: string; privateKey: string } | null {
+  if (!body || typeof body !== "object") return null;
+  const row = body as { publicKey?: unknown; privateKey?: unknown };
+  if (typeof row.publicKey !== "string" || typeof row.privateKey !== "string" || !row.publicKey || !row.privateKey) return null;
+  return { publicKey: row.publicKey, privateKey: row.privateKey };
+}
+
+async function ensureVapid(runtime: Embedded): Promise<void> {
+  if (state.__starVapidReady && vapidReady()) {
+    applyVapid();
+    return;
+  }
+  if (vapidReady()) {
+    applyVapid();
+    state.__starVapidReady = true;
+    return;
+  }
+  const row = await runtime.prisma.snapshot.findUnique({ where: { id: "vapid" } });
+  let keys = vapidFrom(row?.body);
+  if (!keys) {
+    keys = webpush.generateVAPIDKeys();
+    try {
+      await runtime.prisma.snapshot.create({
+        data: { id: "vapid", body: keys as Prisma.InputJsonValue, version: 1 },
+      });
+    } catch {
+      const existing = await runtime.prisma.snapshot.findUnique({ where: { id: "vapid" } });
+      keys = vapidFrom(existing?.body) ?? keys;
+    }
+  }
+  process.env.STAR_HOME_VAPID_PUBLIC = keys.publicKey;
+  process.env.STAR_HOME_VAPID_PRIVATE = keys.privateKey;
+  applyVapid();
+  state.__starVapidReady = true;
 }
 
 async function catchUp(runtime: Embedded, tx: Prisma.TransactionClient | PrismaClient): Promise<void> {
@@ -180,6 +214,7 @@ async function execute(
   session: SessionRef | null,
   client?: ClientInfo,
 ): Promise<{ status: number; body: unknown }> {
+  await ensureVapid(runtime);
   const { handleRpc } = await import("@/server/rpc-handlers");
   runtime.dirty.clear();
   runtime.live.clear();
@@ -226,6 +261,7 @@ async function executeRead(
   session: SessionRef | null,
   client?: ClientInfo,
 ): Promise<{ status: number; body: unknown }> {
+  await ensureVapid(runtime);
   await syncMemory(runtime);
   const dirtyBefore = runtime.dirty.size;
   const { handleRpc } = await import("@/server/rpc-handlers");

@@ -1,4 +1,4 @@
-const CACHE = "star-home-shell-v3";
+const CACHE = "star-home-shell-v5";
 const STATE = "star-home-state";
 const SHELL = ["/offline.html", "/manifest.webmanifest"];
 
@@ -26,7 +26,8 @@ self.addEventListener("activate", (event) => {
           body: "Приложение обновлено. Значок на экране дома можно не удалять.",
           tag: "star-home-updated",
           data: { url: "/" },
-          icon: "/pwa-icon/192",
+          icon: "/brand/icons/icon-192.png",
+          badge: "/brand/icons/icon-badge-96.png",
         });
       } catch {
         undefined;
@@ -40,22 +41,31 @@ self.addEventListener("message", (event) => {
 });
 
 self.addEventListener("push", (event) => {
-  let payload = { title: "STAR HOME", body: "", url: "/", sos: false };
+  let payload = { title: "STAR HOME", body: "", url: "/", sos: false, badge: 0 };
   try {
     payload = { ...payload, ...(event.data?.json() ?? {}) };
   } catch {
     payload.body = event.data?.text() ?? "";
   }
+  const count = Number(payload.badge);
   event.waitUntil(
-    self.registration.showNotification(payload.title || "STAR HOME", {
-      body: payload.body || "",
-      tag: payload.sos ? "star-home-sos" : "star-home",
-      data: { url: payload.url || (payload.sos ? "/security" : "/") },
-      icon: "/pwa-icon/192",
-      badge: "/pwa-icon/192",
-      vibrate: payload.sos ? [200, 80, 200, 80, 400] : [80],
-      requireInteraction: Boolean(payload.sos),
-    }),
+    (async () => {
+      if (typeof self.registration.setAppBadge === "function") {
+        const next = Number.isFinite(count) && count > 0 ? count : 1;
+        await self.registration.setAppBadge(next).catch(() => undefined);
+      }
+      const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      for (const client of windows) client.postMessage({ type: "NOTICE", badge: payload.badge });
+      await self.registration.showNotification(payload.title || "STAR HOME", {
+        body: payload.body || "",
+        tag: payload.sos ? "star-home-sos" : "star-home",
+        data: { url: payload.url || (payload.sos ? "/security" : "/") },
+        icon: "/brand/icons/icon-192.png",
+        badge: "/brand/icons/icon-badge-96.png",
+        vibrate: payload.sos ? [200, 80, 200, 80, 400] : [80],
+        requireInteraction: Boolean(payload.sos),
+      });
+    })(),
   );
 });
 
@@ -86,7 +96,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  if (SHELL.includes(url.pathname) || url.pathname.startsWith("/pwa-icon")) {
+  if (SHELL.includes(url.pathname) || url.pathname.startsWith("/pwa-icon") || url.pathname.startsWith("/brand/icons") || url.pathname === "/apple-touch-icon.png") {
     event.respondWith(
       caches.match(request).then((cached) => {
         const fresh = fetch(request)

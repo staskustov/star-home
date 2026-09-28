@@ -6,7 +6,15 @@ import { Icon } from "@/components/icons";
 
 export type NoticeRow = { id: string; title: string; body: string; at: string; severity?: string; readAt?: string | null };
 
-export function NotificationBell({ notices }: { notices: NoticeRow[] }) {
+export function NotificationBell({
+  notices,
+  unread: unreadCount,
+  onRead,
+}: {
+  notices: NoticeRow[];
+  unread?: number;
+  onRead?: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const [rows, setRows] = useState(notices);
   const [mounted, setMounted] = useState(false);
@@ -32,7 +40,8 @@ export function NotificationBell({ notices }: { notices: NoticeRow[] }) {
     return () => document.removeEventListener("mousedown", close);
   }, [open]);
 
-  const unread = rows.filter((notice) => !notice.readAt).length;
+  const localUnread = rows.filter((notice) => !notice.readAt).length;
+  const unread = unreadCount ?? localUnread;
   const badge = unread > 99 ? "99+" : String(unread);
 
   function toggle() {
@@ -41,7 +50,10 @@ export function NotificationBell({ notices }: { notices: NoticeRow[] }) {
     if (!next || unread === 0) return;
     const at = new Date().toISOString();
     setRows((current) => current.map((notice) => (notice.readAt ? notice : { ...notice, readAt: at })));
-    void fetch("/api/notifications", { method: "POST" }).catch(() => undefined);
+    onRead?.();
+    void fetch("/api/notifications", { method: "POST" })
+      .then(() => window.dispatchEvent(new Event("star-profile")))
+      .catch(() => undefined);
   }
 
   return (

@@ -20,6 +20,7 @@ export function notifyHousehold(input: {
       (membership.role === "RESIDENT" || membership.role === "FAMILY_MEMBER") &&
       membership.status !== "REVOKED",
   );
+  const targets: string[] = [];
   for (const membership of people) {
     const recent = file.notices.find((notice) => notice.userId === membership.userId && notice.title === input.title && notice.body === input.body);
     if (recent && Date.parse(recent.at) > Date.now() - 10 * 60_000) continue;
@@ -32,10 +33,11 @@ export function notifyHousehold(input: {
       at: stamp,
       severity: input.severity ?? "INFO",
     });
-    pushNotice(membership.userId, input.body, input.title);
+    targets.push(membership.userId);
   }
   file.notices = file.notices.slice(0, 200);
   writeOps(file);
+  for (const userId of targets) pushNotice(userId, input.body, input.title);
 }
 
 export function notifyIfAlert(input: {

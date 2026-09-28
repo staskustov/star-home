@@ -7,6 +7,7 @@ import { WeatherStrip } from "@/components/home/WeatherStrip";
 import { ObjectSwitcher } from "@/components/home/ObjectSwitcher";
 import { CameraTile } from "@/components/security/CameraTile";
 import { Clock } from "@/components/security/Clock";
+import { AccountActions } from "@/components/shell/AccountActions";
 import { ThemeToggle } from "@/components/shell/ThemeToggle";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { openCameraWindow } from "@/lib/camera-window";
@@ -428,6 +429,7 @@ export function SecurityPost({ view }: { view: SecurityPostView }) {
                 Консоль
               </Link>
             ) : null}
+            <AccountActions />
             <ThemeToggle />
             <form action="/api/auth/logout" method="post">
               <button type="submit" className="btn btn-secondary btn-compact">
