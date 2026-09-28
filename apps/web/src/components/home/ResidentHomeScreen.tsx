@@ -193,10 +193,8 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
         photo={data.cover ?? "/images/house-dusk.jpg"}
         place={`${data.object.name} · ${data.unit.name}`}
         greeting={greeting}
-        temperatureC={data.climate?.temperatureC ?? null}
-        humidityPercent={data.climate?.humidityPercent ?? null}
-        metrics={data.weather?.metrics}
-        canEdit={data.canEditCover !== false}
+        weather={data.weather}
+        indoor={data.climate}
       />
       <div className="home-body">
         <HomeChipStrip chips={visibleScenarioChips(data)} label="Сценарии" activeMode={current.mode} onSelect={onChip} />

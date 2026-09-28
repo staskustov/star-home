@@ -17,6 +17,12 @@ type QuickTile = {
   latch?: "OPEN" | "CLOSED";
 };
 
+function shortPointName(name: string) {
+  const next = name.replace(/^Главные\s+/i, "").trim();
+  if (!next) return name;
+  return next.charAt(0).toLocaleUpperCase("ru") + next.slice(1);
+}
+
 function chipIcon(name: string): IconName {
   return (homeChipIcons as readonly string[]).includes(name) ? (name as IconName) : "settings";
 }
@@ -55,7 +61,7 @@ export function HomeQuickGrid({
       const open = point.latch === "OPEN";
       return {
         id: point.id,
-        name: point.name,
+        name: shortPointName(point.name),
         icon: /калитк|lock|замок/i.test(point.name) ? ("lock" as const) : ("gate" as const),
         status: point.status ?? (open ? "Открыто" : "Закрыто"),
         tone: open ? ("danger" as const) : ("success" as const),
@@ -101,7 +107,7 @@ export function HomeQuickGrid({
   }
 
   return (
-    <section aria-label="Быстрые кнопки">
+    <section aria-label="Быстрые кнопки" className="min-w-0">
       <div className="home-quick-film" onScroll={onScroll}>
         {pages.map((page, pageIndex) => (
           <div key={pageIndex} className="home-quick-page" role="list">

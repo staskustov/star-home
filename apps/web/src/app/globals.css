@@ -795,6 +795,7 @@ select.control,
 
 .home-stack {
   display: flex;
+  min-width: 0;
   flex-direction: column;
   gap: 9px;
 }
@@ -1097,14 +1098,18 @@ select.control,
   isolation: isolate;
 }
 
+.home-cover.photo-card > img {
+  object-position: 50% 0%;
+}
+
 .home-cover-inner {
   position: relative;
   z-index: 1;
   display: flex;
-  min-height: 26.5rem;
+  min-height: 13.25rem;
   flex-direction: column;
   justify-content: flex-end;
-  padding: 6rem 1.25rem 2.25rem;
+  padding: 4.75rem 1.25rem 1rem;
 }
 
 .home-cover-preview {
@@ -1116,28 +1121,10 @@ select.control,
   padding: 1.5rem 1.25rem 1.25rem;
 }
 
-.home-cover-edit {
-  position: absolute;
-  top: calc(env(safe-area-inset-top, 0px) + 4.75rem);
-  right: 1.15rem;
-  z-index: 2;
-  display: grid;
-  width: 40px;
-  height: 40px;
-  place-items: center;
-  border: 1px solid rgba(255, 244, 228, 0.22);
-  border-radius: 999px;
-  background: rgba(20, 16, 12, 0.36);
-  color: #f7f1e8;
-  backdrop-filter: blur(12px);
-}
-
-.home-cover-preview .home-cover-edit {
-  top: 0.85rem;
-}
-
 .home-quick-film {
   display: flex;
+  width: 100%;
+  min-width: 0;
   overflow-x: auto;
   scroll-snap-type: x mandatory;
   scrollbar-width: none;
@@ -1151,6 +1138,10 @@ select.control,
 .home-quick-page {
   display: grid;
   flex: 0 0 100%;
+  width: 100%;
+  min-width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
   scroll-snap-align: start;
@@ -1159,6 +1150,7 @@ select.control,
 .home-quick-tile {
   display: flex;
   min-height: 72px;
+  min-width: 0;
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
@@ -1172,6 +1164,40 @@ select.control,
 
 .home-quick-tile:active {
   transform: translateY(1px);
+}
+
+.weather-ticker {
+  overflow: hidden;
+  width: 100%;
+  margin-top: 0.7rem;
+  mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
+}
+
+.weather-ticker-track {
+  display: flex;
+  width: max-content;
+  align-items: center;
+  gap: 1.35rem;
+  animation: weather-ticker 22s linear infinite;
+}
+
+.weather-ticker-photo {
+  color: #f7f1e8;
+}
+
+@keyframes weather-ticker {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .weather-ticker-track {
+    animation: none;
+  }
 }
 
 .home-camera-film {
@@ -1266,7 +1292,8 @@ select.control,
     position: relative;
     z-index: 1;
     display: flex;
-    margin-top: -1.85rem;
+    min-width: 0;
+    margin-top: -0.85rem;
     flex-direction: column;
     gap: 10px;
     padding: 1.1rem 1rem 0;
@@ -1281,12 +1308,8 @@ select.control,
   }
 
   .home-cover-inner {
-    min-height: 22rem;
+    min-height: 14rem;
     padding-top: 2.5rem;
-  }
-
-  .home-cover-edit {
-    top: 1rem;
   }
 
   .home-body {

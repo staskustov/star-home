@@ -35,15 +35,7 @@ export function HomeCoverEditor({ objectId, photo, canEdit }: { objectId: string
       <h2 className="text-[24px] tracking-[-0.03em] text-ink">Фото на главной</h2>
       <p className="mt-2 text-[15px] text-muted">Житель может поставить своё фото дома. Это фото объекта, если своего нет.</p>
       <div className="mt-5 overflow-hidden rounded-[28px]">
-        <HomeCover
-          photo={current}
-          place="Объект"
-          greeting="Так видит житель"
-          temperatureC={null}
-          humidityPercent={null}
-          canEdit={false}
-          compact
-        />
+        <HomeCover photo={current} place="Объект" greeting="Так видит житель" compact />
       </div>
       {canEdit ? (
         <div className="mt-4 flex flex-wrap gap-2">

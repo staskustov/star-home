@@ -1,6 +1,6 @@
 "use client";
 
-import { StarMark } from "@/components/brand/StarMark";
+import { StarLogo } from "@/components/brand/StarLogo";
 import { ResponsiveContainer } from "@/components/shell/ResponsiveContainer";
 import { TopBarActions } from "@/components/shell/TopBarActions";
 import { usePathname } from "next/navigation";
@@ -20,9 +20,9 @@ export function ResidentChrome({
       <div className="hidden lg:block">{sidebar}</div>
       <div className="min-w-0">
         <header className="resident-header sticky top-0 z-20 flex items-center justify-between gap-3 overflow-visible border-b border-line/60 bg-bg px-5 py-3 lg:justify-end lg:px-8">
-          <p className="flex min-w-0 items-center gap-2 text-[12px] font-medium tracking-[0.26em] text-ink lg:hidden">
-            <StarMark className="h-4 w-4 text-accent" />
-            STAR HOME
+          <p className="flex min-w-0 items-center gap-2 text-[15px] font-medium tracking-[-0.02em] text-ink lg:hidden">
+            <StarLogo className="h-8 w-8 shrink-0" />
+            Star Home
           </p>
           <TopBarActions />
         </header>
