@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { rpc } from "@/server/rpc";
+import { jsonRpc, rpc } from "@/server/rpc";
 
 export async function GET() {
   const result = await rpc<{ at: string } & Record<string, unknown>>("exportBackup", {});
@@ -16,5 +16,5 @@ export async function GET() {
 
 export async function POST(request: Request) {
   const body = (await request.json().catch(() => null)) as { confirm?: unknown; backup?: unknown } | null;
-  return rpc("restoreBackup", body ?? {});
+  return jsonRpc("restoreBackup", body ?? {});
 }

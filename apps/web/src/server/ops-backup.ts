@@ -69,7 +69,7 @@ export function exportBackup(actor: StaffActor): Result<BackupFile> {
   };
 }
 
-function asBackup(input: unknown): BackupFile | Failure {
+function asBackup(input: unknown): Result<BackupFile> {
   if (!input || typeof input !== "object") return { ok: false, status: 400, message: "Нет файла снимка" };
   const row = input as { kind?: unknown; version?: unknown; snapshots?: unknown };
   const snapshots = row.snapshots;
@@ -85,16 +85,19 @@ function asBackup(input: unknown): BackupFile | Failure {
     return { ok: false, status: 400, message: "Снимок ops без устройств" };
   }
   return {
-    kind: "star-home-backup",
-    version: 1,
-    at: typeof (input as { at?: unknown }).at === "string" ? (input as { at: string }).at : new Date().toISOString(),
-    names: [...snapshotNames],
-    snapshots: {
-      catalog: bag.catalog,
-      people: bag.people,
-      ops: bag.ops,
-      life: bag.life,
-      audit: bag.audit,
+    ok: true,
+    value: {
+      kind: "star-home-backup",
+      version: 1,
+      at: typeof (input as { at?: unknown }).at === "string" ? (input as { at: string }).at : new Date().toISOString(),
+      names: [...snapshotNames],
+      snapshots: {
+        catalog: bag.catalog,
+        people: bag.people,
+        ops: bag.ops,
+        life: bag.life,
+        audit: bag.audit,
+      },
     },
   };
 }
@@ -103,10 +106,10 @@ export function restoreBackup(actor: StaffActor, input: { confirm?: unknown; bac
   if (!can(actor, "settings.company.edit")) return denied;
   if (!restoreAllowed()) return { ok: false, status: 403, message: "Восстановление выключено на этом контуре." };
   if (input.confirm !== restorePhrase) return { ok: false, status: 400, message: "Подтвердите RESTORE" };
-  const backup = asBackup(input.backup);
-  if ("ok" in backup && backup.ok === false) return backup;
+  const parsed = asBackup(input.backup);
+  if (!parsed.ok) return parsed;
   for (const name of snapshotNames) {
-    remember(name, clone(backup.snapshots[name]));
+    remember(name, clone(parsed.value.snapshots[name]));
   }
   forgetStores([...storeNames]);
   writeOps(readOps());
