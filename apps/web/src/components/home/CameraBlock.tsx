@@ -45,6 +45,8 @@ export function CameraBlock({ cameras }: { cameras: HomeCamera[] }) {
     };
   }, [viewer]);
 
+  const selectedId = viewer === null ? undefined : cameras[viewer]?.id;
+
   useEffect(() => {
     if (viewer === null) return;
     const current = cameras[viewer];
@@ -52,7 +54,7 @@ export function CameraBlock({ cameras }: { cameras: HomeCamera[] }) {
     void requestFrame(current);
     // Request once per selected camera, not on every cameras array identity change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewer, cameras[viewer]?.id]);
+  }, [viewer, selectedId]);
 
   async function requestFrame(item: HomeCamera) {
     if (!item.id) return;
