@@ -20,6 +20,8 @@ export async function proxy(request: NextRequest) {
     pathname === "/forgot-password" ||
     pathname === "/api/auth/login" ||
     pathname === "/api/auth/logout" ||
+    pathname === "/api/health" ||
+    pathname === "/api/smart-home/gateways/channel" ||
     pathname === "/offline.html" ||
     pathname === "/favicon.svg" ||
     pathname === "/favicon.ico" ||

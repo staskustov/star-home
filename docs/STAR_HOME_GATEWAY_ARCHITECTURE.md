@@ -15,7 +15,7 @@ Cloud HTTPS  ←  агент (исходящее соединение)
             устройства
 ```
 
-Идентификация: pairing token (в облаке только hash). Версия: heartbeat `version` (`agent-6`). `lastSeen` / `lastError` / `status` ONLINE | DEGRADED | OFFLINE.
+Идентификация: pairing token (в облаке только hash). Версия: heartbeat `version` (`agent-6`). `lastSeen` / `lastError` / `status` ONLINE | DEGRADED | OFFLINE. Heartbeat также: `bufferLag` (исходящая очередь), `mqtt`: `up` | `down` | `none`.
 
 Last contact: любой успешный heartbeat / pull / ack / state обновляет `lastSeen`. Если `lastSeen` старше 90 с — шлюз `OFFLINE`, `lastError: heartbeat-stale`. Админка показывает «нет контакта» / «N мин назад», не сырой ISO.
 
@@ -27,7 +27,7 @@ Last contact: любой успешный heartbeat / pull / ack / state обн�
 
 | kind | Назначение |
 |------|------------|
-| heartbeat | статус, версия, lastError |
+| heartbeat | статус, версия, lastError, bufferLag, mqtt |
 | pull | PENDING-команды + `externalId`, `endpoint`, `adapter` + пакет `automations` + пакет `cameras` (секреты потока только здесь) |
 | ack | `confirmed` → ACKED и state; `sent` без error → SENT, state не применяется; `sent` + error / иначе → FAILED; `frame` JPEG при `captureFrame` |
 | state | ingest каналов по `externalId` / `deviceId` |

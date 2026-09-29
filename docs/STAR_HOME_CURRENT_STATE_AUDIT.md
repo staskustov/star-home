@@ -251,7 +251,9 @@ Ack очереди применяет state **только** при `confirmed =
 | protocol-stubs | Оставить заглушками до отдельных этапов |
 | Камеры | Этап 8: JPEG-снимок через агент, не sensor model; live HLS — позже |
 | Корневые устаревшие `SMART_HOME_ARCHITECTURE.md`, `SMART_HOME_GATEWAY_ARCHITECTURE.md` | Пометить / заменить целевыми docs после согласования |
-| Prisma как SoT устройств | **Не** в этапе 1. План унификации — этап 9 |
+| Prisma как SoT устройств | **Не** сделано. План: `docs/STAR_HOME_PRISMA_PLAN.md` |
+| Backup / restore снимков | Этап 9: export в админке; restore только с `STAR_HOME_ALLOW_RESTORE=1` |
+| Мониторинг агента | Heartbeat `bufferLag` / `mqtt`; stale 90 с |
 
 ---
 

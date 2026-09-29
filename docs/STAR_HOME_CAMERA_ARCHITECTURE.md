@@ -67,4 +67,4 @@ Cloud ingest → GET /api/smart-home/cameras/{id}/frame
 
 ## Не в этом этапе
 
-Live RTSP/HLS, облачный прокси видео, фейковый JPEG, Prisma SoT камер (этап 9), mutual TLS.
+Live RTSP/HLS, облачный прокси видео, фейковый JPEG, Prisma SoT камер (план, не миграция), mutual TLS.

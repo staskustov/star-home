@@ -7,7 +7,7 @@
 ## Что делает
 
 - Исходящий HTTPS к `POST /api/smart-home/gateways/channel` + заголовок `x-star-home-gateway`.
-- Heartbeat: статус, версия, `lastError`.
+- Heartbeat: статус, версия, `lastError`, `bufferLag`, `mqtt` (`up` | `down` | `none`).
 - Pull очереди команд и ack: `confirmed` / `sent` / ошибка.
 - **Apply:** HTTP-endpoint устройства; Wiren Board MQTT publish + ожидание echo; `discover`.
 - MQTT subscribe на `/devices/+/controls/+` (и meta), кэш retained, телеметрия в cloud `kind: state`.

@@ -76,6 +76,8 @@ export type RegistryGateway = {
   lastSeen: string | null;
   lastError: string | null;
   internalAddress: string | null;
+  bufferLag: number | null;
+  mqtt: "up" | "down" | "none" | null;
   connectedDevices: number;
 };
 
@@ -155,6 +157,8 @@ function asGateway(gateway: Gateway): RegistryGateway {
     lastSeen: gateway.lastSeen,
     lastError: gateway.lastError,
     internalAddress: gateway.internalAddress,
+    bufferLag: gateway.bufferLag ?? null,
+    mqtt: gateway.mqtt ?? null,
     connectedDevices: readOps().devices.filter((device) => device.gatewayId === gateway.id).length,
   };
 }

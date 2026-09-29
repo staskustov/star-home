@@ -182,7 +182,7 @@ export function ackGateway(
 
 export function heartbeatGateway(
   token: string | null,
-  input: { status?: unknown; version?: unknown; lastError?: unknown },
+  input: { status?: unknown; version?: unknown; lastError?: unknown; bufferLag?: unknown; mqtt?: unknown },
 ): Result<{ status: string }> {
   const gateway = gatewayByToken(token);
   if (!gateway) return { ok: false, status: 401, message: "Нет доступа" };
@@ -196,6 +196,9 @@ export function heartbeatGateway(
   current.lastSeen = new Date().toISOString();
   if (typeof input.lastError === "string") current.lastError = input.lastError.trim().slice(0, 200) || null;
   else if (input.lastError === null || current.status === "ONLINE") current.lastError = null;
+  const lag = Number(input.bufferLag);
+  current.bufferLag = Number.isFinite(lag) ? Math.max(0, Math.min(10_000, Math.round(lag))) : current.bufferLag ?? null;
+  if (input.mqtt === "up" || input.mqtt === "down" || input.mqtt === "none") current.mqtt = input.mqtt;
   const now = Date.now();
   for (const device of file.devices.filter((item) => item.gatewayId === current.id)) {
     if (current.status === "OFFLINE") {
@@ -217,7 +220,9 @@ export function heartbeatGateway(
     gatewayId: current.id,
     kind: "heartbeat",
     result: current.status === "OFFLINE" ? "error" : "ok",
-    detail: [current.status, current.version, current.lastError].filter(Boolean).join(" "),
+    detail: [current.status, current.version, current.mqtt, current.bufferLag != null ? `buf ${current.bufferLag}` : "", current.lastError]
+      .filter((part) => part !== "" && part != null)
+      .join(" "),
   });
   writeOps(file);
   emitLive({

@@ -527,13 +527,16 @@ describe("gateway channel", () => {
       tokenHash: createHash("sha256").update(token).digest("hex"),
     });
     ops.writeOps(file);
-    assert.equal(channel.heartbeatGateway(token, { status: "DEGRADED", version: "agent-2.3", lastError: "mqtt-offline" }).ok, true);
+    assert.equal(channel.heartbeatGateway(token, { status: "DEGRADED", version: "agent-2.3", lastError: "mqtt-offline", bufferLag: 4, mqtt: "down" }).ok, true);
     const gateway = ops.readOps().gateways.find((item) => item.id === "gw_err");
     assert.equal(gateway?.status, "DEGRADED");
     assert.equal(gateway?.version, "agent-2.3");
     assert.equal(gateway?.lastError, "mqtt-offline");
+    assert.equal(gateway?.bufferLag, 4);
+    assert.equal(gateway?.mqtt, "down");
     const heartbeatLog = ops.readOps().gatewayExchanges.find((row) => row.gatewayId === "gw_err" && row.kind === "heartbeat");
     assert.equal(heartbeatLog?.detail.includes("DEGRADED"), true);
+    assert.equal(heartbeatLog?.detail.includes("buf 4"), true);
   });
 
   it("expires a silent gateway and does not invent last contact", async () => {

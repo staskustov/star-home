@@ -472,6 +472,8 @@ export function DeviceDesk({
     lastError: string | null;
     stale?: boolean;
     paired?: boolean;
+    bufferLag?: number;
+    mqtt?: "up" | "down" | "none" | null;
     connectedDevices: number;
   }[];
   events?: { id: string; objectId: string; title: string; at: string; result: string; severity?: string; source?: string }[];
@@ -728,6 +730,8 @@ export function DeviceDesk({
               {gateway.version ? ` · ${gateway.version}` : ""}
               {` · ${formatLastContact(gateway.lastSeen)}`}
               {gateway.connectedDevices ? ` · устройств ${gateway.connectedDevices}` : ""}
+              {gateway.bufferLag ? ` · очередь ${gateway.bufferLag}` : ""}
+              {gateway.mqtt === "down" ? " · MQTT нет" : gateway.mqtt === "up" ? " · MQTT" : ""}
             </p>
             {gatewayErrorText(gateway.lastError) ? <p className="mt-1 text-sm text-danger">{gatewayErrorText(gateway.lastError)}</p> : null}
             <p className="mt-1 text-sm text-muted">{gateway.paired ? "Канал выдан" : "Канал не выдан"}</p>

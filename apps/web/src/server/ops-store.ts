@@ -161,6 +161,8 @@ export type Gateway = {
   internalAddress: string | null;
   tokenHash?: string | null;
   pairedAt?: string | null;
+  bufferLag?: number | null;
+  mqtt?: "up" | "down" | "none" | null;
   metadata?: Record<string, unknown>;
 };
 
@@ -1006,6 +1008,8 @@ function normalize(file: OpsFile): OpsFile {
     gateway.internalAddress ??= null;
     gateway.tokenHash ??= null;
     gateway.pairedAt ??= null;
+    gateway.bufferLag ??= null;
+    gateway.mqtt ??= null;
     gateway.metadata ??= {};
   }
   for (const scenario of file.scenarios) {

@@ -200,6 +200,8 @@ export function deskFor(actor: StaffActor, section: DeskSection) {
         lastError: gateway.lastError,
         stale: isGatewayStale(gateway),
         paired: Boolean(gateway.tokenHash),
+        bufferLag: gateway.bufferLag ?? 0,
+        mqtt: gateway.mqtt ?? null,
         connectedDevices: file.devices.filter((device) => device.gatewayId === gateway.id).length,
       })),
       exchanges: mine(file.gatewayExchanges ?? [])

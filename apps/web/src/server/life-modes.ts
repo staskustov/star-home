@@ -100,6 +100,8 @@ export function saveModeFor(
 export function settingsFor(actor: StaffActor) {
   return {
     canEdit: can(actor, "settings.edit") && wholeObject(actor),
+    canBackup: can(actor, "audit.export"),
+    canRestore: can(actor, "settings.company.edit"),
     objects: objectsInScope(actor).map((object) => ({
       objectId: object.id,
       modes: modesForObject(object.id),

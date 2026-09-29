@@ -190,7 +190,7 @@ Infer gateway, облако не гоняет gateway EVENT, очередь `run
 
 ### Следующий этап
 
-Этап 8 закрыт в софте; железо камер не подтверждено. Этап 9: производственная готовность. Live MQTT discovery как отдельный контур — не этап 8.
+Этап 8 — камеры.
 
 ---
 
@@ -223,6 +223,40 @@ ONVIF/RTSP камера в LAN объекта.
 
 ### Следующий этап
 
-Этап 9: backup/restore, мониторинг агента, security tests, Prisma-план, `docs/STAR_HOME_DEPLOYMENT_GUIDE.md`.
+Этап 9 — производственная готовность.
+
+---
+
+## Этап 9. Производственная готовность (2026-09-29)
+
+### Что сделано
+
+1. Heartbeat агента передаёт `bufferLag` и `mqtt` (`up`/`down`/`none`). Админка: «очередь N», «MQTT» / «MQTT нет». Протокол остаётся `agent-6`.
+2. Export пяти снимков (`catalog`, `people`, `ops`, `life`, `audit`), RPC `exportBackup` / GET `/api/admin/backup`, право `audit.export`. Pairing token в файле нет.
+3. Restore только при `STAR_HOME_ALLOW_RESTORE=1` + `confirm: "RESTORE"` + `settings.company.edit`. На production флаг не задаётся.
+4. `GET /api/health` без сессии: `{ ok, runtime }`. Канал шлюза и health публичны в proxy; секрет канала — токен.
+5. Prisma не стала SoT. План: `docs/STAR_HOME_PRISMA_PLAN.md`.
+6. Документы: `STAR_HOME_DEPLOYMENT_GUIDE.md`, `STAR_HOME_GATEWAY_SECURITY.md`, `STAR_HOME_TEST_PLAN.md`.
+
+### Файлы
+
+- `apps/web/src/server/ops-backup.ts`, `ops-store.ts`, `gateway-channel.ts`, `rpc-handlers.ts`, `life-modes.ts`
+- `apps/web/src/app/api/health/route.ts`, `app/api/admin/backup/route.ts`, `proxy.ts`
+- `apps/web/src/components/admin/BackupPanel.tsx`, `OpsDesk.tsx`
+- `apps/gateway/agent.ts`
+- `apps/api/test/production.test.ts`, `adapters.test.ts`
+- `docs/STAR_HOME_DEPLOYMENT_GUIDE.md`, `STAR_HOME_PRISMA_PLAN.md`, `STAR_HOME_GATEWAY_SECURITY.md`, `STAR_HOME_TEST_PLAN.md`
+
+### Тесты
+
+Export 5 снимков; plaintext token отсутствует; `listGateways` без tokenHash; бухгалтер/object admin 403 export; restore без env 403; без RESTORE 400; с флагом применяется; heartbeat bufferLag/mqtt.
+
+### Не подтверждено на железе
+
+Live-агент на объекте, MQTT/камеры. Restore на production не включался.
+
+### Следующий этап
+
+Этапы 1–9 в софте закрыты. Дальше только по отдельной просьбе: Prisma cutover, mutual TLS, live HLS, пилот на железе.
 
 

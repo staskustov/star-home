@@ -47,6 +47,8 @@ export const auditActions = {
   TEAM_RESTORE: { label: "Восстановление доступа", category: "RBAC" },
   TEAM_REMOVE: { label: "Отзыв доступа", category: "RBAC" },
   ROLES_EDIT: { label: "Права роли", category: "RBAC" },
+  BACKUP_EXPORT: { label: "Снимок выгружен", category: "DATA" },
+  BACKUP_RESTORE: { label: "Снимок восстановлен", category: "DATA" },
   OBJECT_CREATE: { label: "Новый объект", category: "DATA" },
   OBJECT_EDIT: { label: "Данные объекта", category: "DATA" },
   OBJECT_DELETE: { label: "Удаление объекта", category: "DATA" },

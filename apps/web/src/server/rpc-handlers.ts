@@ -289,6 +289,10 @@ const methodPolicy: Record<string, Route> = {
 
   settings: staff("settings.view", (actor) => ({ ok: true, value: settingsFor(actor) })),
   saveMode: staff("settings.edit", (actor, input) => saveModeFor(actor, { objectId: input.objectId, setting: record(input.setting) ?? null })),
+  exportBackup: staff("audit.export", (actor) => import("./ops-backup").then(({ exportBackup }) => exportBackup(actor))),
+  restoreBackup: staff("settings.company.edit", (actor, input) =>
+    import("./ops-backup").then(({ restoreBackup }) => restoreBackup(actor, { confirm: input.confirm, backup: input.backup })),
+  ),
 
   openObjectGate: staff("access.gate.open", (actor, input) => openObjectGateFor(actor, input.objectId)),
   cameraFrame: staff("security.camera.view", (actor, input) => cameraFrameFor(actor, input.objectId, input.deviceId)),
@@ -442,6 +446,8 @@ const guardedMethods: Partial<Record<string, AuditAction>> = {
   sendSecurityMessage: "SECURITY_CHAT",
   sendSecurityReply: "SECURITY_CHAT",
   auditExport: "AUDIT_EXPORT",
+  exportBackup: "BACKUP_EXPORT",
+  restoreBackup: "BACKUP_RESTORE",
 };
 
 const denialWindowMs = 60_000;

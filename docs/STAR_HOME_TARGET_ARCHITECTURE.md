@@ -119,10 +119,10 @@ UI жителя:
 
 ## 7. Унификация хранения (не этап 1)
 
-Сейчас JSON SoT + неполная Prisma-проекция. Целевое (этап 9):
+Сейчас JSON SoT + неполная Prisma-проекция. Этап 9 **зафиксировал** это планом (`docs/STAR_HOME_PRISMA_PLAN.md`), без cutover:
 
-1. Зафиксировать JSON как SoT пилота.
-2. Расширить проекцию Gateway/Channel только для отчётов, без смены чтения UI.
+1. JSON — SoT пилота.
+2. Проекция Gateway/Channel только для отчётов, без смены чтения UI — не делалась в этапе 9.
 3. Миграция Prisma→SoT — отдельное согласование, backup, rollback, тесты.
 4. Не читать UI из Prisma Device, пока пишет ops.
 
@@ -199,11 +199,16 @@ UI жителя:
 - `docs/STAR_HOME_CAMERA_ARCHITECTURE.md`.
 - Live HLS и облачный RTSP не делались. Железо камер не подтверждено.
 
-### Этап 9. Производственная готовность
+### Этап 9. Производственная готовность *(сделано 2026-09-29)*
 
-- Backup/restore runbook, мониторинг агента, security tests, Prisma-план, `docs/STAR_HOME_DEPLOYMENT_GUIDE.md`.
+- Backup/restore снимков (`exportBackup` / `restoreBackup`), гейт `STAR_HOME_ALLOW_RESTORE=1` + фраза `RESTORE`.
+- Мониторинг агента: heartbeat `bufferLag` / `mqtt`, UI `/admin/devices`.
+- `GET /api/health` без сессии.
+- Security tests: token не в export, restore без флага 403.
+- План Prisma (`docs/STAR_HOME_PRISMA_PLAN.md`) — **не** миграция SoT.
+- `docs/STAR_HOME_DEPLOYMENT_GUIDE.md`, `STAR_HOME_GATEWAY_SECURITY.md`, `STAR_HOME_TEST_PLAN.md`.
 
-Документы `STAR_HOME_DEVICE_MODEL.md` и `STAR_HOME_COMMAND_LIFECYCLE.md` заполнены по этапу 1. `STAR_HOME_GATEWAY_SECURITY.md`, `STAR_HOME_TEST_PLAN.md` — по мере следующих этапов, не пустыми файлами.
+Документы `STAR_HOME_DEVICE_MODEL.md` и `STAR_HOME_COMMAND_LIFECYCLE.md` заполнены. JSON остаётся SoT.
 
 ---
 
@@ -231,7 +236,7 @@ UI жителя:
 
 1. Этап 1 (контракты, без MQTT) — **первый код** после этого документа.
 2. Агент остаётся исходящим HTTPS; cloud MQTT **не** открываем.
-3. JSON-снимки остаются SoT до этапа 9.
+3. JSON-снимки остаются SoT; этап 9 — план Prisma, не cutover.
 4. Демо-`local` можно оставить для устройств **без** шлюза (текущий UX жителя на сиде), но не для пилотного WB.
 5. Камеры не трогаем до этапа 8.
 6. Консоль специалиста — развитие `/admin/devices`, не отдельное приложение.

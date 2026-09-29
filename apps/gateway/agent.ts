@@ -245,9 +245,20 @@ function connectionStatus(): { status: "ONLINE" | "DEGRADED" | "OFFLINE"; lastEr
   return { status: "DEGRADED", lastError: mqttSession.lastError() };
 }
 
+function mqttState(): "up" | "down" | "none" {
+  if (!mqttSession) return "none";
+  return mqttSession.connected() ? "up" : "down";
+}
+
 async function tick() {
   const link = connectionStatus();
-  await call("heartbeat", { status: link.status, version: agentVersion, lastError: link.lastError });
+  await call("heartbeat", {
+    status: link.status,
+    version: agentVersion,
+    lastError: link.lastError,
+    bufferLag: buffer.size(),
+    mqtt: mqttState(),
+  });
   await publishSnapshot();
   const pulled = await call("pull");
   if (pulled.automations) runtime.load(pulled.automations);
