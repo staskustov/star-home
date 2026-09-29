@@ -39,6 +39,7 @@ const links: Record<GatewayAdapterKind, string> = {
   wirenboard: "Wiren Board",
   knx: "KNX",
   zigbee: "Zigbee",
+  simulator: "Симулятор",
 };
 
 function workOf(device: Device): DeviceWork {

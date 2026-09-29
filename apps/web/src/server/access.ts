@@ -155,6 +155,7 @@ export async function requireSmartDevice(deviceId: string): Promise<{
     commands: import("@/server/smart-commands").SmartCommandName[];
     lastKnown?: boolean;
     favorite?: boolean;
+    source?: "REAL" | "DEMO" | "MOCK" | "UNKNOWN";
   };
 }> {
   const result = await rpc<{ device?: { id: string } | null; message?: string; redirect?: string }>("smartHomeDevice", { deviceId });
