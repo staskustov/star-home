@@ -6,6 +6,9 @@ export type ChannelDataType = (typeof channelDataTypes)[number];
 export const channelQualities = ["fresh", "stale", "unavailable", "unknown", "error"] as const;
 export type ChannelQuality = (typeof channelQualities)[number];
 
+export const channelStatuses = ["LIVE", "STALE", "NONE", "ERROR"] as const;
+export type ChannelStatus = (typeof channelStatuses)[number];
+
 export const deviceLifecycles = [
   "DISCOVERED",
   "UNCONFIGURED",
