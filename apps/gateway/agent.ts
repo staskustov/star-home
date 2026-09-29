@@ -80,6 +80,11 @@ let evalChain = Promise.resolve();
 function applyContext() {
   return {
     echo,
+    mqttConfirm: process.env.STAR_HOME_MQTT_CONFIRM === "state" ? ("state" as const) : ("echo" as const),
+    simulator: process.env.STAR_HOME_GATEWAY_SIMULATOR === "1",
+    simulatorDelayMs: Number(process.env.STAR_HOME_SIMULATOR_DELAY_MS ?? 50),
+    simulatorFail: process.env.STAR_HOME_SIMULATOR_FAIL === "1",
+    simulatorTimeout: process.env.STAR_HOME_SIMULATOR_TIMEOUT === "1",
     discover: discoverLocal,
     publishMqtt: mqttSession ? (topic: string, payload: string) => mqttSession!.publish(topic, payload) : undefined,
     readSeq: (topic: string) => cache.seq(topic),
@@ -238,11 +243,11 @@ async function applyOne(command: ApplyCommand): Promise<ApplyResult> {
   return applyHardware(command);
 }
 
-function connectionStatus(): { status: "ONLINE" | "DEGRADED" | "OFFLINE"; lastError: string | null } {
+function connectionStatus(): { status: "ONLINE" | "DEGRADED" | "CONNECTING" | "ERROR" | "OFFLINE"; lastError: string | null } {
   if (!mqttSession) return { status: "ONLINE", lastError: null };
   if (mqttSession.connected()) return { status: "ONLINE", lastError: null };
-  if (mqttSession.reconnecting()) return { status: "DEGRADED", lastError: mqttSession.lastError() ?? "mqtt-reconnect" };
-  return { status: "DEGRADED", lastError: mqttSession.lastError() };
+  if (mqttSession.reconnecting()) return { status: "CONNECTING", lastError: mqttSession.lastError() ?? "mqtt-reconnect" };
+  return { status: "ERROR", lastError: mqttSession.lastError() };
 }
 
 function mqttState(): "up" | "down" | "none" {

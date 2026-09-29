@@ -8,6 +8,7 @@ import { listAudit } from "@/server/audit-store";
 import { auditRow, auditVisible, shortTime } from "@/server/audit-view";
 import { readOps } from "@/server/ops-store";
 import { gatewayDisplayStatus, isGatewayStale } from "@/server/gateway-contact";
+import { dataSourceOf } from "@/server/runtime-mode";
 import { can, objectsInScope, reaches, type Scoped, type StaffActor } from "@/server/rbac/decide";
 import type { Permission } from "@/server/rbac/permissions";
 
@@ -84,11 +85,16 @@ export function isDeskSection(value: unknown): value is DeskSection {
   return typeof value === "string" && Object.hasOwn(deskSections, value);
 }
 
-function deviceState(device: { id: string; work?: string }, readings: { deviceId: string; temperatureC: number; humidityPercent: number }[]): string {
+function deviceState(device: { id: string; work?: string; kind?: string }, readings: { deviceId: string; temperatureC: number; humidityPercent: number }[]): string {
   if (device.work === "FAULT") return "Неисправно";
   if (device.work === "OFF") return "Отключено";
+  if (device.kind === "CAMERA") {
+    const media = publicMedia(device.id);
+    if (!media?.host) return "Не подключена";
+    return "Настроена";
+  }
   const reading = readings.find((item) => item.deviceId === device.id);
-  return reading ? `${formatTemperature(reading.temperatureC)} · ${formatHumidity(reading.humidityPercent)}` : "На связи";
+  return reading ? `${formatTemperature(reading.temperatureC)} · ${formatHumidity(reading.humidityPercent)}` : "Нет данных";
 }
 
 export function deskFor(actor: StaffActor, section: DeskSection) {
@@ -160,6 +166,7 @@ export function deskFor(actor: StaffActor, section: DeskSection) {
           gatewayId: device.gatewayId ?? null,
           gatewayName: gateway?.name ?? null,
           lastError: gateway?.lastError ?? null,
+          source: dataSourceOf(device),
           place: device.place ?? (device.roomId ? "ROOM" : "OBJECT"),
           roomId: device.roomId ?? null,
           roomName: room?.name ?? null,

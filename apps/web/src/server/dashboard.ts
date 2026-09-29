@@ -158,10 +158,17 @@ function pulseFor(actor: StaffActor, object: CatalogObject): DashboardPulse[] {
   return pulse;
 }
 
-function systemState(devices: Device[]): Pick<DashboardSystem, "state" | "tone"> {
+function systemState(devices: Device[], groupId: string): Pick<DashboardSystem, "state" | "tone"> {
   const total = devices.length;
   const faults = devices.filter((device) => device.work === "FAULT").length;
   const off = devices.filter((device) => device.work === "OFF").length;
+  if (groupId === "cameras") {
+    const media = readOps().cameraMedia;
+    const live = devices.filter((device) => media.some((item) => item.deviceId === device.id && item.host)).length;
+    if (faults > 0) return { tone: "danger", state: total > 1 ? `${faults} из ${total} неисправно` : "Неисправно" };
+    if (live === 0) return { tone: "warning", state: "Не подключены" };
+    return { tone: "warning", state: `Настроены ${live} из ${total}` };
+  }
   if (faults > 0) return { tone: "danger", state: total > 1 ? `${faults} из ${total} неисправно` : "Неисправно" };
   if (off > 0) return { tone: "warning", state: `${total - off} из ${total} на связи` };
   return { tone: "success", state: "На связи" };
@@ -173,7 +180,7 @@ function systemsFor(actor: StaffActor, object: CatalogObject): DashboardSystem[]
   return systemGroups.flatMap((group) => {
     const members = devices.filter((device) => group.kinds.includes(device.kind));
     if (members.length === 0) return [];
-    return [{ id: group.id, name: group.name, ...systemState(members) }];
+    return [{ id: group.id, name: group.name, ...systemState(members, group.id) }];
   });
 }
 

@@ -15,6 +15,7 @@ import { boundValue, remember } from "@/server/store-bind";
 import type { AccessEvent } from "@/types/domain";
 import { timeZone } from "@/server/time-zone";
 import { isGatewayStale, type GatewayExchange } from "@/server/gateway-contact";
+import { demoExecutionAllowed, dataSourceOf, type DataSource } from "@/server/runtime-mode";
 
 export type Pass = {
   id: string;
@@ -74,10 +75,10 @@ export type Invoice = {
 
 export type { DeviceKind };
 
-export const gatewayAdapters = ["wirenboard", "mqtt", "modbus", "matter", "http", "knx", "onvif", "zigbee", "rs485", "local"] as const;
+export const gatewayAdapters = ["wirenboard", "mqtt", "modbus", "matter", "http", "knx", "onvif", "zigbee", "rs485", "simulator", "local"] as const;
 export type GatewayAdapterKind = (typeof gatewayAdapters)[number];
 export type DeviceAvailability = "ONLINE" | "OFFLINE" | "UNKNOWN";
-export type GatewayStatus = "ONLINE" | "OFFLINE" | "DEGRADED";
+export type GatewayStatus = "ONLINE" | "OFFLINE" | "DEGRADED" | "CONNECTING" | "ERROR";
 
 export type NormalizedState = {
   on?: boolean;
@@ -307,6 +308,8 @@ export type GatewayCommand = {
   createdAt: string;
   expiresAt?: string;
   ackedAt?: string;
+  sentAt?: string;
+  error?: string;
 };
 
 export type DiscoveryScan = {
@@ -343,6 +346,8 @@ export type DeviceCommandLog = {
   risk: "LOW" | "MEDIUM" | "HIGH";
   result: "SUCCESS" | "DENIED" | "ERROR" | "UNCONFIRMED";
   reason?: string;
+  commandId?: string;
+  gatewayId?: string | null;
 };
 
 export type DeviceFavorite = {
@@ -860,10 +865,14 @@ export function normalizeDevice(device: Device, reading?: DeviceReading): Device
   device.planX ??= null;
   device.planY ??= null;
   device.metadata ??= {};
+  if (device.adapter === "local" && !device.gatewayId) {
+    device.metadata.demo = true;
+    if (device.metadata.source == null) device.metadata.source = "DEMO";
+  }
   if (!device.work) device.work = "ON";
   if (isOpener(device.kind)) device.latch ??= "CLOSED";
   bindDevicePlace(device);
-  if (device.kind === "WEATHER" && isDemoDevice(device)) {
+  if (device.kind === "WEATHER" && isDemoDevice(device) && demoExecutionAllowed()) {
     device.state = {
       temperatureC: device.state?.temperatureC ?? staticOutdoorWeather.temperatureC,
       humidityPercent: device.state?.humidityPercent ?? staticOutdoorWeather.humidityPercent,
@@ -871,7 +880,11 @@ export function normalizeDevice(device: Device, reading?: DeviceReading): Device
       radiationUSv: device.state?.radiationUSv ?? staticOutdoorWeather.radiationUSv,
     };
   }
-  if (reading && (device.kind === "CLIMATE" || device.capabilities?.includes("temperature") || device.capabilities?.includes("humidity"))) {
+  if (
+    reading &&
+    (demoExecutionAllowed() || !isDemoDevice(device)) &&
+    (device.kind === "CLIMATE" || device.capabilities?.includes("temperature") || device.capabilities?.includes("humidity"))
+  ) {
     device.state = {
       ...device.state,
       temperatureC: reading.temperatureC,
@@ -1183,6 +1196,22 @@ export function turnsForCompany(companyId: string): AiTurn[] {
   return load().turns.filter((turn) => turn.companyId === companyId);
 }
 
+export type CameraPresence = "configured" | "reachable" | "streaming" | "offline" | "unknown";
+
+export function cameraPresenceOf(device: Pick<Device, "work">, configured: boolean, hasFrame: boolean): CameraPresence {
+  if (device.work === "OFF" || device.work === "FAULT") return "offline";
+  if (hasFrame) return "streaming";
+  if (configured) return "configured";
+  return "unknown";
+}
+
+export function cameraPresenceLabel(presence: CameraPresence): string {
+  if (presence === "streaming") return "Есть кадр";
+  if (presence === "configured" || presence === "reachable") return "Настроена";
+  if (presence === "offline") return "Нет связи";
+  return "Не подключена";
+}
+
 export function homeSignals(unitId: string, objectId: string): {
   climate: { temperatureC: number; humidityPercent: number } | null;
   visitor: { title: string; detail: string } | null;
@@ -1192,7 +1221,7 @@ export function homeSignals(unitId: string, objectId: string): {
   request: { title: string; detail: string; authorUserId: string } | null;
   payments: { title: string; amount: number; currency: string }[];
   categories: string[];
-  cameras: { id: string; name: string; state: string; hasFrame: boolean }[];
+  cameras: { id: string; name: string; state: string; hasFrame: boolean; presence: CameraPresence }[];
   devices: {
     id: string;
     name: string;
@@ -1203,6 +1232,7 @@ export function homeSignals(unitId: string, objectId: string): {
     latch?: "OPEN" | "CLOSED";
     commands: string[];
     stale?: boolean;
+    source?: DataSource;
     roomId?: string | null;
     roomName?: string | null;
     favorite?: boolean;
@@ -1228,6 +1258,7 @@ export function homeSignals(unitId: string, objectId: string): {
     co2Ppm: number | null;
     organics: number | null;
     metrics: WeatherMetricView[];
+    source: DataSource;
   };
 } {
   const file = load();
@@ -1249,7 +1280,11 @@ export function homeSignals(unitId: string, objectId: string): {
   );
   const categories = [...new Set(visible.map((device) => deviceLabel(device.kind)))];
   return {
-    climate: reading ? { temperatureC: reading.temperatureC, humidityPercent: reading.humidityPercent } : null,
+    climate: reading && (demoExecutionAllowed() || (climateDevice && !isDemoDevice(climateDevice)))
+      ? { temperatureC: reading.temperatureC, humidityPercent: reading.humidityPercent }
+      : climateDevice && !isDemoDevice(climateDevice) && typeof climateDevice.state?.temperatureC === "number" && typeof climateDevice.state.humidityPercent === "number"
+        ? { temperatureC: climateDevice.state.temperatureC, humidityPercent: climateDevice.state.humidityPercent }
+        : null,
     visitor: pass ? { title: pass.guestName, detail: pass.detail } : null,
     balance: open.length
       ? { amount: open.reduce((sum, invoice) => sum + invoice.amount, 0), currency: open[0]?.currency ?? "RUB" }
@@ -1263,12 +1298,18 @@ export function homeSignals(unitId: string, objectId: string): {
     categories,
     cameras: file.devices
       .filter((device) => device.kind === "CAMERA" && device.objectId === objectId && (device.unitId === unitId || device.unitId === null) && residentSeesDevice(device))
-      .map((device) => ({
-        id: device.id,
-        name: device.name,
-        state: device.work === "OFF" ? "Отключено" : device.work === "FAULT" ? "Неисправно" : "На связи",
-        hasFrame: file.cameraFrames.some((frame) => frame.deviceId === device.id),
-      })),
+      .map((device) => {
+        const media = file.cameraMedia.find((item) => item.deviceId === device.id);
+        const hasFrame = file.cameraFrames.some((frame) => frame.deviceId === device.id);
+        const presence = cameraPresenceOf(device, Boolean(media?.host), hasFrame);
+        return {
+          id: device.id,
+          name: device.name,
+          state: cameraPresenceLabel(presence),
+          presence,
+          hasFrame,
+        };
+      }),
     devices: visible.map((device) => {
         const opener = isOpener(device.kind);
         const caps = device.capabilities ?? [];
@@ -1285,6 +1326,7 @@ export function homeSignals(unitId: string, objectId: string): {
             ...(opener || caps.includes("latch") ? (["open", "close"] as const) : []),
           ],
           stale: device.availability === "OFFLINE",
+          source: dataSourceOf(device),
           roomId: device.roomId ?? null,
           roomName: device.roomId ? findRoom(device.roomId)?.name ?? null : null,
         };
@@ -1322,14 +1364,16 @@ export function metricsSettingsFor(objectId: string): HomeMetricSetting[] {
 }
 
 export function outdoorWeather(objectId: string) {
-  const values = outdoorWeatherOf(load().devices.filter((device) => device.objectId === objectId && device.kind === "WEATHER"));
+  const stations = load().devices.filter((device) => device.objectId === objectId && device.kind === "WEATHER");
+  const values = outdoorWeatherOf(stations);
   const metrics = metricsSettingsFor(objectId)
     .filter((item) => item.enabled)
     .flatMap((item) => {
       const value = formatWeatherMetric(item.key, values);
       return value ? [{ key: item.key, label: item.label, icon: item.icon, color: item.color, value }] : [];
     });
-  return { ...values, metrics };
+  const source = stations[0] ? dataSourceOf(stations[0]) : values.temperatureC == null ? "UNKNOWN" : "UNKNOWN";
+  return { ...values, metrics, source };
 }
 
 function outdoorWeatherOf(devices: Device[]) {

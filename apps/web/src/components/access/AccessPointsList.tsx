@@ -31,14 +31,7 @@ export function AccessPointsList({
   }, [points]);
 
   async function commandPoint(pointId: string, open: boolean) {
-    const previous = rows;
     const nextStatus = open ? "Открыто" : "Закрыто";
-    setRows((current) =>
-      current.map((point) =>
-        point.id === pointId ? { ...point, latch: open ? "OPEN" : "CLOSED", status: nextStatus } : point,
-      ),
-    );
-    setToast({ text: nextStatus, at: Date.now() });
     const result = await runCommand(() =>
       fetch(open ? "/api/access/points" : `/api/access/points/${pointId}/close`, {
         method: "POST",
@@ -47,9 +40,15 @@ export function AccessPointsList({
       }),
     );
     if (!result.ok || result.payload?.confirmed !== true) {
-      setRows(previous);
       setToast({ text: commandMessage(result.payload), at: Date.now() });
+      return;
     }
+    setRows((current) =>
+      current.map((point) =>
+        point.id === pointId ? { ...point, latch: open ? "OPEN" : "CLOSED", status: nextStatus } : point,
+      ),
+    );
+    setToast({ text: nextStatus, at: Date.now() });
   }
 
   if (rows.length === 0) return null;

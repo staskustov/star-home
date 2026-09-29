@@ -1,7 +1,9 @@
+import { appendAudit } from "@/server/audit-store";
 import { isOpener } from "@/server/device-kinds";
 import { applyCommandState, type SmartCommandName } from "@/server/smart-commands";
 import { readOps, writeOps, type Device, type Gateway, type GatewayAdapterKind, type NormalizedState } from "@/server/ops-store";
 import { expireStaleGateways } from "@/server/gateway-contact";
+import { demoExecutionAllowed } from "@/server/runtime-mode";
 
 export type AdapterResult = {
   confirmed: boolean;
@@ -23,6 +25,21 @@ export class LocalGatewayAdapter implements GatewayAdapter {
   readonly kind = "local";
 
   async execute(device: Device, command: string, value: unknown): Promise<AdapterResult> {
+    if (!demoExecutionAllowed()) {
+      appendAudit({
+        actorUserId: "system",
+        companyId: device.companyId,
+        objectId: device.objectId,
+        unitId: device.unitId,
+        action: "DEMO_ADAPTER_FORBIDDEN",
+        targetType: "device",
+        targetId: device.id,
+        target: device.name,
+        result: "ERROR",
+        reason: `command=${command}; adapter=local; production demo adapter blocked`,
+      });
+      return { confirmed: false, error: "demo-adapter-forbidden" };
+    }
     const gateway = device.gatewayId ? readOps().gateways.find((item) => item.id === device.gatewayId) : undefined;
     if (!cloudExecutesAdapter(device.adapter) || (gateway && !cloudExecutesAdapter(gateway.adapter))) {
       return { confirmed: false, error: "local-forbidden-on-paired-gateway" };

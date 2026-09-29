@@ -81,12 +81,6 @@ export function AccessDesk({
   async function commandPoint(pointId: string, action: "open" | "close") {
     if (!selected) return;
     const open = action === "open";
-    const previous = localPoints ?? points;
-    setLocalPoints(
-      previous.map((point) =>
-        point.id === pointId ? { ...point, latch: open ? "OPEN" : "CLOSED", status: open ? "Открыто" : "Закрыто" } : point,
-      ),
-    );
     setNotice(null);
     const url = open ? "/api/security/points" : `/api/access/object-points/${pointId}/close`;
     const result = await runCommand(() =>
@@ -96,7 +90,13 @@ export function AccessDesk({
         body: JSON.stringify({ objectId: selected.id, pointId }),
       }),
     );
-    if (!result.ok || result.payload?.confirmed !== true) setLocalPoints(previous);
+    if (result.ok && result.payload?.confirmed === true) {
+      setLocalPoints((current) =>
+        (current ?? points).map((point) =>
+          point.id === pointId ? { ...point, latch: open ? "OPEN" : "CLOSED", status: open ? "Открыто" : "Закрыто" } : point,
+        ),
+      );
+    }
     setNotice(commandMessage(result.payload));
   }
 
@@ -383,6 +383,7 @@ type DeskDevice = {
   adapter?: string;
   gatewayName?: string | null;
   lastError?: string | null;
+  source?: "REAL" | "DEMO" | "MOCK" | "UNKNOWN";
   place?: string;
   roomId?: string | null;
   roomName?: string | null;
@@ -414,7 +415,11 @@ const deviceFilters: { id: DeviceFilter; label: string }[] = [
 function deviceStatus(device: DeskDevice): string {
   if (device.status === "UNCONFIGURED") return "Без настройки";
   if (device.status === "OFFLINE" || device.availability === "OFFLINE") return "Нет связи";
-  if (device.status === "ONLINE" || device.availability === "ONLINE") return "На связи";
+  if (device.status === "ONLINE" || device.availability === "ONLINE") {
+    if (device.source === "DEMO") return "Демо";
+    if (device.source === "MOCK") return "Симулятор";
+    return "На связи";
+  }
   if (device.status === "DEGRADED") return "Частично";
   if (device.status === "ERROR") return "Ошибка";
   if (device.status === "DISABLED") return "Выключено";

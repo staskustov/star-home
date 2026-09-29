@@ -19,6 +19,11 @@ export type ApplyResult = {
 
 export type ApplyContext = {
   echo?: boolean;
+  mqttConfirm?: "echo" | "state";
+  simulator?: boolean;
+  simulatorDelayMs?: number;
+  simulatorFail?: boolean;
+  simulatorTimeout?: boolean;
   discover: () => { confirmed: boolean; devices?: unknown; error?: string };
   publishMqtt?: (topic: string, payload: string) => Promise<boolean>;
   fetchHttp?: typeof fetch;
@@ -163,6 +168,9 @@ async function applyMqtt(command: ApplyCommand, ctx: ApplyContext): Promise<Appl
     sent = true;
     const actual = await pending;
     if (actual !== undefined) {
+      if (ctx.mqttConfirm === "state") {
+        return { confirmed: false, sent: true };
+      }
       return { confirmed: true, sent: true, state: expectedState(command.command, command.value) };
     }
   }
@@ -181,6 +189,10 @@ export async function applyQueuedCommand(command: ApplyCommand, ctx: ApplyContex
   }
   if (ctx.echo) {
     return { confirmed: true, sent: true, state: expectedState(command.command, command.value) };
+  }
+  if (command.adapter === "simulator" || ctx.simulator) {
+    const { applySimulator } = await import("./simulator");
+    return applySimulator(command, ctx);
   }
   if (command.endpoint || command.adapter === "http") {
     return applyHttp(command, ctx.fetchHttp ?? fetch);

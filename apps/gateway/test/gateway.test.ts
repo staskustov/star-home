@@ -254,9 +254,11 @@ describe("gateway mqtt reconnect", () => {
 });
 
 describe("gateway broker url", () => {
-  it("allows only localhost brokers", () => {
+  it("allows site-local brokers and forbids public internet brokers", () => {
     assert.equal(assertLocalMqttUrl("mqtt://127.0.0.1:1883").ok, true);
     assert.equal(assertLocalMqttUrl("mqtt://localhost:1883").ok, true);
+    assert.equal(assertLocalMqttUrl("mqtt://192.168.1.10:1883").ok, true);
+    assert.equal(assertLocalMqttUrl("mqtt://10.0.0.5:1883").ok, true);
     const remote = assertLocalMqttUrl("mqtt://example.com:1883");
     assert.equal(remote.ok, false);
     if (!remote.ok) assert.equal(remote.error, "broker-forbidden");
@@ -535,5 +537,41 @@ describe("gateway camera capture", () => {
     assert.equal(result.confirmed, false);
     assert.equal(result.error, "camera-via-capture");
     assert.equal(result.frame, undefined);
+  });
+});
+
+describe("gateway simulator and real mqtt confirm", () => {
+  it("applies a simulator command without calling it REAL", async () => {
+    const { resetSimulator, simulatorState } = await import("../simulator");
+    resetSimulator();
+    const result = await applyQueuedCommand(
+      { id: "gcmd_sim", deviceId: "dev_sim", command: "setPower", value: true, adapter: "simulator" },
+      { discover: () => ({ confirmed: false }), simulatorDelayMs: 0 },
+    );
+    assert.equal(result.confirmed, true);
+    assert.equal(result.sent, true);
+    assert.equal(result.state?.on, true);
+    assert.equal(simulatorState("dev_sim")?.on, true);
+  });
+
+  it("does not treat MQTT echo as physical confirmation in state mode", async () => {
+    const cache = createTopicCache();
+    const result = await applyQueuedCommand(
+      { id: "gcmd_state", deviceId: "dev_1", command: "setPower", value: true, adapter: "wirenboard", externalId: "wb-relay" },
+      {
+        mqttConfirm: "state",
+        discover: () => ({ confirmed: false }),
+        readSeq: (topic) => cache.seq(topic),
+        waitMqtt: (topic, match, timeoutMs, afterSeq, signal) => cache.waitFor(topic, match, timeoutMs, afterSeq, signal),
+        commandTimeoutMs: 200,
+        commandRetries: 0,
+        publishMqtt: async (_topic, payload) => {
+          cache.ingest("/devices/wb-relay/controls/on", payload === "1" ? 1 : 0);
+          return true;
+        },
+      },
+    );
+    assert.equal(result.sent, true);
+    assert.equal(result.confirmed, false);
   });
 });

@@ -108,12 +108,7 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
     }
     if ("latch" in chip && chip.deviceId && (chip.action === "open-gate" || chip.action === "open-point" || chip.latch)) {
       const open = chip.latch !== "OPEN";
-      setPoints((current) =>
-        current.map((point) => (point.id === chip.deviceId ? { ...point, latch: open ? "OPEN" : "CLOSED", status: open ? "Открыто" : "Закрыто" } : point)),
-      );
-      setActionChips((current) => current.map((item) => (item.id === chip.id ? { ...item, latch: open ? "OPEN" : "CLOSED" } : item)));
       setNotice(null);
-      setToast({ text: open ? "Открыто" : "Закрыто", at: Date.now() });
       const result = await runCommand(() =>
         fetch(open ? "/api/access/points" : `/api/access/points/${chip.deviceId}/close`, {
           method: "POST",
@@ -122,10 +117,14 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
         }),
       );
       if (!result.ok || result.payload?.confirmed !== true) {
-        setPoints(data.accessPoints ?? []);
-        setActionChips((current) => current.map((item) => (item.id === chip.id ? { ...item, latch: chip.latch } : item)));
         setToast({ text: commandMessage(result.payload), at: Date.now() });
+        return;
       }
+      setPoints((current) =>
+        current.map((point) => (point.id === chip.deviceId ? { ...point, latch: open ? "OPEN" : "CLOSED", status: open ? "Открыто" : "Закрыто" } : point)),
+      );
+      setActionChips((current) => current.map((item) => (item.id === chip.id ? { ...item, latch: open ? "OPEN" : "CLOSED" } : item)));
+      setToast({ text: open ? "Открыто" : "Закрыто", at: Date.now() });
       return;
     }
     if (chip.scenarioId) {
@@ -172,11 +171,12 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
     }
     if (id === "open-gate") {
       setNotice(null);
-      setToast({ text: "Открыто", at: Date.now() });
       const result = await runCommand(() => fetch(path, { method: "POST" }));
       if (!result.ok || result.payload?.confirmed !== true) {
         setToast({ text: commandMessage(result.payload), at: Date.now() });
+        return;
       }
+      setToast({ text: "Открыто", at: Date.now() });
       return;
     }
     setNotice(null);

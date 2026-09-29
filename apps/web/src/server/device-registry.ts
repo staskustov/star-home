@@ -13,6 +13,7 @@ import {
 import { deviceCommission, deviceKinds, deviceLabel, type DeviceKind, type DeviceProbeResult } from "@/server/device-kinds";
 import { publicMedia, type CameraPublicMedia } from "@/server/camera-media";
 import { recordAudit } from "@/server/operations";
+import { dataSourceOf } from "@/server/runtime-mode";
 import {
   gatewaysForObject,
   adapterFromGateway,
@@ -63,6 +64,7 @@ export type RegistryDevice = {
   lastProbeMs: number | null;
   lastProbeResult: DeviceProbeResult | null;
   camera: CameraPublicMedia | null;
+  source?: "REAL" | "DEMO" | "MOCK" | "UNKNOWN";
 };
 
 export type RegistryGateway = {
@@ -142,6 +144,7 @@ function asDevice(device: Device): RegistryDevice {
     lastProbeMs: commission.lastProbeMs,
     lastProbeResult: commission.lastProbeResult,
     camera: normalized.kind === "CAMERA" ? publicMedia(normalized.id) : null,
+    source: dataSourceOf(normalized),
   };
 }
 
@@ -305,7 +308,11 @@ export function registerDevice(
     capabilities: cleanCapabilities(input.capabilities, input.kind),
     availability: "UNKNOWN",
     status: "UNCONFIGURED",
-    metadata: { handedOver: false },
+    metadata: {
+      handedOver: false,
+      source: adapterFromGateway(gateway) === "simulator" ? "MOCK" : adapterFromGateway(gateway) === "local" ? "DEMO" : gateway ? "REAL" : "UNKNOWN",
+      ...(adapterFromGateway(gateway) === "simulator" ? { simulator: true } : {}),
+    },
     updatedAt: new Date().toISOString(),
   });
   persistChannels(device, input.channels);

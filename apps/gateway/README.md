@@ -20,23 +20,30 @@ MQTT `confirmed: true` только если после publish на control top
 
 ## MQTT
 
-Только localhost: `mqtt://127.0.0.1` или `mqtt://localhost` (в т.ч. `mqtts://`). Иной хост — `broker-forbidden`, соединение не открывается.
+Брокер только на объекте: localhost, RFC1918 (`10/8`, `192.168/16`, `172.16–31`) или `.local`. Публичный интернет-хост — `broker-forbidden`. Облако MQTT не открывает.
 
 ```
 STAR_HOME_CLOUD_URL=https://star-home.example \
 STAR_HOME_GATEWAY_TOKEN=... \
-STAR_HOME_WB_MQTT_URL=mqtt://127.0.0.1:1883 \
+STAR_HOME_WB_MQTT_URL=mqtt://192.168.1.10:1883 \
 STAR_HOME_WB_MQTT_USER=... \
 STAR_HOME_WB_MQTT_PASSWORD=... \
+STAR_HOME_MQTT_CONFIRM=state \
 npx tsx agent.ts
 ```
+
+`STAR_HOME_MQTT_CONFIRM=echo` (default, TEST MQTT) — совпадение на control topic после publish = protocol confirm. Это **не** PHYSICAL HARDWARE VERIFIED.
+
+`STAR_HOME_MQTT_CONFIRM=state` (REAL MQTT) — echo = DELIVERED; CONFIRMED только после telemetry ingest в cloud.
 
 Файл-снимок `STAR_HOME_WB_DISCOVERY` — запасной discovery, если брокер ещё пуст.
 
 `STAR_HOME_WB_COMMAND_TIMEOUT_MS` — ожидание echo (по умолчанию 4000).  
 `STAR_HOME_WB_COMMAND_RETRIES` — дополнительные попытки publish (по умолчанию 2, всего не больше 5).
 
-`STAR_HOME_GATEWAY_ECHO=1` или `STAR_HOME_DEMO=1` — явный тестовый режим: команда подтверждается без железа. В пилоте не включать.
+`STAR_HOME_GATEWAY_ECHO=1` или `STAR_HOME_DEMO=1` — явный тестовый режим: команда подтверждается без железа. В production и полевом пилоте не включать.
+
+`STAR_HOME_GATEWAY_SIMULATOR=1` — SIMULATOR / TEST_DEVICE. Не называть REAL.
 
 `--once` — один цикл, без демона.
 

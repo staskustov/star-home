@@ -8,6 +8,7 @@ export type OutdoorWeather = {
   co2Ppm?: number | null;
   organics?: number | null;
   metrics?: { key: string; label: string; icon: string; color: string; value: string }[];
+  source?: "REAL" | "DEMO" | "MOCK" | "UNKNOWN";
 };
 
 function num(value: number | null | undefined, suffix: string) {
@@ -48,6 +49,9 @@ export function WeatherStrip({
           <span className={onPhoto ? "on-photo-muted" : "text-muted"}>Нет данных с уличных датчиков.</span>
         ) : (
           <div className="weather-ticker-track">
+            {weather?.source === "DEMO" || weather?.source === "MOCK" ? (
+              <span className={onPhoto ? "on-photo-muted" : "text-muted"}>{weather.source === "MOCK" ? "симулятор" : "демо"}</span>
+            ) : null}
             {loop.map((item, index) => (
               <MetricChip key={`${item.key}-${index}`} onPhoto={onPhoto} compact icon={item.icon} color={item.color} label={item.label} value={item.value} />
             ))}

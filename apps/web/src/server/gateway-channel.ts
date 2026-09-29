@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "crypto";
 import { packAutomations, ingestAutomationRun, type GatewayAutomationPack } from "@/server/automation";
 import { ingestCameraFrame, packCameras } from "@/server/camera-media";
 import { completeDiscovery } from "@/server/device-discovery";
-import { ackGatewayCommand, pullGatewayCommands } from "@/server/gateway-queue";
+import { ackGatewayCommand, confirmCommandsFromState, pullGatewayCommands } from "@/server/gateway-queue";
 import { emitLive } from "@/server/live-bus";
 import { mapWirenboardControl } from "@/server/adapters/wirenboard-controls";
 import {
@@ -190,8 +190,9 @@ export function heartbeatGateway(
   expireStaleGateways(file);
   const current = file.gateways.find((item) => item.id === gateway.id);
   if (!current) return { ok: false, status: 404, message: "Шлюз не найден" };
-  if (input.status === "ONLINE" || input.status === "OFFLINE" || input.status === "DEGRADED") current.status = input.status;
-  else current.status = "ONLINE";
+  if (input.status === "ONLINE" || input.status === "OFFLINE" || input.status === "DEGRADED" || input.status === "CONNECTING" || input.status === "ERROR") {
+    current.status = input.status;
+  } else current.status = "ONLINE";
   if (typeof input.version === "string" && input.version.trim()) current.version = input.version.trim().slice(0, 40);
   current.lastSeen = new Date().toISOString();
   if (typeof input.lastError === "string") current.lastError = input.lastError.trim().slice(0, 200) || null;
@@ -279,6 +280,7 @@ export function ingestGatewayState(
     state: current.state ?? next,
     capabilities: touched,
   });
+  confirmCommandsFromState(file, current.id, (current.state ?? next) as Record<string, unknown>);
   const hub = file.gateways.find((item) => item.id === gateway.id);
   if (hub) {
     touchGatewayContact(hub);

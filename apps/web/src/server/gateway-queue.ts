@@ -11,6 +11,7 @@ import {
   type GatewayCommand,
 } from "@/server/ops-store";
 import { applyStateToChannels, deriveLifecycle, persistChannels, pickNormalizedState } from "@/server/device-channels";
+import { stateMatchesCommand } from "@/server/command-lifecycle";
 
 type Failure = { ok: false; status: number; message: string };
 type Success<T> = { ok: true; value: T };
@@ -26,7 +27,12 @@ export function enqueueGatewayCommand(input: {
 }): GatewayCommand {
   const file = readOps();
   const existing = file.gatewayCommands.find(
-    (item) => item.gatewayId === input.gatewayId && item.deviceId === input.deviceId && item.command === input.command && item.status === "PENDING",
+    (item) =>
+      item.gatewayId === input.gatewayId &&
+      item.deviceId === input.deviceId &&
+      item.command === input.command &&
+      item.status === "PENDING" &&
+      JSON.stringify(item.value) === JSON.stringify(input.value),
   );
   if (existing) return existing;
   const device = findDevice(input.deviceId);
@@ -91,6 +97,7 @@ export function ackGatewayCommand(
   if (row.status === "SENT" && !confirmed) {
     if (failed) {
       row.status = "FAILED";
+      row.error = typeof input.error === "string" ? input.error : row.error;
       row.ackedAt = new Date().toISOString();
     }
     writeOps(file);
@@ -98,6 +105,8 @@ export function ackGatewayCommand(
   }
   row.status = confirmed ? "ACKED" : sent && !failed ? "SENT" : "FAILED";
   row.ackedAt = new Date().toISOString();
+  if (sent) row.sentAt = row.sentAt ?? row.ackedAt;
+  if (typeof input.error === "string" && input.error.trim()) row.error = input.error.trim();
   if (confirmed && !discover && input.state && typeof input.state === "object" && !Array.isArray(input.state)) {
     const device = file.devices.find((item) => item.id === row.deviceId && item.gatewayId === gatewayId);
     if (device) {
@@ -114,4 +123,18 @@ export function ackGatewayCommand(
   }
   writeOps(file);
   return { ok: true, value: { commandId: row.id, applied: confirmed } };
+}
+
+export function confirmCommandsFromState(file: { gatewayCommands: GatewayCommand[] }, deviceId: string, state: Record<string, unknown>): string[] {
+  const now = new Date().toISOString();
+  const confirmed: string[] = [];
+  for (const row of file.gatewayCommands) {
+    if (row.deviceId !== deviceId) continue;
+    if (row.status !== "SENT" && row.status !== "PENDING") continue;
+    if (!stateMatchesCommand(row.command, row.value, state)) continue;
+    row.status = "ACKED";
+    row.ackedAt = now;
+    confirmed.push(row.id);
+  }
+  return confirmed;
 }

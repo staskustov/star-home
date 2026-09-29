@@ -34,6 +34,7 @@ export type AdminDevice = {
   gatewayId?: string | null;
   gatewayName?: string | null;
   lastError?: string | null;
+  source?: "REAL" | "DEMO" | "MOCK" | "UNKNOWN";
   place?: string;
   roomId?: string | null;
   roomName?: string | null;
@@ -62,6 +63,13 @@ export type AdminDevice = {
 type Room = { id: string; objectId: string; unitId: string; unitName: string; name: string };
 type Unit = { id: string; objectId: string; name: string };
 type Gateway = { id: string; objectId: string; name: string; adapter: string; status: string; version?: string | null; lastSeen?: string | null; lastError?: string | null };
+
+const sourceText: Record<string, string> = {
+  REAL: "живые данные",
+  DEMO: "демо",
+  MOCK: "симулятор",
+  UNKNOWN: "источник неизвестен",
+};
 
 const statusText: Record<string, string> = {
   ONLINE: "На связи",
@@ -218,6 +226,7 @@ export function DeviceDetail({
       <h1 className="mt-4 text-[36px] leading-none tracking-[-0.04em] text-ink">{device.name}</h1>
       <p className="mt-3 text-[15px] text-muted">
         {device.kind} · {statusText[device.status ?? device.availability ?? "UNKNOWN"] ?? device.status} · {placeText(device)}
+        {device.source ? ` · ${sourceText[device.source] ?? device.source}` : ""}
         {device.lastSeen ? ` · ${formatLastContact(device.lastSeen)}` : ""}
         {!handedOver ? " · не передано жильцу" : device.lastProbeResult ? " · передано жильцу" : ""}
         {probeText ? ` · ${probeText}` : ""}

@@ -75,7 +75,6 @@ export function CameraBlock({ cameras }: { cameras: HomeCamera[] }) {
   }
 
   if (cameras.length === 0) return null;
-  const online = cameras.filter((item) => toneFor(item.state) === "success").length;
 
   const dialog =
     camera && mounted
@@ -152,7 +151,9 @@ export function CameraBlock({ cameras }: { cameras: HomeCamera[] }) {
           <span className="min-w-0 flex-1">
             <span className="block text-[17px] tracking-[-0.02em] text-ink">Камеры</span>
             <span className="mt-0.5 block text-[13px] text-muted">
-              На связи {online} из {cameras.length}
+              {cameras.some((item) => item.state === "Есть кадр")
+                ? `Есть кадр ${cameras.filter((item) => item.state === "Есть кадр").length} из ${cameras.length}`
+                : `Не подключены ${cameras.length}`}
             </span>
           </span>
           <Icon name="chevron" className="h-5 w-5 rotate-90 text-muted" />
@@ -164,7 +165,8 @@ export function CameraBlock({ cameras }: { cameras: HomeCamera[] }) {
 }
 
 function toneFor(state: string): Tone {
-  if (state === "Неисправно") return "danger";
-  if (state === "Отключено") return "warning";
-  return "success";
+  if (state === "Неисправно" || state === "Нет связи") return "danger";
+  if (state === "Отключено" || state === "Не подключена" || state === "Настроена") return "warning";
+  if (state === "Есть кадр") return "success";
+  return "info";
 }

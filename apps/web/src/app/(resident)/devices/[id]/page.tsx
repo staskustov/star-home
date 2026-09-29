@@ -22,7 +22,10 @@ export default async function DevicePage({ params }: { params: Promise<{ id: str
       <LiveRefresh />
       <p className="text-[13px] text-muted">{device.roomName ?? "Дом"}</p>
       <h1 className="mt-2 text-[28px] tracking-[-0.035em] text-ink sm:text-[34px]">{device.name}</h1>
-      <p className="mt-2 text-[15px] text-muted">{device.typeLabel}</p>
+      <p className="mt-2 text-[15px] text-muted">
+        {device.typeLabel}
+        {device.source === "DEMO" ? " · демо" : device.source === "MOCK" ? " · симулятор" : ""}
+      </p>
 
       <div className="panel mt-7 px-5 py-5">
         <div className="flex items-center gap-3">

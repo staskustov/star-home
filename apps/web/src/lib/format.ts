@@ -56,9 +56,10 @@ export function gatewayErrorText(error: string | null | undefined): string | nul
     "mqtt-timeout": "Таймаут команды",
     "mqtt-publish-failed": "Публикация MQTT не прошла",
     "heartbeat-stale": "Нет heartbeat",
-    "broker-forbidden": "Брокер не localhost",
+    "broker-forbidden": "Публичный MQTT-брокер запрещён",
     "broker-unconfigured": "Брокер не задан",
     "gateway-offline": "Шлюз не на связи",
+    "demo-adapter-forbidden": "Демо-адаптер запрещён",
   };
   return known[error.trim()] ?? error.trim();
 }
@@ -66,6 +67,8 @@ export function gatewayErrorText(error: string | null | undefined): string | nul
 export function gatewayStatusLabel(status: string, lastSeen: string | null | undefined): string {
   if (!lastSeen) return "Нет контакта";
   if (status === "OFFLINE" || status === "UNKNOWN") return "Нет связи";
+  if (status === "CONNECTING") return "Подключение";
+  if (status === "ERROR") return "Ошибка";
   if (status === "DEGRADED") return "Связь нестабильна";
   return "На связи";
 }

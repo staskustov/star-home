@@ -3,7 +3,7 @@ import { findUserById } from "@/server/directory";
 import { can, objectFor, reaches, type StaffActor } from "@/server/rbac/decide";
 import { appendAudit, type AuditInput } from "@/server/audit-store";
 import { publishLive, pushNotice } from "@/server/store-bind";
-import { accessPoint, gateFor, runDevice } from "@/server/devices";
+import { accessPoint, gateFor } from "@/server/devices";
 import { paymentProvider } from "@/server/payments";
 import {
   clock,
@@ -27,26 +27,29 @@ export function recordAudit(entry: AuditInput): void {
   appendAudit(entry);
 }
 
-async function commandDevice(place: Place, device: Device | null, command: "OPEN" | "CLOSE"): Promise<{ confirmed: boolean; message: string }> {
-  const result = device ? await runDevice(device, command) : { confirmed: false };
+async function commandDevice(place: Place, device: Device | null, command: "OPEN" | "CLOSE"): Promise<{
+  confirmed: boolean;
+  message: string;
+  status?: string;
+  commandId?: string;
+  lifecycle?: string;
+}> {
+  if (!device) {
+    return { confirmed: false, message: "Не удалось подтвердить выполнение.", status: "failed", lifecycle: "FAILED" };
+  }
+  const mapped = command === "OPEN" ? "open" : "close";
+  const result = await (await import("./physical-command")).dispatchPhysicalCommand(device, mapped);
   const opening = command === "OPEN";
-  const gate = device?.kind === "GATE";
+  const gate = device.kind === "GATE";
   const done = opening
     ? gate
       ? "Ворота открыты."
-      : `${device?.name ?? "Точка"}: открыто.`
+      : `${device.name}: открыто.`
     : gate
       ? "Ворота закрыты."
-      : `${device?.name ?? "Точка"}: закрыто.`;
-  const message = result.confirmed ? done : "Не удалось подтвердить выполнение.";
+      : `${device.name}: закрыто.`;
+  const message = result.confirmed ? done : result.message;
   const file = readOps();
-  if (result.confirmed && device) {
-    const current = file.devices.find((item) => item.id === device.id);
-    if (current) {
-      current.latch = opening ? "OPEN" : "CLOSED";
-      current.state = { ...current.state, latch: current.latch };
-    }
-  }
   file.events.unshift({
     id: newId("evt"),
     companyId: place.companyId,
@@ -57,11 +60,13 @@ async function commandDevice(place: Place, device: Device | null, command: "OPEN
       ? opening
         ? gate
           ? "Ворота открыты"
-          : device?.name ?? "Точка доступа"
+          : device.name
         : gate
           ? "Ворота закрыты"
-          : `${device?.name ?? "Точка доступа"}: закрыто`
-      : "Команда не подтверждена",
+          : `${device.name}: закрыто`
+      : result.status === "accepted" || result.status === "queued"
+        ? "Команда принята"
+        : "Команда не подтверждена",
     result: result.confirmed ? "SUCCESS" : "UNCONFIRMED",
   });
   writeOps(file);
@@ -72,13 +77,27 @@ async function commandDevice(place: Place, device: Device | null, command: "OPEN
     unitId: place.unitId || null,
     action: opening ? "OPEN_GATE" : "CLOSE_GATE",
     targetType: "device",
-    targetId: device?.id ?? null,
-    target: device?.name ?? "Ворота",
-    result: result.confirmed ? "SUCCESS" : "ERROR",
-    reason: result.confirmed ? "" : "Нет подтверждения адаптера",
+    targetId: device.id,
+    target: device.name,
+    result: result.confirmed ? "SUCCESS" : result.status === "accepted" || result.status === "queued" ? "ERROR" : "ERROR",
+    reason: [
+      result.confirmed ? "" : result.error ?? "Нет подтверждения адаптера",
+      result.commandId ? `commandId=${result.commandId}` : "",
+      `requested=${mapped}`,
+      device.gatewayId ? `gateway=${device.gatewayId}` : "",
+      `lifecycle=${result.lifecycle}`,
+    ]
+      .filter(Boolean)
+      .join("; "),
   });
   publishLive({ objectId: place.objectId, kind: "access", title: message.replace(/\.$/, "") });
-  return { confirmed: result.confirmed, message };
+  return {
+    confirmed: result.confirmed,
+    message,
+    status: result.status,
+    commandId: result.commandId,
+    lifecycle: result.lifecycle,
+  };
 }
 
 async function openDevice(place: Place, device: Device | null): Promise<{ confirmed: boolean; message: string }> {

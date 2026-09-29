@@ -38,7 +38,7 @@ describe("device channel model", () => {
     const temperature = empty.find((channel) => channel.capability === "temperature");
     assert.equal(temperature?.value, null);
     assert.equal(temperature?.status, "NONE");
-    assert.equal(temperature?.quality, "unknown");
+    assert.equal(temperature?.quality, "UNKNOWN");
     assert.notEqual(temperature?.value, 0);
     const offline = publicChannelsOf({
       id: "dev_off",

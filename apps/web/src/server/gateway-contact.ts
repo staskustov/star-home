@@ -32,7 +32,15 @@ export function gatewayDisplayStatus(gateway: Pick<Gateway, "adapter" | "status"
   if (gateway.adapter === "local") return gateway.status === "OFFLINE" ? "OFFLINE" : "ONLINE";
   if (!gateway.lastSeen) return "UNKNOWN";
   if (isGatewayStale(gateway, now)) return "OFFLINE";
-  return gateway.status === "DEGRADED" ? "DEGRADED" : gateway.status === "OFFLINE" ? "OFFLINE" : "ONLINE";
+  return gateway.status === "CONNECTING"
+    ? "CONNECTING"
+    : gateway.status === "ERROR"
+      ? "ERROR"
+      : gateway.status === "DEGRADED"
+        ? "DEGRADED"
+        : gateway.status === "OFFLINE"
+          ? "OFFLINE"
+          : "ONLINE";
 }
 
 export { gatewayStatusLabel } from "@/lib/format";

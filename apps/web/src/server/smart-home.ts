@@ -4,9 +4,9 @@ import { capabilitiesFor, isCapability } from "@/server/device-capabilities";
 import { deviceLabel, isOpener, residentSeesDevice } from "@/server/device-kinds";
 import "./adapters/wirenboard";
 import "./adapters/protocol-stubs";
-import { executeOnAdapter, cloudExecutesAdapter } from "@/server/gateway-adapter";
 import { expireStaleGateways } from "@/server/gateway-contact";
-import { enqueueGatewayCommand, markGatewayCommand } from "@/server/gateway-queue";
+import { dispatchPhysicalCommand } from "@/server/physical-command";
+import { dataSourceOf, type DataSource } from "@/server/runtime-mode";
 import { notifyIfAlert } from "@/server/smart-notices";
 import { emitLive } from "@/server/live-bus";
 import { recordAudit } from "@/server/operations";
@@ -29,7 +29,7 @@ import {
 import { can, reaches, staffActor, type StaffActor } from "@/server/rbac/decide";
 import type { Permission } from "@/server/rbac/permissions";
 import { householdCan } from "@/server/rbac/policy";
-import { applyStateToChannels, capabilitiesTouchedByState, deriveLifecycle, persistChannels, publicChannelsOf, type DeviceLifecycle, type PublicChannel } from "@/server/device-channels";
+import { capabilitiesTouchedByState, deriveLifecycle, publicChannelsOf, type DeviceLifecycle, type PublicChannel } from "@/server/device-channels";
 import { commandRisk, deviceCan, isSmartCommand, type SmartCommandName } from "@/server/smart-commands";
 
 type Failure = { ok: false; status: number; message: string };
@@ -166,12 +166,14 @@ export type SmartDeviceCard = {
     gatewayName: string | null;
     gatewayStatus: string | null;
     lastError: string | null;
+    source?: DataSource;
   };
   planFloor?: number | null;
   planX?: number | null;
   planY?: number | null;
   lastKnown?: boolean;
   favorite?: boolean;
+  source?: DataSource;
 };
 
 function asCard(device: Device, viewer: Viewer): SmartDeviceCard {
@@ -202,6 +204,7 @@ function asCard(device: Device, viewer: Viewer): SmartDeviceCard {
     planY: device.planY ?? null,
     lastKnown: stale && Object.keys(knownState(device.state)).length > 0,
     favorite: viewer.kind === "home" ? readOps().favorites.some((item) => item.userId === viewer.place.userId && item.deviceId === device.id) : false,
+    source: dataSourceOf(device),
   };
   if (viewer.kind === "staff" && viewerCan(viewer, "engineering.view")) {
     card.technical = {
@@ -212,6 +215,7 @@ function asCard(device: Device, viewer: Viewer): SmartDeviceCard {
       gatewayName: gateway?.name ?? null,
       gatewayStatus: gateway?.status ?? null,
       lastError: gateway?.lastError ?? null,
+      source: dataSourceOf(device),
     };
   }
   return card;
@@ -540,6 +544,7 @@ export async function commandDeviceSmart(session: SessionRef | null, input: Comm
   token?: string;
   message: string;
   status?: CommandOutcome;
+  lifecycle?: string;
   commandId?: string;
   lastSeen?: string | null;
   device?: SmartDeviceCard;
@@ -614,108 +619,10 @@ export async function commandDeviceSmart(session: SessionRef | null, input: Comm
     return denied();
   }
 
-  const remote = Boolean(gateway && !cloudExecutesAdapter(gateway.adapter));
-  const queued = gateway && remote ? enqueueGatewayCommand({ gatewayId: gateway.id, deviceId: device.id, command, value }) : undefined;
-  if (remote && gateway?.status === "OFFLINE") {
-    rememberCommandLog({
-      actorUserId: userId,
-      source,
-      companyId: device.companyId,
-      objectId: device.objectId,
-      unitId: device.unitId,
-      deviceId: device.id,
-      command,
-      value,
-      risk,
-      result: "UNCONFIRMED",
-      reason: "gateway-offline",
-    });
-    return {
-      ok: true,
-      value: {
-        confirmed: false,
-        status: "queued",
-        commandId: queued?.id,
-        message: "Контроллер недоступен. Команда в очереди.",
-        lastSeen: gateway.lastSeen,
-      },
-    };
-  }
-  if (remote) {
-    rememberCommandLog({
-      actorUserId: userId,
-      source,
-      companyId: device.companyId,
-      objectId: device.objectId,
-      unitId: device.unitId,
-      deviceId: device.id,
-      command,
-      value,
-      risk,
-      result: "UNCONFIRMED",
-      reason: "awaiting-gateway",
-    });
-    recordAudit({
-      actorUserId: userId,
-      companyId: device.companyId,
-      objectId: device.objectId,
-      unitId: device.unitId,
-      action: "DEVICE_COMMAND",
-      targetType: "device",
-      targetId: device.id,
-      target: device.name,
-      result: "ERROR",
-      reason: "Ожидает подтверждение шлюза",
-    });
-    emitLive({
-      objectId: device.objectId,
-      kind: "device",
-      title: `${device.name}: команда принята`,
-      deviceId: device.id,
-    });
-    rememberEvent({
-      companyId: device.companyId,
-      objectId: device.objectId,
-      unitId: device.unitId,
-      roomId: device.roomId ?? null,
-      deviceId: device.id,
-      gatewayId: device.gatewayId ?? null,
-      kind: "command",
-      title: `${device.name}: ${command}`,
-      result: "UNCONFIRMED",
-      at: clock(),
-      severity: "INFO",
-      source: eventSource(input.source),
-    });
-    return {
-      ok: true,
-      value: {
-        confirmed: false,
-        status: "accepted",
-        commandId: queued?.id,
-        message: "Команда принята. Ожидаем подтверждение оборудования.",
-        lastSeen: gateway?.lastSeen ?? null,
-      },
-    };
-  }
-
-  const result = await executeOnAdapter(device, command, value);
-  const file = readOps();
-  const current = file.devices.find((item) => item.id === device.id);
+  const result = await dispatchPhysicalCommand(device, command, value);
+  const current = findDevice(device.id);
   const now = new Date().toISOString();
   const before = current ? { work: current.work, detected: current.state?.detected } : undefined;
-  if (result.confirmed && current && result.state) {
-    current.state = { ...current.state, ...result.state };
-    if (result.state.latch) current.latch = result.state.latch;
-    current.lastSeen = now;
-    current.availability = "ONLINE";
-    current.updatedAt = now;
-    if (!current.channels?.length) persistChannels(current);
-    applyStateToChannels(current);
-    current.status = deriveLifecycle(current);
-    if (queued) markGatewayCommand(queued.id, "ACKED");
-  }
-  writeOps(file);
   if (result.confirmed && current) {
     notifyIfAlert({
       companyId: current.companyId,
@@ -730,7 +637,11 @@ export async function commandDeviceSmart(session: SessionRef | null, input: Comm
   const live = emitLive({
     objectId: device.objectId,
     kind: "device",
-    title: result.confirmed ? `${device.name}: команда выполнена` : `${device.name}: команда не подтверждена`,
+    title: result.confirmed
+      ? `${device.name}: команда выполнена`
+      : result.status === "accepted" || result.status === "queued"
+        ? `${device.name}: команда принята`
+        : `${device.name}: команда не подтверждена`,
     deviceId: device.id,
   });
   rememberEvent({
@@ -741,10 +652,10 @@ export async function commandDeviceSmart(session: SessionRef | null, input: Comm
     deviceId: device.id,
     gatewayId: device.gatewayId ?? null,
     kind: "command",
-    title: result.confirmed ? `${device.name}: ${command}` : `${device.name}: не подтверждено`,
+    title: result.confirmed ? `${device.name}: ${command}` : `${device.name}: ${command}`,
     result: result.confirmed ? "SUCCESS" : "UNCONFIRMED",
     at: clock(),
-    severity: result.confirmed ? "INFO" : "WARNING",
+    severity: result.confirmed ? "INFO" : result.status === "failed" ? "WARNING" : "INFO",
     source: eventSource(input.source),
     seq: live.seq,
   });
@@ -760,6 +671,8 @@ export async function commandDeviceSmart(session: SessionRef | null, input: Comm
     risk,
     result: result.confirmed ? "SUCCESS" : "UNCONFIRMED",
     reason: result.confirmed ? undefined : result.error ?? "Нет подтверждения адаптера",
+    commandId: result.commandId,
+    gatewayId: device.gatewayId ?? null,
   });
   if (result.confirmed && result.state) {
     rememberHistory({ deviceId: device.id, objectId: device.objectId, at: now, state: result.state });
@@ -778,7 +691,15 @@ export async function commandDeviceSmart(session: SessionRef | null, input: Comm
     targetId: device.id,
     target: device.name,
     result: result.confirmed ? "SUCCESS" : "ERROR",
-    reason: result.confirmed ? "" : result.error ?? "Нет подтверждения адаптера",
+    reason: [
+      result.confirmed ? "" : result.error ?? "Нет подтверждения адаптера",
+      result.commandId ? `commandId=${result.commandId}` : "",
+      `requested=${command}`,
+      device.gatewayId ? `gateway=${device.gatewayId}` : "",
+      `lifecycle=${result.lifecycle}`,
+    ]
+      .filter(Boolean)
+      .join("; "),
   });
 
   const fresh = findDevice(device.id);
@@ -786,14 +707,11 @@ export async function commandDeviceSmart(session: SessionRef | null, input: Comm
     ok: true,
     value: {
       confirmed: result.confirmed,
-      message: result.confirmed
-        ? "Команда выполнена."
-        : result.error === "gateway-offline"
-          ? "Контроллер недоступен. Команда в очереди."
-          : "Не удалось подтвердить выполнение.",
-      status: result.confirmed ? "confirmed" : result.error === "gateway-offline" ? "queued" : "failed",
-      commandId: queued?.id,
-      lastSeen: fresh?.lastSeen ?? null,
+      message: result.message,
+      status: result.status,
+      lifecycle: result.lifecycle,
+      commandId: result.commandId,
+      lastSeen: fresh?.lastSeen ?? gateway?.lastSeen ?? null,
       device: fresh ? asCard(fresh, viewer.value) : undefined,
     },
   };

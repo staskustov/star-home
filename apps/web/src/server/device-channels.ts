@@ -3,7 +3,7 @@ import { isCapability, type Capability } from "@/server/device-capabilities";
 export const channelDataTypes = ["number", "boolean", "enum", "string"] as const;
 export type ChannelDataType = (typeof channelDataTypes)[number];
 
-export const channelQualities = ["fresh", "stale", "unavailable", "unknown", "error"] as const;
+export const channelQualities = ["GOOD", "STALE", "UNKNOWN", "fresh", "stale", "unavailable", "unknown", "error"] as const;
 export type ChannelQuality = (typeof channelQualities)[number];
 
 export const channelStatuses = ["LIVE", "STALE", "NONE", "ERROR"] as const;
@@ -236,10 +236,10 @@ function finiteOrNull(value: unknown): number | null {
 
 export function qualityOf(status: ChannelStatus, availability?: string | null): ChannelQuality {
   if (status === "ERROR") return "error";
-  if (status === "STALE") return "stale";
-  if (status === "LIVE") return "fresh";
+  if (status === "STALE") return "STALE";
+  if (status === "LIVE") return "GOOD";
   if (availability === "OFFLINE") return "unavailable";
-  return "unknown";
+  return "UNKNOWN";
 }
 
 const stateCapabilityKeys: [keyof ChannelState, Capability][] = [

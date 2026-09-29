@@ -141,16 +141,16 @@ function Points({ view }: { view: SecurityPostView }) {
   }, [view.points]);
 
   async function command(id: string, open: boolean) {
-    const previous = rows;
-    setRows((current) =>
-      current.map((point) =>
-        point.id === id ? { ...point, latch: open ? "OPEN" : "CLOSED", state: open ? "Открыто" : "Закрыто" } : point,
-      ),
-    );
     setNotice(null);
     const result = await post(open ? "/api/security/points" : `/api/access/object-points/${id}/close`, { objectId: view.objectId, pointId: id });
     const confirmed = result.ok && result.payload?.confirmed === true;
-    if (!confirmed) setRows(previous);
+    if (confirmed) {
+      setRows((current) =>
+        current.map((point) =>
+          point.id === id ? { ...point, latch: open ? "OPEN" : "CLOSED", state: open ? "Открыто" : "Закрыто" } : point,
+        ),
+      );
+    }
     setNotice({ text: commandMessage(result.payload), ok: confirmed });
   }
 
