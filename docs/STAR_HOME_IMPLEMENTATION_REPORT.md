@@ -158,7 +158,7 @@ Live Wiren Board probe round-trip на объекте.
 
 ### Следующий этап
 
-Этап 8: камеры. Этап 7 закрыт в софте; железо автоматизации не подтверждено.
+Этап 7–8 закрыты ниже. Этап 9: производственная готовность.
 
 ---
 
@@ -190,5 +190,39 @@ Infer gateway, облако не гоняет gateway EVENT, очередь `run
 
 ### Следующий этап
 
-Этап 8: камеры. Live MQTT discovery как отдельный контур — не этот этап.
+Этап 8 закрыт в софте; железо камер не подтверждено. Этап 9: производственная готовность. Live MQTT discovery как отдельный контур — не этап 8.
+
+---
+
+## Этап 8. Камеры (2026-09-29)
+
+### Что сделано
+
+1. Поток камеры — `ops.cameraMedia` / последний JPEG в `ops.cameraFrames`, не сенсорные каналы. Prisma не SoT.
+2. Медиашлюз — локальный агент. Облако не ходит на LAN-камеру. Браузер не получает RTSP и пароль.
+3. Агент снимает JPEG: HTTP snapshot, ONVIF GetProfiles+GetSnapshotUri. RTSP без snapshotUrl → `rtsp-live-unsupported`. Нет live HLS. Echo не рисует кадр.
+4. Подтверждение только если JPEG `FF D8 FF` и 32…400000 байт. Сид без потока: 200, `confirmed: false`. OFF/FAULT: 409.
+5. Staff `cameraFrame`; житель — `GET/POST /api/smart-home/cameras/{id}/frame`. Аудит `CAMERA_VIEW` / `CAMERA_EDIT`. Объектные CAMERA видны жителю как ворота.
+6. UI: честный текст «Видеопоток не подключён», кадр только из session JPEG. Настройка потока в `/admin/devices`.
+
+### Файлы
+
+- `apps/web/src/server/camera-media.ts`, `ops-store.ts`, `gateway-channel.ts`, `security-post.ts`
+- `apps/gateway/camera-capture.ts`, `agent.ts`, `apply.ts`
+- `apps/web/src/components/home/CameraBlock.tsx`, `components/security/CameraTile.tsx`, `components/admin/DeviceDetail.tsx`
+- `apps/api/test/camera.test.ts`, `apps/gateway/test/gateway.test.ts`
+- `docs/STAR_HOME_CAMERA_ARCHITECTURE.md`
+
+### Тесты
+
+Сид без потока не подтверждает кадр; бухгалтер 403; OFF 409; пароль только в pack агенту; ingest один JPEG; объектная CAMERA видна; HTTP/ONVIF JPEG; RTSP без URL; не-JPEG; echo без кадра.
+
+### Не подтверждено на железе
+
+ONVIF/RTSP камера в LAN объекта.
+
+### Следующий этап
+
+Этап 9: backup/restore, мониторинг агента, security tests, Prisma-план, `docs/STAR_HOME_DEPLOYMENT_GUIDE.md`.
+
 

@@ -309,35 +309,8 @@ export async function closeObjectPointFor(actor: StaffActor, objectId: unknown, 
 }
 
 export async function cameraFrameFor(actor: StaffActor, objectId: unknown, deviceId: unknown) {
-  if (!can(actor, "security.camera.view")) return denied;
-  if (typeof deviceId !== "string" || !deviceId) return { ok: false as const, status: 400, message: "Камера не найдена" };
-  const object = objectFor(actor, objectId);
-  if (!object.ok) return object;
-  const device = readOps().devices.find(
-    (item) => item.id === deviceId && item.objectId === object.value.id && item.companyId === object.value.companyId && item.kind === "CAMERA",
-  );
-  if (!device) return { ok: false as const, status: 404, message: "Камера не найдена" };
-  if (!reaches(actor, device)) return denied;
-  if (device.work === "OFF" || device.work === "FAULT") {
-    return { ok: false as const, status: 409, message: device.work === "OFF" ? "Камера выведена из работы" : "Камера неисправна" };
-  }
-  const result = await runDevice(device, "READ");
-  audit({
-    actorUserId: actor.userId,
-    companyId: device.companyId,
-    objectId: device.objectId,
-    unitId: device.unitId,
-    action: "CAMERA_VIEW",
-    targetType: "device",
-    targetId: device.id,
-    target: device.name,
-    result: result.confirmed ? "SUCCESS" : "ERROR",
-    reason: result.confirmed ? "" : "Нет подтверждения адаптера",
-  });
-  return {
-    ok: true as const,
-    value: { confirmed: result.confirmed, message: result.confirmed ? "Кадр получен." : "Не удалось подтвердить выполнение." },
-  };
+  const { requestCameraFrame } = await import("./camera-media");
+  return requestCameraFrame({ userId: actor.userId, membershipId: actor.membershipId }, objectId, deviceId);
 }
 
 export async function openPointFor(session: SessionRef | null, pointId: unknown) {

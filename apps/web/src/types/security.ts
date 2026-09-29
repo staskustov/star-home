@@ -1,4 +1,13 @@
-export type SecurityCamera = { id: string; name: string; place: string; state: string; ready: boolean };
+export type SecurityCamera = {
+  id: string;
+  name: string;
+  place: string;
+  state: string;
+  ready: boolean;
+  hasFrame?: boolean;
+  stream?: "live" | "snapshot" | "offline" | "unconfigured";
+  frameUrl?: string | null;
+};
 
 export type SecurityAlarmStatus = "OPEN" | "ACCEPTED" | "CLOSED";
 

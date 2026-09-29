@@ -50,7 +50,7 @@ export function isOpener(kind: string): boolean {
   return openers.has(kind as DeviceKind);
 }
 
-const householdObjectKinds = new Set<DeviceKind>(["GATE", "WICKET", "BARRIER", "LOCK", "WEATHER"]);
+const householdObjectKinds = new Set<DeviceKind>(["GATE", "WICKET", "BARRIER", "LOCK", "WEATHER", "CAMERA"]);
 
 export type DeviceProbeResult = "confirmed" | "failed";
 

@@ -8,18 +8,23 @@ import type { SecurityCamera } from "@/types/security";
 export function CameraTile({ camera, objectId, large = false }: { camera: SecurityCamera; objectId: string; large?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(null);
+  const [frameAt, setFrameAt] = useState<number | null>(camera.hasFrame ? Date.now() : null);
+  const frameSrc = frameAt ? `/api/smart-home/cameras/${camera.id}/frame?t=${frameAt}` : camera.frameUrl;
 
   async function frame() {
     setBusy(true);
     const result = await runCommand(() =>
-      fetch("/api/security/camera", {
+      fetch(`/api/smart-home/cameras/${camera.id}/frame`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ objectId, deviceId: camera.id }),
+        body: JSON.stringify({ objectId }),
       }),
     );
     setBusy(false);
-    setNotice({ text: commandMessage(result.payload), ok: result.ok && result.payload?.confirmed === true });
+    const confirmed = result.ok && result.payload?.confirmed === true;
+    const hasFrame = result.payload?.hasFrame === true || confirmed;
+    setNotice({ text: commandMessage(result.payload), ok: confirmed });
+    if (hasFrame) setFrameAt(Date.now());
   }
 
   const request = (
@@ -52,9 +57,19 @@ export function CameraTile({ camera, objectId, large = false }: { camera: Securi
   return (
     <li className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-line/60 bg-surface-muted/20">
       <div className="relative flex min-h-[140px] flex-1 flex-col items-center justify-center gap-2 bg-black/35 px-4 text-center">
-        <span className={`h-2 w-2 rounded-full ${camera.ready ? "bg-success" : "bg-danger"}`} aria-hidden />
-        <p className="text-[14px] text-muted">{camera.ready ? "Видеопоток не подключён" : camera.state}</p>
-        {notice ? <p className={`text-[13px] ${notice.ok ? "text-success" : "text-danger"}`}>{notice.text}</p> : null}
+        {frameSrc ? (
+          // Session cookie must follow the JPEG; next/image would drop it.
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={frameSrc} alt={camera.name} className="absolute inset-0 h-full w-full object-cover" />
+        ) : (
+          <>
+            <span className={`h-2 w-2 rounded-full ${camera.ready ? "bg-success" : "bg-danger"}`} aria-hidden />
+            <p className="text-[14px] text-muted">{camera.ready ? "Видеопоток не подключён" : camera.state}</p>
+          </>
+        )}
+        {notice ? (
+          <p className={`relative z-10 text-[13px] ${notice.ok ? "text-success" : "text-danger"}`}>{notice.text}</p>
+        ) : null}
       </div>
       <div className="flex items-center justify-between gap-3 px-4 py-3">
         <div className="min-w-0">

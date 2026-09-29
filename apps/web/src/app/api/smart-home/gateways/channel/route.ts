@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { ackGateway, heartbeatGateway, ingestAutomation, ingestGatewayState, pullGateway } from "@/server/gateway-channel";
+import { ackGateway, heartbeatGateway, ingestAutomation, ingestCamera, ingestGatewayState, pullGateway } from "@/server/gateway-channel";
 
 export async function GET(request: Request) {
   const token = request.headers.get("x-star-home-gateway");
@@ -21,7 +21,9 @@ export async function POST(request: Request) {
           ? ackGateway(token, body ?? {})
           : kind === "automation"
             ? ingestAutomation(token, body ?? {})
-            : heartbeatGateway(token, body ?? {});
+            : kind === "camera"
+              ? ingestCamera(token, body ?? {})
+              : heartbeatGateway(token, body ?? {});
   if (!result.ok) return NextResponse.json({ message: result.message }, { status: result.status });
   return NextResponse.json(result.value);
 }

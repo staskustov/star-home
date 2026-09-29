@@ -1,7 +1,7 @@
 # STAR HOME — жизненный цикл команды
 
 Дата: 2026-09-29  
-Статус: актуально после этапа 4. Камеры — этап 8. Prisma SoT — этап 9.
+Статус: актуально после этапа 8. Prisma SoT — этап 9.
 
 ## Путь
 
@@ -46,6 +46,8 @@ Ack агента:
 | false | true | нет | SENT |
 | false | true | `mqtt-timeout` / другая | FAILED |
 | false | false | * | FAILED |
+
+`captureFrame`: в ack может быть `frame` (base64 JPEG). Cloud сохраняет кадр только если магия JPEG верна. Echo не подтверждает камеру. Подробности: `docs/STAR_HOME_CAMERA_ARCHITECTURE.md`.
 
 ## Адаптеры
 

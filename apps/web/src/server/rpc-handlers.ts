@@ -292,6 +292,20 @@ const methodPolicy: Record<string, Route> = {
 
   openObjectGate: staff("access.gate.open", (actor, input) => openObjectGateFor(actor, input.objectId)),
   cameraFrame: staff("security.camera.view", (actor, input) => cameraFrameFor(actor, input.objectId, input.deviceId)),
+  updateCameraMedia: staff("devices.edit", (actor, input) =>
+    import("./camera-media").then(({ saveCameraMedia }) =>
+      saveCameraMedia(actor, {
+        deviceId: input.deviceId,
+        protocol: input.protocol,
+        host: input.host,
+        port: input.port,
+        path: input.path,
+        snapshotUrl: input.snapshotUrl,
+        username: input.username,
+        password: input.password,
+      }),
+    ),
+  ),
   securityPost: staff("security.view", (actor, input) => securityPost(actor, input.objectId)),
   securityAlerts: staff("security.view", (actor) => securityAlertsFor(actor)),
   securityCameras: staff("security.camera.view", (actor, input) => securityCameras(actor, input.objectId)),
@@ -400,6 +414,7 @@ const guardedMethods: Partial<Record<string, AuditAction>> = {
   openPoint: "OPEN_GATE",
   closePoint: "CLOSE_GATE",
   cameraFrame: "CAMERA_VIEW",
+  updateCameraMedia: "CAMERA_EDIT",
   handleAlarm: "ALARM_CLOSE",
   openObjectPoint: "OPEN_GATE",
   closeObjectPoint: "CLOSE_GATE",

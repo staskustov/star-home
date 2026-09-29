@@ -42,6 +42,8 @@ SoT: JSON-снимок `ops` (и `catalog` для помещений). Prisma De
 
 UI жителя строится по `capabilities`, не по модели производителя.
 
+Камеры (`kind: CAMERA`) — не сенсорные каналы: поток в `ops.cameraMedia`, кадр в `ops.cameraFrames`. См. `docs/STAR_HOME_CAMERA_ARCHITECTURE.md`.
+
 ## Команда и телеметрия
 
 См. `docs/STAR_HOME_COMMAND_LIFECYCLE.md`. Текущие значения — каналы + проекция `device.state`. История: `smartHistory`.

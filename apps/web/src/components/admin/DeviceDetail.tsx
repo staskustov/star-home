@@ -47,6 +47,15 @@ export type AdminDevice = {
   lastProbeAt?: string | null;
   lastProbeMs?: number | null;
   lastProbeResult?: string | null;
+  camera?: {
+    protocol: string;
+    host: string;
+    port: number | null;
+    path: string | null;
+    snapshotUrl: string | null;
+    username: string | null;
+    hasPassword: boolean;
+  } | null;
   channels: Channel[];
 };
 
@@ -106,6 +115,13 @@ export function DeviceDetail({
   const [busy, setBusy] = useState(false);
   const [probing, setProbing] = useState(false);
   const [handing, setHanding] = useState(false);
+  const [protocol, setProtocol] = useState(device.camera?.protocol ?? "http-snapshot");
+  const [cameraHost, setCameraHost] = useState(device.camera?.host ?? "");
+  const [cameraPort, setCameraPort] = useState(device.camera?.port ? String(device.camera.port) : "");
+  const [cameraPath, setCameraPath] = useState(device.camera?.path ?? "");
+  const [snapshotUrl, setSnapshotUrl] = useState(device.camera?.snapshotUrl ?? "");
+  const [cameraUser, setCameraUser] = useState(device.camera?.username ?? "");
+  const [cameraPassword, setCameraPassword] = useState("");
   const roomsOfHouse = useMemo(() => {
     const list = rooms ?? [];
     const ofHouse = list.filter((room) => room.objectId === device.objectId && room.unitId === unitId);
@@ -133,6 +149,32 @@ export function DeviceDetail({
     setBusy(false);
     setNotice(result.ok ? "Сохранено." : commandMessage(result.payload, "Не удалось сохранить."));
     if (result.ok) router.refresh();
+  }
+
+  async function saveCamera() {
+    setBusy(true);
+    setNotice(null);
+    const result = await runCommand(() =>
+      fetch(`/api/smart-home/devices/${device.id}/camera`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          protocol,
+          host: cameraHost,
+          port: cameraPort ? Number(cameraPort) : null,
+          path: cameraPath,
+          snapshotUrl,
+          username: cameraUser,
+          password: cameraPassword,
+        }),
+      }),
+    );
+    setBusy(false);
+    setNotice(result.ok ? "Поток сохранён." : commandMessage(result.payload, "Не удалось сохранить поток."));
+    if (result.ok) {
+      setCameraPassword("");
+      router.refresh();
+    }
   }
 
   async function probe() {
@@ -245,6 +287,59 @@ export function DeviceDetail({
             </Select>
           </label>
         </section>
+
+        {device.kindCode === "CAMERA" && allowEdit ? (
+          <section className="panel grid gap-4 p-5 sm:grid-cols-2">
+            <p className="text-[16px] text-ink sm:col-span-2">Видеопоток</p>
+            <p className="text-[13px] text-muted sm:col-span-2">
+              Браузер не получает RTSP. Кадр снимает шлюз в локальной сети.
+            </p>
+            <label className="block">
+              <span className="text-sm text-muted">Протокол</span>
+              <Select value={protocol} onChange={(event) => setProtocol(event.target.value)} wrapClassName="mt-2">
+                <option value="http-snapshot">HTTP кадр</option>
+                <option value="onvif">ONVIF</option>
+                <option value="rtsp">RTSP (только кадр по URL)</option>
+              </Select>
+            </label>
+            <label className="block">
+              <span className="text-sm text-muted">Адрес</span>
+              <input value={cameraHost} onChange={(event) => setCameraHost(event.target.value)} className="control mt-2" placeholder="192.168.1.20" />
+            </label>
+            <label className="block">
+              <span className="text-sm text-muted">Порт</span>
+              <input value={cameraPort} onChange={(event) => setCameraPort(event.target.value)} className="control mt-2" placeholder="80" />
+            </label>
+            <label className="block">
+              <span className="text-sm text-muted">Путь</span>
+              <input value={cameraPath} onChange={(event) => setCameraPath(event.target.value)} className="control mt-2" placeholder="/onvif/media_service" />
+            </label>
+            <label className="block sm:col-span-2">
+              <span className="text-sm text-muted">URL кадра</span>
+              <input value={snapshotUrl} onChange={(event) => setSnapshotUrl(event.target.value)} className="control mt-2" placeholder="http://192.168.1.20/snapshot.jpg" />
+            </label>
+            <label className="block">
+              <span className="text-sm text-muted">Логин</span>
+              <input value={cameraUser} onChange={(event) => setCameraUser(event.target.value)} className="control mt-2" autoComplete="off" />
+            </label>
+            <label className="block">
+              <span className="text-sm text-muted">Пароль {device.camera?.hasPassword ? "(сохранён)" : ""}</span>
+              <input
+                type="password"
+                value={cameraPassword}
+                onChange={(event) => setCameraPassword(event.target.value)}
+                className="control mt-2"
+                autoComplete="new-password"
+                placeholder={device.camera?.hasPassword ? "Оставьте пустым, чтобы не менять" : ""}
+              />
+            </label>
+            <div className="sm:col-span-2">
+              <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => void saveCamera()}>
+                Сохранить поток
+              </button>
+            </div>
+          </section>
+        ) : null}
 
         <section className="panel p-5">
           <p className="text-[16px] text-ink">Каналы</p>

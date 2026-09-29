@@ -14,6 +14,7 @@
 - Буфер исходящих вызовов при 5xx / обрыве сети (`STAR_HOME_GATEWAY_BUFFER_PATH`).
 - Повторный pull той же команды не публикует MQTT дважды (in-flight lock + память id).
 - Локальные сценарии и критические правила (pack с pull, EVENT/SCHEDULE, leak/fire).
+- Камеры: pull `cameras`, команда `captureFrame`, JPEG из LAN (HTTP snapshot / ONVIF). Live RTSP нет. Echo не рисует кадр.
 
 MQTT `confirmed: true` только если после publish на control topic (без `/on`) пришло совпадающее значение. Publish без echo — `sent`, затем `mqtt-timeout` / FAILED. Житель не видит «Сделано» без `confirmed`.
 

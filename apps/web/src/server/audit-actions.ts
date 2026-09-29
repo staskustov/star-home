@@ -30,6 +30,7 @@ export const auditActions = {
   RAISE_SOS: { label: "SOS", category: "SECURITY" },
   SECURITY_CHAT: { label: "Сообщение охране", category: "SECURITY" },
   CAMERA_VIEW: { label: "Кадр с камеры", category: "SECURITY" },
+  CAMERA_EDIT: { label: "Поток камеры", category: "ENGINEERING" },
   ALARM_ACCEPT: { label: "Тревога принята", category: "SECURITY" },
   ALARM_CLOSE: { label: "Тревога закрыта", category: "SECURITY" },
   PASS_CHECK: { label: "Проверка пропуска", category: "ACCESS" },

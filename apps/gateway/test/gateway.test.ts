@@ -435,3 +435,105 @@ describe("gateway local runtime", () => {
     assert.equal(devices.find((item) => item.externalId === "wb-msw")?.channels[0]?.capability, "smoke");
   });
 });
+
+describe("gateway camera capture", () => {
+  function jpegBytes(size = 64): Buffer {
+    const bytes = Buffer.alloc(size, 0);
+    bytes[0] = 0xff;
+    bytes[1] = 0xd8;
+    bytes[2] = 0xff;
+    return bytes;
+  }
+
+  it("captures an HTTP snapshot JPEG", async () => {
+    const { captureCameraFrame } = await import("../camera-capture");
+    const jpeg = jpegBytes();
+    const calls: string[] = [];
+    const result = await captureCameraFrame(
+      {
+        id: "gcmd_snap",
+        deviceId: "cam_1",
+        command: "captureFrame",
+        value: { protocol: "http-snapshot", snapshotUrl: "http://192.168.1.20/snap.jpg", username: "cam", password: "secret" },
+      },
+      (async (url, init) => {
+        calls.push(String(url));
+        assert.equal((init?.headers as { authorization?: string } | undefined)?.authorization?.startsWith("Basic "), true);
+        return { ok: true, arrayBuffer: async () => jpeg };
+      }) as typeof fetch,
+    );
+    assert.equal(result.confirmed, true);
+    assert.equal(result.sent, true);
+    assert.equal(result.frame, jpeg.toString("base64"));
+    assert.deepEqual(calls, ["http://192.168.1.20/snap.jpg"]);
+  });
+
+  it("resolves ONVIF snapshot URI from a profile token", async () => {
+    const { captureCameraFrame } = await import("../camera-capture");
+    const jpeg = jpegBytes();
+    const urls: string[] = [];
+    const result = await captureCameraFrame(
+      {
+        id: "gcmd_onvif",
+        deviceId: "cam_1",
+        command: "captureFrame",
+        value: { protocol: "onvif", host: "192.168.1.20", username: "admin", password: "pw" },
+      },
+      (async (url, init) => {
+        urls.push(String(url));
+        const body = String(init?.body ?? "");
+        if (body.includes("GetProfiles")) {
+          return { ok: true, text: async () => `<s:Envelope><trt:Profiles token="Profile_1"></trt:Profiles></s:Envelope>` };
+        }
+        if (body.includes("GetSnapshotUri")) {
+          assert.match(body, /Profile_1/);
+          return { ok: true, text: async () => `<tt:Uri>http://192.168.1.20/onvif-snap.jpg</tt:Uri>` };
+        }
+        return { ok: true, arrayBuffer: async () => jpeg };
+      }) as typeof fetch,
+    );
+    assert.equal(result.confirmed, true);
+    assert.equal(result.frame, jpeg.toString("base64"));
+    assert.equal(urls[2], "http://192.168.1.20/onvif-snap.jpg");
+  });
+
+  it("does not claim live RTSP without a snapshot URL", async () => {
+    const { captureCameraFrame } = await import("../camera-capture");
+    const result = await captureCameraFrame({
+      id: "gcmd_rtsp",
+      deviceId: "cam_1",
+      command: "captureFrame",
+      value: { protocol: "rtsp", host: "192.168.1.20", port: 554 },
+    });
+    assert.equal(result.confirmed, false);
+    assert.equal(result.error, "rtsp-live-unsupported");
+    assert.equal(result.frame, undefined);
+  });
+
+  it("rejects a non-JPEG body", async () => {
+    const { captureCameraFrame } = await import("../camera-capture");
+    const result = await captureCameraFrame(
+      {
+        id: "gcmd_png",
+        deviceId: "cam_1",
+        command: "captureFrame",
+        value: { protocol: "http-snapshot", snapshotUrl: "http://192.168.1.20/snap.png" },
+      },
+      (async () => ({ ok: true, arrayBuffer: async () => Buffer.from("not-a-jpeg-payload-padding-xxxxxx") })) as typeof fetch,
+    );
+    assert.equal(result.confirmed, false);
+    assert.equal(result.sent, true);
+    assert.equal(result.error, "not-jpeg");
+    assert.equal(result.frame, undefined);
+  });
+
+  it("does not invent a JPEG in echo mode", async () => {
+    const result = await applyQueuedCommand(
+      { id: "gcmd_echo_cam", deviceId: "cam_1", command: "captureFrame", value: { protocol: "http-snapshot" }, adapter: "local" },
+      { echo: true, discover: () => ({ confirmed: false }) },
+    );
+    assert.equal(result.confirmed, false);
+    assert.equal(result.error, "camera-via-capture");
+    assert.equal(result.frame, undefined);
+  });
+});

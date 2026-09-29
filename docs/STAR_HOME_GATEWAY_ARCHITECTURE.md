@@ -1,7 +1,7 @@
 # STAR HOME — локальный шлюз
 
 Дата: 2026-09-29  
-Статус: этапы 2–7 в коде агента `apps/gateway` и админки `/admin/devices`.
+Статус: этапы 2–8 в коде агента `apps/gateway` и админки `/admin/devices`.
 
 ## Роль
 
@@ -28,10 +28,11 @@ Last contact: любой успешный heartbeat / pull / ack / state обн�
 | kind | Назначение |
 |------|------------|
 | heartbeat | статус, версия, lastError |
-| pull | PENDING-команды + `externalId`, `endpoint`, `adapter` + пакет `automations` |
-| ack | `confirmed` → ACKED и state; `sent` без error → SENT, state не применяется; `sent` + error / иначе → FAILED |
+| pull | PENDING-команды + `externalId`, `endpoint`, `adapter` + пакет `automations` + пакет `cameras` (секреты потока только здесь) |
+| ack | `confirmed` → ACKED и state; `sent` без error → SENT, state не применяется; `sent` + error / иначе → FAILED; `frame` JPEG при `captureFrame` |
 | state | ingest каналов по `externalId` / `deviceId` |
 | automation | отчёт локального прогона (`runId`, scenarioId/ruleId, confirmed). Повтор того же `runId` не применяется |
+| camera | ingest JPEG кадра (`deviceId`, `jpeg`/`frame`) |
 
 4xx не буферизуются. 5xx и обрыв сети — в outbound buffer, повтор при следующем цикле.
 
@@ -41,8 +42,9 @@ Last contact: любой успешный heartbeat / pull / ack / state обн�
 2. `http` / `endpoint` — POST, `confirmed` только если тело `confirmed: true`.
 3. `wirenboard` / `mqtt` — publish `/devices/{id}/controls/{control}/on`, ждать echo на control topic; `confirmed` только при совпадении. Таймаут → `mqtt-timeout` → FAILED.
 4. `runScenario` — шаги из `value.steps` на агенте, затем отчёт `automation`.
-5. Иначе `agent-unapplied`.
-6. Echo/demo — только при `STAR_HOME_GATEWAY_ECHO=1` или `STAR_HOME_DEMO=1`.
+5. `captureFrame` — HTTP JPEG / ONVIF snapshot; RTSP без snapshotUrl не подтверждается; echo **не** рисует кадр.
+6. Иначе `agent-unapplied`.
+7. Echo/demo — только при `STAR_HOME_GATEWAY_ECHO=1` или `STAR_HOME_DEMO=1`, кроме камер.
 
 Повтор command id не приводит к повторному publish: in-flight lock + запомненный результат.
 
@@ -54,9 +56,13 @@ Last contact: любой успешный heartbeat / pull / ack / state обн�
 
 UI не пишет, что сценарий «работает», если `runtime: gateway` и шлюз offline/stale.
 
+## Камеры
+
+Агент — медиашлюз. Pull отдаёт `cameras` с адресом и паролем. `captureFrame` снимает JPEG в LAN. Облако кадр из LAN не забирает. Браузер RTSP не получает. `docs/STAR_HOME_CAMERA_ARCHITECTURE.md`.
+
 ## Что ещё не сделано
 
 - Mutual TLS.
-- Камеры (этап 8).
+- Live HLS / RTSP в браузере.
 
-Файлы: `apps/gateway/agent.ts`, `apply.ts`, `local-runtime.ts`, `mqtt-session.ts`, `topic-cache.ts`, `command-once.ts`, `outbound-buffer.ts`, `broker-url.ts`, `apps/web/src/server/gateway-contact.ts`, `automation.ts`.
+Файлы: `apps/gateway/agent.ts`, `apply.ts`, `camera-capture.ts`, `local-runtime.ts`, `mqtt-session.ts`, `topic-cache.ts`, `command-once.ts`, `outbound-buffer.ts`, `broker-url.ts`, `apps/web/src/server/gateway-contact.ts`, `automation.ts`, `camera-media.ts`.

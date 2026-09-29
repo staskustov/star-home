@@ -391,6 +391,27 @@ export type AutomationRun = {
   confirmed: boolean;
 };
 
+export type CameraProtocol = "onvif" | "rtsp" | "http-snapshot";
+
+export type CameraMedia = {
+  deviceId: string;
+  protocol: CameraProtocol;
+  host: string;
+  port?: number | null;
+  path?: string | null;
+  snapshotUrl?: string | null;
+  username?: string | null;
+  password?: string | null;
+};
+
+export type CameraFrame = {
+  deviceId: string;
+  gatewayId?: string;
+  at: string;
+  mime: "image/jpeg";
+  bytes: string;
+};
+
 export type HomeChipKind = "LIFE_MODE" | "SCENARIO" | "ACTION";
 
 export type HomeChip = {
@@ -451,6 +472,8 @@ type OpsFile = {
   favorites: DeviceFavorite[];
   scenarios: Scenario[];
   automationRuns: AutomationRun[];
+  cameraMedia: CameraMedia[];
+  cameraFrames: CameraFrame[];
   liveSeq: Record<string, number>;
   chats: SecurityChatMessage[];
   pushDevices: PushDevice[];
@@ -756,6 +779,8 @@ function seed(): OpsFile {
     favorites: [],
     scenarios: [],
     automationRuns: [],
+    cameraMedia: [],
+    cameraFrames: [],
     liveSeq: {},
     chats: [],
     pushDevices: [],
@@ -916,6 +941,7 @@ export function trimSmartLayers(file: OpsFile, now = Date.now()): void {
   file.commandLogs = (file.commandLogs ?? []).slice(0, 400);
   file.gatewayExchanges = (file.gatewayExchanges ?? []).slice(0, 200);
   file.automationRuns = (file.automationRuns ?? []).slice(0, 200);
+  file.cameraFrames = (file.cameraFrames ?? []).slice(0, 80);
 }
 
 export function commandExpired(command: GatewayCommand, now = Date.now()): boolean {
@@ -941,6 +967,8 @@ function normalize(file: OpsFile): OpsFile {
   file.favorites ??= [];
   file.scenarios ??= [];
   file.automationRuns ??= [];
+  file.cameraMedia ??= [];
+  file.cameraFrames ??= [];
   file.liveSeq ??= {};
   file.chats ??= [];
   file.pushDevices ??= [];
@@ -1160,7 +1188,7 @@ export function homeSignals(unitId: string, objectId: string): {
   request: { title: string; detail: string; authorUserId: string } | null;
   payments: { title: string; amount: number; currency: string }[];
   categories: string[];
-  cameras: { name: string; state: string }[];
+  cameras: { id: string; name: string; state: string; hasFrame: boolean }[];
   devices: {
     id: string;
     name: string;
@@ -1230,8 +1258,13 @@ export function homeSignals(unitId: string, objectId: string): {
       .map((invoice) => ({ title: invoice.title, amount: invoice.amount, currency: invoice.currency })),
     categories,
     cameras: file.devices
-      .filter((device) => device.kind === "CAMERA" && device.objectId === objectId && (device.unitId === unitId || device.unitId === null))
-      .map((device) => ({ name: device.name, state: device.work === "OFF" ? "Отключено" : device.work === "FAULT" ? "Неисправно" : "На связи" })),
+      .filter((device) => device.kind === "CAMERA" && device.objectId === objectId && (device.unitId === unitId || device.unitId === null) && residentSeesDevice(device))
+      .map((device) => ({
+        id: device.id,
+        name: device.name,
+        state: device.work === "OFF" ? "Отключено" : device.work === "FAULT" ? "Неисправно" : "На связи",
+        hasFrame: file.cameraFrames.some((frame) => frame.deviceId === device.id),
+      })),
     devices: visible.map((device) => {
         const opener = isOpener(device.kind);
         const caps = device.capabilities ?? [];

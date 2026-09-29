@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "crypto";
 import { packAutomations, ingestAutomationRun, type GatewayAutomationPack } from "@/server/automation";
+import { ingestCameraFrame, packCameras } from "@/server/camera-media";
 import { completeDiscovery } from "@/server/device-discovery";
 import { ackGatewayCommand, pullGatewayCommands } from "@/server/gateway-queue";
 import { emitLive } from "@/server/live-bus";
@@ -83,6 +84,7 @@ export function pullGateway(token: string | null): Result<{
     adapter: string;
   }[];
   automations: GatewayAutomationPack;
+  cameras: ReturnType<typeof packCameras>;
 }> {
   const gateway = gatewayByToken(token);
   if (!gateway) return { ok: false, status: 401, message: "Нет доступа" };
@@ -118,7 +120,16 @@ export function pullGateway(token: string | null): Result<{
     });
     writeOps(logged);
   }
-  return { ok: true, value: { commands, automations: packAutomations(gateway.id) } };
+  return { ok: true, value: { commands, automations: packAutomations(gateway.id), cameras: packCameras(gateway.id) } };
+}
+
+export function ingestCamera(
+  token: string | null,
+  input: { deviceId?: unknown; jpeg?: unknown; frame?: unknown; at?: unknown },
+): Result<{ applied: boolean }> {
+  const gateway = gatewayByToken(token);
+  if (!gateway) return { ok: false, status: 401, message: "Нет доступа" };
+  return { ok: true, value: ingestCameraFrame(gateway.id, input) };
 }
 
 export function ingestAutomation(
@@ -132,12 +143,18 @@ export function ingestAutomation(
 
 export function ackGateway(
   token: string | null,
-  input: { commandId?: unknown; confirmed?: unknown; sent?: unknown; state?: unknown; devices?: unknown; error?: unknown },
+  input: { commandId?: unknown; confirmed?: unknown; sent?: unknown; state?: unknown; devices?: unknown; error?: unknown; frame?: unknown; jpeg?: unknown },
 ): Result<{ commandId: string; applied: boolean }> {
   const gateway = gatewayByToken(token);
   if (!gateway) return { ok: false, status: 401, message: "Нет доступа" };
   const result = ackGatewayCommand(gateway.id, input);
   if (result.ok) completeDiscovery(gateway.id, typeof input.commandId === "string" ? input.commandId : "", input);
+  if (result.ok && (input.frame || input.jpeg)) {
+    const row = readOps().gatewayCommands.find((item) => item.id === result.value.commandId);
+    if (row?.command === "captureFrame") {
+      ingestCameraFrame(gateway.id, { deviceId: row.deviceId, jpeg: input.jpeg ?? input.frame });
+    }
+  }
   if (result.ok) {
     const file = readOps();
     expireStaleGateways(file);

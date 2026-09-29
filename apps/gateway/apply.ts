@@ -14,6 +14,7 @@ export type ApplyResult = {
   error?: string;
   state?: Record<string, unknown>;
   devices?: unknown;
+  frame?: string;
 };
 
 export type ApplyContext = {
@@ -174,6 +175,9 @@ export async function applyQueuedCommand(command: ApplyCommand, ctx: ApplyContex
     return found.confirmed
       ? { confirmed: true, devices: found.devices }
       : { confirmed: false, error: found.error ?? "no-discovery-source" };
+  }
+  if (command.command === "captureFrame") {
+    return { confirmed: false, error: "camera-via-capture" };
   }
   if (ctx.echo) {
     return { confirmed: true, sent: true, state: expectedState(command.command, command.value) };

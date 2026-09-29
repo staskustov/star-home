@@ -5,6 +5,7 @@ import { deviceLabel, isOpener } from "@/server/device-kinds";
 import { findUserById } from "@/server/directory";
 import { recordAudit } from "@/server/operations";
 import { clock, outdoorWeather, readOps, writeOps, type Alarm, type Device } from "@/server/ops-store";
+import { cameraStreamState, frameOf } from "@/server/camera-media";
 import { can, objectFor, objectsInScope, reaches, type StaffActor } from "@/server/rbac/decide";
 import { securityChatsFor } from "@/server/security-desk";
 import { publishLive } from "@/server/store-bind";
@@ -57,7 +58,20 @@ function postObject(actor: StaffActor, objectId: unknown) {
 function cameraRows(actor: StaffActor, objectId: string): SecurityCamera[] {
   return readOps()
     .devices.filter((device) => device.objectId === objectId && device.kind === "CAMERA" && reaches(actor, device))
-    .map((device) => ({ id: device.id, name: device.name, place: placeName(device.unitId), ...workState(device) }));
+    .map((device) => {
+      const work = workState(device);
+      const hasFrame = Boolean(frameOf(device.id));
+      const stream = cameraStreamState(device);
+      return {
+        id: device.id,
+        name: device.name,
+        place: placeName(device.unitId),
+        ...work,
+        hasFrame,
+        stream,
+        frameUrl: hasFrame ? `/api/smart-home/cameras/${device.id}/frame` : null,
+      };
+    });
 }
 
 export function securityCameras(actor: StaffActor, objectId: unknown): Success<SecurityCameraWall> | Failure {

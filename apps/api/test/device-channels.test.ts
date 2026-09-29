@@ -86,6 +86,7 @@ describe("device channel model", () => {
   it("hides object engineering from the resident and keeps gates", () => {
     assert.equal(residentSeesDevice({ kind: "GATE", unitId: null }), true);
     assert.equal(residentSeesDevice({ kind: "WEATHER", unitId: null }), true);
+    assert.equal(residentSeesDevice({ kind: "CAMERA", unitId: null }), true);
     assert.equal(residentSeesDevice({ kind: "POWER", unitId: null }), false);
     assert.equal(residentSeesDevice({ kind: "WATER", unitId: null, metadata: { engineering: true } }), false);
     assert.equal(residentSeesDevice({ kind: "POWER", unitId: "unit_24" }), true);

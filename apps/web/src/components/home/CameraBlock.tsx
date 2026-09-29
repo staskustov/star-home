@@ -3,7 +3,10 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "@/components/icons";
+import { commandMessage, runCommand } from "@/lib/command";
 import type { Tone } from "@/types/domain";
+
+type HomeCamera = { id?: string; name: string; state: string; hasFrame?: boolean };
 
 const toneDot: Record<Tone, string> = {
   success: "bg-success",
@@ -12,11 +15,17 @@ const toneDot: Record<Tone, string> = {
   info: "bg-info",
 };
 
-export function CameraBlock({ cameras }: { cameras: { name: string; state: string }[] }) {
+export function CameraBlock({ cameras }: { cameras: HomeCamera[] }) {
   const [viewer, setViewer] = useState<number | null>(null);
   const [mounted, setMounted] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [frameAt, setFrameAt] = useState<Record<string, number>>({});
   const camera = viewer !== null ? cameras[viewer] ?? cameras[0] : null;
   const tone = toneFor(camera?.state ?? "");
+  const frameStamp = camera?.id ? frameAt[camera.id] : undefined;
+  const showFrame = Boolean(camera?.id && (frameStamp || camera.hasFrame));
+  const frameSrc = camera?.id && showFrame ? `/api/smart-home/cameras/${camera.id}/frame?t=${frameStamp ?? "last"}` : null;
 
   useEffect(() => {
     setMounted(true);
@@ -35,6 +44,33 @@ export function CameraBlock({ cameras }: { cameras: { name: string; state: strin
       document.body.style.overflow = previous;
     };
   }, [viewer]);
+
+  useEffect(() => {
+    if (viewer === null) return;
+    const current = cameras[viewer];
+    if (!current?.id) return;
+    void requestFrame(current);
+    // Request once per selected camera, not on every cameras array identity change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewer, cameras[viewer]?.id]);
+
+  async function requestFrame(item: HomeCamera) {
+    if (!item.id) return;
+    setBusy(true);
+    setNotice(null);
+    const result = await runCommand(() =>
+      fetch(`/api/smart-home/cameras/${item.id}/frame`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}),
+      }),
+    );
+    setBusy(false);
+    setNotice(commandMessage(result.payload, "Не удалось получить кадр."));
+    if (result.ok && (result.payload?.hasFrame === true || result.payload?.confirmed === true)) {
+      setFrameAt((current) => ({ ...current, [item.id!]: Date.now() }));
+    }
+  }
 
   if (cameras.length === 0) return null;
   const online = cameras.filter((item) => toneFor(item.state) === "success").length;
@@ -61,16 +97,25 @@ export function CameraBlock({ cameras }: { cameras: { name: string; state: strin
               </button>
             </div>
             <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 bg-black px-5 text-center">
-              <span className="grid h-16 w-16 place-items-center rounded-full bg-white/8 text-[#f7f1e8]/55">
-                <Icon name="camera" className="h-8 w-8" />
-              </span>
-              <p className="text-[15px] text-[#f7f1e8]/70">Видеопоток не подключён</p>
+              {frameSrc ? (
+                // Session cookie must follow the JPEG; next/image would drop it.
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={frameSrc} alt={camera.name} className="max-h-full max-w-full object-contain" />
+              ) : (
+                <>
+                  <span className="grid h-16 w-16 place-items-center rounded-full bg-white/8 text-[#f7f1e8]/55">
+                    <Icon name="camera" className="h-8 w-8" />
+                  </span>
+                  <p className="text-[15px] text-[#f7f1e8]/70">{busy ? "Запрашиваем кадр…" : "Видеопоток не подключён"}</p>
+                </>
+              )}
+              {notice ? <p className="text-[13px] text-[#f7f1e8]/70">{notice}</p> : null}
             </div>
             {cameras.length > 1 ? (
               <div className="flex gap-2 overflow-x-auto px-5 py-4" role="list" aria-label="Камеры">
                 {cameras.map((item, position) => (
                   <button
-                    key={item.name}
+                    key={item.id ?? item.name}
                     type="button"
                     role="listitem"
                     aria-pressed={position === viewer}

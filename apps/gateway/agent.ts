@@ -10,7 +10,7 @@
  */
 
 import { readFileSync } from "fs";
-import { applyQueuedCommand, type ApplyCommand, type ApplyResult } from "./apply";
+import { captureCameraFrame } from "./camera-capture";
 import { createCommandOnce } from "./command-once";
 import { createLocalRuntime, type AutomationPack, type AutomationReport } from "./local-runtime";
 import { createOutboundBuffer, shouldBufferStatus, type OutboundItem } from "./outbound-buffer";
@@ -232,6 +232,9 @@ async function applyOne(command: ApplyCommand): Promise<ApplyResult> {
   if (command.command === "runScenario") {
     return applied.run(command.id, () => applyRunScenario(command));
   }
+  if (command.command === "captureFrame") {
+    return applied.run(command.id, () => captureCameraFrame(command));
+  }
   return applyHardware(command);
 }
 
@@ -258,6 +261,7 @@ async function tick() {
     };
     if (result.confirmed && result.state) ack.state = result.state;
     if (result.devices) ack.devices = result.devices;
+    if (result.frame) ack.frame = result.frame;
     await call("ack", ack);
   }
   await queueEvaluate("schedule");

@@ -11,6 +11,7 @@ import {
   type PublicChannel,
 } from "@/server/device-channels";
 import { deviceCommission, deviceKinds, deviceLabel, type DeviceKind, type DeviceProbeResult } from "@/server/device-kinds";
+import { publicMedia, type CameraPublicMedia } from "@/server/camera-media";
 import { recordAudit } from "@/server/operations";
 import {
   gatewaysForObject,
@@ -61,6 +62,7 @@ export type RegistryDevice = {
   lastProbeAt: string | null;
   lastProbeMs: number | null;
   lastProbeResult: DeviceProbeResult | null;
+  camera: CameraPublicMedia | null;
 };
 
 export type RegistryGateway = {
@@ -137,6 +139,7 @@ function asDevice(device: Device): RegistryDevice {
     lastProbeAt: commission.lastProbeAt,
     lastProbeMs: commission.lastProbeMs,
     lastProbeResult: commission.lastProbeResult,
+    camera: normalized.kind === "CAMERA" ? publicMedia(normalized.id) : null,
   };
 }
 
