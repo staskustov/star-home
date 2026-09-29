@@ -16,6 +16,8 @@ type Scenario = {
   scheduleMinute?: number | null;
   conditions?: { deviceId: string; field: string; value?: unknown }[];
   steps: { deviceId: string; command: string; value?: unknown }[];
+  runtime?: "cloud" | "gateway";
+  executes?: boolean;
 };
 type Device = { id?: string; name: string };
 
@@ -37,7 +39,7 @@ export function ScenarioList({ scenarios, devices }: { scenarios: Scenario[]; de
       fetch(`/api/smart-home/scenarios/${scenarioId}/run`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }),
     );
     setNotice(result.payload?.needsConfirm ? "Подтвердите опасный шаг в карточке устройства." : commandMessage(result.payload));
-    if (result.ok && result.payload?.confirmed) router.refresh();
+    if (result.ok) router.refresh();
   }
 
   async function create(event: React.FormEvent) {
@@ -162,12 +164,14 @@ export function ScenarioList({ scenarios, devices }: { scenarios: Scenario[]; de
 }
 
 function label(scenario: Scenario): string {
-  if (scenario.trigger === "LIFE_MODE") return `Режим ${scenario.lifeMode}`;
+  const place =
+    scenario.runtime === "gateway" ? (scenario.executes === false ? "шлюз не исполняет" : "на шлюзе") : "в облаке";
+  if (scenario.trigger === "LIFE_MODE") return `Режим ${scenario.lifeMode} · ${place}`;
   if (scenario.trigger === "SCHEDULE") {
     const hour = scenario.scheduleHour ?? 0;
     const minute = String(scenario.scheduleMinute ?? 0).padStart(2, "0");
-    return `В ${hour}:${minute}`;
+    return `В ${hour}:${minute} · ${place}`;
   }
-  if (scenario.trigger === "EVENT") return "По событию";
-  return "Вручную";
+  if (scenario.trigger === "EVENT") return `По событию · ${place}`;
+  return `Вручную · ${place}`;
 }

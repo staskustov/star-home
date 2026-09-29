@@ -205,6 +205,8 @@ describe("another company", () => {
       ["discoveryScan", { scanId: "scan_rival" }],
       ["updateDevice", { deviceId: "dev_rival", name: "Захват" }],
       ["removeDevice", { deviceId: "dev_rival" }],
+      ["probeDevice", { deviceId: "dev_rival" }],
+      ["handOverDevice", { deviceId: "dev_rival" }],
       ["listGateways", { objectId: rival.objectId }],
       ["createGateway", { objectId: rival.objectId, name: "Захват" }],
       ["updateGateway", { gatewayId: "gw_rival", name: "Захват" }],

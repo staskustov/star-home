@@ -89,6 +89,9 @@ describe("device channel model", () => {
     assert.equal(residentSeesDevice({ kind: "POWER", unitId: null }), false);
     assert.equal(residentSeesDevice({ kind: "WATER", unitId: null, metadata: { engineering: true } }), false);
     assert.equal(residentSeesDevice({ kind: "POWER", unitId: "unit_24" }), true);
+    assert.equal(residentSeesDevice({ kind: "LIGHTING", unitId: "unit_24", metadata: { handedOver: false } }), false);
+    assert.equal(residentSeesDevice({ kind: "GATE", unitId: null, metadata: { handedOver: false } }), false);
+    assert.equal(residentSeesDevice({ kind: "LIGHTING", unitId: "unit_24" }), true);
   });
 
   it("infers a device kind from discovered capabilities", () => {

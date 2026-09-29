@@ -389,6 +389,12 @@ describe("smart home registry", () => {
     const next = after.devices.find((item) => item.id === deviceId);
     assert.equal(next?.channels.find((channel) => channel.capability === "illuminance")?.enabled, false);
     assert.equal(next?.channels.find((channel) => channel.capability === "temperature")?.displayName, "Температура зала");
+    const ops = await import("../../web/src/server/ops-store");
+    const snapshot = ops.readOps();
+    const row = snapshot.devices.find((item) => item.id === deviceId);
+    assert.ok(row);
+    row.metadata = { ...row.metadata, handedOver: true };
+    ops.writeOps(snapshot);
     const card = (await rpc("smartHomeDevice", { deviceId }, resident)).body as {
       device: { channels?: { capability: string; displayName: string }[]; technical?: unknown };
     };
@@ -419,6 +425,7 @@ describe("smart home registry", () => {
     };
     const device = listed.devices.find((item) => item.id === deviceId);
     assert.ok(device);
+    assert.equal((await rpc("probeDevice", { deviceId }, objectAdmin)).status, 200);
     const patched = await rpc(
       "updateDevice",
       {
@@ -428,6 +435,7 @@ describe("smart home registry", () => {
       objectAdmin,
     );
     assert.equal(patched.status, 200, JSON.stringify(patched.body));
+    assert.equal((await rpc("handOverDevice", { deviceId }, objectAdmin)).status, 200);
     assert.equal((await rpc("commandDeviceSmart", { deviceId, command: "setTemperature", value: 21 }, resident)).status, 400);
     const card = (await rpc("smartHomeDevice", { deviceId }, resident)).body as { device: { commands: string[] } };
     assert.ok(!card.device.commands.includes("setTemperature"));

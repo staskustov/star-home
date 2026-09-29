@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAdminPreview } from "@/components/admin/AdminPreview";
-import { formatChannelValue, formatLastContact, gatewayErrorText } from "@/lib/format";
+import { formatChannelValue, formatLastContact, formatProbeResult, gatewayErrorText } from "@/lib/format";
 import { commandMessage, runCommand } from "@/lib/command";
 import { Select } from "@/components/ui/Select";
 
@@ -43,6 +43,10 @@ export type AdminDevice = {
   model?: string | null;
   serialNumber?: string | null;
   externalId?: string | null;
+  handedOver?: boolean;
+  lastProbeAt?: string | null;
+  lastProbeMs?: number | null;
+  lastProbeResult?: string | null;
   channels: Channel[];
 };
 
@@ -99,9 +103,9 @@ export function DeviceDetail({
   const [channels, setChannels] = useState(device.channels ?? []);
   const [technical, setTechnical] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const [token, setToken] = useState<string | null>(null);
-  const [pending, setPending] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [probing, setProbing] = useState(false);
+  const [handing, setHanding] = useState(false);
   const roomsOfHouse = useMemo(() => {
     const list = rooms ?? [];
     const ofHouse = list.filter((room) => room.objectId === device.objectId && room.unitId === unitId);
@@ -131,26 +135,38 @@ export function DeviceDetail({
     if (result.ok) router.refresh();
   }
 
-  async function testCommand(command: string, confirmToken?: string) {
+  async function probe() {
+    setProbing(true);
     setNotice(null);
-    const result = await runCommand(() =>
-      fetch(`/api/smart-home/devices/${device.id}/command`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ command, value: command === "setPower" ? true : undefined, confirmToken }),
-      }),
-    );
-    if (result.payload?.needsConfirm && typeof result.payload.token === "string") {
-      setToken(result.payload.token);
-      setPending(command);
-      setNotice("Подтвердите команду.");
-      return;
-    }
-    setToken(null);
-    setPending(null);
-    setNotice(commandMessage(result.payload));
+    const result = await runCommand(() => fetch(`/api/smart-home/devices/${device.id}/probe`, { method: "POST" }));
+    setProbing(false);
+    setNotice(commandMessage(result.payload, "Не удалось проверить устройство."));
     if (result.ok) router.refresh();
   }
+
+  async function handOver(recall = false) {
+    setHanding(true);
+    setNotice(null);
+    const result = await runCommand(() =>
+      fetch(`/api/smart-home/devices/${device.id}/handover`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ recall }),
+      }),
+    );
+    setHanding(false);
+    setNotice(
+      result.ok
+        ? recall
+          ? "Забрано у жильца."
+          : "Передано жильцу."
+        : commandMessage(result.payload, "Не удалось передать жильцу."),
+    );
+    if (result.ok) router.refresh();
+  }
+
+  const probeText = formatProbeResult(device.lastProbeMs, device.lastProbeResult);
+  const handedOver = device.handedOver !== false;
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -161,6 +177,8 @@ export function DeviceDetail({
       <p className="mt-3 text-[15px] text-muted">
         {device.kind} · {statusText[device.status ?? device.availability ?? "UNKNOWN"] ?? device.status} · {placeText(device)}
         {device.lastSeen ? ` · ${formatLastContact(device.lastSeen)}` : ""}
+        {!handedOver ? " · не передано жильцу" : device.lastProbeResult ? " · передано жильцу" : ""}
+        {probeText ? ` · ${probeText}` : ""}
       </p>
       {device.lastError ? <p className="mt-2 text-sm text-danger">{gatewayErrorText(device.lastError)}</p> : null}
 
@@ -315,13 +333,23 @@ export function DeviceDetail({
             </button>
           ) : null}
           {allowCommand ? (
-            <button type="button" className="btn btn-secondary" onClick={() => void testCommand("setPower")}>
-              Тест
+            <button type="button" className="btn btn-secondary" disabled={probing} onClick={() => void probe()}>
+              {probing ? "Проверяем…" : "Проверка"}
             </button>
           ) : null}
-          {token && pending ? (
-            <button type="button" className="btn btn-primary" onClick={() => void testCommand(pending, token)}>
-              Подтвердить команду
+          {allowEdit && handedOver ? (
+            <button type="button" className="btn btn-secondary" disabled={handing} onClick={() => void handOver(true)}>
+              Забрать у жильца
+            </button>
+          ) : null}
+          {allowEdit && !handedOver ? (
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={handing || device.lastProbeResult !== "confirmed"}
+              onClick={() => void handOver(false)}
+            >
+              Передать жильцу
             </button>
           ) : null}
         </div>

@@ -32,6 +32,15 @@ const controlMeta: Record<string, { capability: string; unit: string; displayNam
   brightness: { capability: "brightness", unit: "%", displayName: "Яркость" },
   target: { capability: "thermostat", unit: "°C", displayName: "Термостат" },
   position: { capability: "position", unit: "%", displayName: "Положение" },
+  leak: { capability: "leak", unit: "", displayName: "Протечка" },
+  flood: { capability: "leak", unit: "", displayName: "Протечка" },
+  waterleak: { capability: "leak", unit: "", displayName: "Протечка" },
+  smoke: { capability: "smoke", unit: "", displayName: "Дым" },
+  fire: { capability: "smoke", unit: "", displayName: "Дым" },
+  motion: { capability: "motion", unit: "", displayName: "Движение" },
+  pir: { capability: "motion", unit: "", displayName: "Движение" },
+  occupancy: { capability: "presence", unit: "", displayName: "Присутствие" },
+  presence: { capability: "presence", unit: "", displayName: "Присутствие" },
 };
 
 function keyOf(value: string): string {

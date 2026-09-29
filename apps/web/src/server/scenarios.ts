@@ -1,4 +1,5 @@
 import type { SessionRef } from "@/server/actor";
+import { enqueueScenarioOnGateway, inferScenarioRuntime, scenarioExecutes, scenarioRuntime, type ScenarioRuntime } from "@/server/automation";
 import { findObject } from "@/server/catalog-store";
 import { commandDeviceSmart, smartViewer, viewerReaches } from "@/server/smart-home";
 import { recordAudit } from "@/server/operations";
@@ -49,6 +50,8 @@ function cleanSteps(value: unknown, companyId: string, objectId: string): Scenar
 }
 
 function asPublic(scenario: Scenario) {
+  const runtime = scenarioRuntime(scenario);
+  const executes = scenarioExecutes(scenario);
   return {
     id: scenario.id,
     objectId: scenario.objectId,
@@ -62,6 +65,8 @@ function asPublic(scenario: Scenario) {
     scheduleHour: scenario.scheduleHour ?? null,
     scheduleMinute: scenario.scheduleMinute ?? null,
     steps: scenario.steps,
+    runtime,
+    executes,
   };
 }
 
@@ -103,6 +108,7 @@ export function createScenario(
     conditions?: unknown;
     scheduleHour?: unknown;
     scheduleMinute?: unknown;
+    runtime?: unknown;
   },
 ): Result<{ id: string }> {
   const viewer = smartViewer(session);
@@ -125,6 +131,11 @@ export function createScenario(
   if (!Array.isArray(conditions)) return conditions;
   const schedule = cleanSchedule(trigger, input.scheduleHour, input.scheduleMinute);
   if (!schedule.ok) return schedule;
+  const involved = [...steps, ...conditions]
+    .map((item) => findDevice("deviceId" in item ? item.deviceId : ""))
+    .filter((item): item is NonNullable<typeof item> => Boolean(item));
+  const runtime: ScenarioRuntime =
+    input.runtime === "gateway" || input.runtime === "cloud" ? input.runtime : inferScenarioRuntime(trigger, involved);
   const scenario: Scenario = {
     id: newId("scen"),
     companyId,
@@ -139,6 +150,7 @@ export function createScenario(
     scheduleHour: schedule.value.hour,
     scheduleMinute: schedule.value.minute,
     steps,
+    runtime,
   };
   const file = readOps();
   file.scenarios.unshift(scenario);
@@ -169,6 +181,7 @@ export function updateScenario(
     scheduleHour?: unknown;
     scheduleMinute?: unknown;
     enabled?: unknown;
+    runtime?: unknown;
   },
 ): Result<{ id: string }> {
   const found = scopedScenario(session, input.scenarioId);
@@ -192,6 +205,7 @@ export function updateScenario(
     current.lifeMode = input.lifeMode ?? undefined;
   }
   if (input.enabled === true || input.enabled === false) current.enabled = input.enabled;
+  if (input.runtime === "gateway" || input.runtime === "cloud") current.runtime = input.runtime;
   if (input.conditions !== undefined) {
     const conditions = cleanConditions(input.conditions, current.companyId, current.objectId);
     if (!Array.isArray(conditions)) return conditions;
@@ -252,6 +266,32 @@ export async function runScenario(
   const found = scopedScenario(session, input.scenarioId);
   if (!found.ok) return found;
   const scenario = found.value;
+  if (scenarioRuntime(scenario) === "gateway") {
+    const queued = enqueueScenarioOnGateway(scenario);
+    if (!queued) return { ok: false, status: 409, message: "Шлюз сценария не найден." };
+    const viewer = smartViewer(session);
+    if (viewer.ok) {
+      recordAudit({
+        actorUserId: actorUser(viewer.value),
+        companyId: scenario.companyId,
+        objectId: scenario.objectId,
+        unitId: scenario.unitId,
+        action: "SCENARIO_RUN",
+        targetType: "scenario",
+        targetId: scenario.id,
+        target: scenario.name,
+        reason: queued.queued ? "Очередь шлюза" : "Отправлено на шлюз",
+      });
+    }
+    return {
+      ok: true,
+      value: {
+        confirmed: false,
+        message: queued.queued ? "Шлюз недоступен. Сценарий в очереди." : "Сценарий отправлен на шлюз.",
+        ran: 0,
+      },
+    };
+  }
   const steps = options?.skipHigh
     ? scenario.steps.filter((step) => {
         const device = findDevice(step.deviceId);
@@ -343,6 +383,7 @@ export async function runEventScenarios(session: SessionRef | null, deviceId: st
     (scenario) =>
       scenario.trigger === "EVENT" &&
       scenario.enabled !== false &&
+      scenarioRuntime(scenario) === "cloud" &&
       viewerReaches(viewer.value, scenario) &&
       (scenario.conditions ?? []).some((item) => item.deviceId === deviceId) &&
       (scenario.conditions ?? []).every(conditionMet),
@@ -364,6 +405,7 @@ export async function runDueSchedules(session: SessionRef | null): Promise<void>
     (scenario) =>
       scenario.trigger === "SCHEDULE" &&
       scenario.enabled !== false &&
+      scenarioRuntime(scenario) === "cloud" &&
       scenario.scheduleHour === hour &&
       scenario.scheduleMinute === minute &&
       scenario.lastRunAt !== today &&
@@ -381,7 +423,12 @@ export async function runLifeModeScenarios(session: SessionRef | null, unitId: s
   const viewer = smartViewer(session);
   if (!viewer.ok) return;
   const rows = readOps().scenarios.filter(
-    (scenario) => scenario.trigger === "LIFE_MODE" && scenario.lifeMode === mode && viewerReaches(viewer.value, scenario) && (scenario.unitId === unitId || scenario.unitId === null),
+    (scenario) =>
+      scenario.trigger === "LIFE_MODE" &&
+      scenario.lifeMode === mode &&
+      scenarioRuntime(scenario) === "cloud" &&
+      viewerReaches(viewer.value, scenario) &&
+      (scenario.unitId === unitId || scenario.unitId === null),
   );
   for (const scenario of rows) {
     await runScenario(session, { scenarioId: scenario.id }, { skipHigh: true });

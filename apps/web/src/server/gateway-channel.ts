@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "crypto";
+import { packAutomations, ingestAutomationRun, type GatewayAutomationPack } from "@/server/automation";
 import { completeDiscovery } from "@/server/device-discovery";
 import { ackGatewayCommand, pullGatewayCommands } from "@/server/gateway-queue";
 import { emitLive } from "@/server/live-bus";
@@ -81,6 +82,7 @@ export function pullGateway(token: string | null): Result<{
     endpoint: string | null;
     adapter: string;
   }[];
+  automations: GatewayAutomationPack;
 }> {
   const gateway = gatewayByToken(token);
   if (!gateway) return { ok: false, status: 401, message: "Нет доступа" };
@@ -116,7 +118,16 @@ export function pullGateway(token: string | null): Result<{
     });
     writeOps(logged);
   }
-  return { ok: true, value: { commands } };
+  return { ok: true, value: { commands, automations: packAutomations(gateway.id) } };
+}
+
+export function ingestAutomation(
+  token: string | null,
+  input: { runId?: unknown; scenarioId?: unknown; ruleId?: unknown; confirmed?: unknown; at?: unknown },
+): Result<{ applied: boolean }> {
+  const gateway = gatewayByToken(token);
+  if (!gateway) return { ok: false, status: 401, message: "Нет доступа" };
+  return { ok: true, value: ingestAutomationRun(gateway.id, input) };
 }
 
 export function ackGateway(

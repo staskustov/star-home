@@ -10,7 +10,7 @@ import {
   type DeviceLifecycle,
   type PublicChannel,
 } from "@/server/device-channels";
-import { deviceKinds, deviceLabel, type DeviceKind } from "@/server/device-kinds";
+import { deviceCommission, deviceKinds, deviceLabel, type DeviceKind, type DeviceProbeResult } from "@/server/device-kinds";
 import { recordAudit } from "@/server/operations";
 import {
   gatewaysForObject,
@@ -57,6 +57,10 @@ export type RegistryDevice = {
   lastSeen: string | null;
   adapter: GatewayAdapterKind;
   work: "ON" | "OFF" | "FAULT";
+  handedOver: boolean;
+  lastProbeAt: string | null;
+  lastProbeMs: number | null;
+  lastProbeResult: DeviceProbeResult | null;
 };
 
 export type RegistryGateway = {
@@ -96,6 +100,7 @@ function isKind(value: unknown): value is DeviceKind {
 
 function asDevice(device: Device): RegistryDevice {
   const normalized = normalizeDevice({ ...device });
+  const commission = deviceCommission(normalized);
   return {
     id: normalized.id,
     objectId: normalized.objectId,
@@ -128,6 +133,10 @@ function asDevice(device: Device): RegistryDevice {
     lastSeen: normalized.lastSeen ?? null,
     adapter: normalized.adapter,
     work: normalized.work === "FAULT" ? "FAULT" : normalized.work === "OFF" ? "OFF" : "ON",
+    handedOver: commission.handedOver,
+    lastProbeAt: commission.lastProbeAt,
+    lastProbeMs: commission.lastProbeMs,
+    lastProbeResult: commission.lastProbeResult,
   };
 }
 
@@ -147,7 +156,7 @@ function asGateway(gateway: Gateway): RegistryGateway {
   };
 }
 
-function deviceFor(actor: StaffActor, deviceId: unknown): Success<Device> | Failure {
+export function deviceFor(actor: StaffActor, deviceId: unknown): Success<Device> | Failure {
   if (typeof deviceId !== "string" || !deviceId) return { ok: false, status: 400, message: "Устройство не найдено" };
   const device = readOps().devices.find((item) => item.id === deviceId && item.companyId === actor.companyId);
   if (!device) return { ok: false, status: 404, message: "Устройство не найдено" };
@@ -289,6 +298,7 @@ export function registerDevice(
     capabilities: cleanCapabilities(input.capabilities, input.kind),
     availability: "UNKNOWN",
     status: "UNCONFIGURED",
+    metadata: { handedOver: false },
     updatedAt: new Date().toISOString(),
   });
   persistChannels(device, input.channels);

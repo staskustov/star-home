@@ -293,3 +293,145 @@ describe("gateway outbound buffer", () => {
     assert.deepEqual(sent, ["state"]);
   });
 });
+
+describe("gateway local runtime", () => {
+  it("fires EVENT on a rising edge and does not repeat while the condition stays true", async () => {
+    const { createLocalRuntime } = await import("../local-runtime");
+    const applied: string[] = [];
+    const runtime = createLocalRuntime({
+      apply: async (command) => {
+        applied.push(command.deviceId);
+        return { confirmed: true };
+      },
+    });
+    runtime.load({
+      timeZone: "Europe/Moscow",
+      devices: [{ id: "dev_motion", externalId: "wb-pir", adapter: "wirenboard", kind: "MOTION" }, { id: "dev_light", externalId: "wb-light", adapter: "wirenboard", kind: "LIGHTING" }],
+      scenarios: [
+        {
+          id: "scen_motion",
+          trigger: "EVENT",
+          enabled: true,
+          conditions: [{ deviceId: "dev_motion", field: "detected", value: true }],
+          steps: [{ deviceId: "dev_light", command: "setPower", value: true }],
+          skipHigh: true,
+        },
+      ],
+      critical: [],
+    });
+    runtime.ingest("dev_motion", { detected: true });
+    const first = await runtime.evaluateEvents();
+    assert.equal(first.length, 1);
+    assert.equal(applied.length, 1);
+    const again = await runtime.evaluateEvents();
+    assert.equal(again.length, 0);
+    runtime.ingest("dev_motion", { detected: false });
+    assert.equal((await runtime.evaluateEvents()).length, 0);
+    runtime.ingest("dev_motion", { detected: true });
+    assert.equal((await runtime.evaluateEvents()).length, 1);
+    assert.equal(applied.length, 2);
+  });
+
+  it("runs a SCHEDULE once per calendar day", async () => {
+    const { createLocalRuntime } = await import("../local-runtime");
+    let now = new Date("2026-09-29T19:00:00+03:00");
+    const applied: string[] = [];
+    const runtime = createLocalRuntime({
+      now: () => now,
+      apply: async (command) => {
+        applied.push(command.id);
+        return { confirmed: true };
+      },
+    });
+    runtime.load({
+      timeZone: "Europe/Moscow",
+      devices: [{ id: "dev_light", externalId: "wb-light", adapter: "wirenboard", kind: "LIGHTING" }],
+      scenarios: [
+        {
+          id: "scen_night",
+          trigger: "SCHEDULE",
+          enabled: true,
+          conditions: [],
+          scheduleHour: 22,
+          scheduleMinute: 0,
+          steps: [{ deviceId: "dev_light", command: "setPower", value: false }],
+          skipHigh: true,
+        },
+      ],
+      critical: [],
+    });
+    now = new Date("2026-09-29T22:00:10+03:00");
+    assert.equal((await runtime.evaluateSchedule()).length, 1);
+    assert.equal((await runtime.evaluateSchedule()).length, 0);
+    now = new Date("2026-09-30T22:00:10+03:00");
+    assert.equal((await runtime.evaluateSchedule()).length, 1);
+    assert.equal(applied.length, 2);
+  });
+
+  it("applies a critical leak close even when the step is HIGH and skips HIGH on user scenarios", async () => {
+    const { createLocalRuntime, isHighStep } = await import("../local-runtime");
+    assert.equal(isHighStep("setPower", "WATER"), true);
+    const applied: string[] = [];
+    let now = new Date("2026-09-29T12:00:00Z");
+    const runtime = createLocalRuntime({
+      now: () => now,
+      apply: async (command) => {
+        applied.push(`${command.deviceId}:${command.command}`);
+        return { confirmed: true };
+      },
+    });
+    runtime.load({
+      timeZone: "Europe/Moscow",
+      devices: [
+        { id: "dev_leak", externalId: "wb-leak", adapter: "wirenboard", kind: "LEAK" },
+        { id: "dev_valve", externalId: "wb-valve", adapter: "wirenboard", kind: "WATER" },
+        { id: "dev_gate", externalId: "wb-gate", adapter: "wirenboard", kind: "GATE" },
+        { id: "dev_lamp", externalId: "wb-lamp", adapter: "wirenboard", kind: "LIGHTING" },
+      ],
+      scenarios: [
+        {
+          id: "scen_user",
+          trigger: "EVENT",
+          enabled: true,
+          conditions: [{ deviceId: "dev_leak", field: "detected", value: true }],
+          steps: [
+            { deviceId: "dev_gate", command: "open" },
+            { deviceId: "dev_lamp", command: "setPower", value: true },
+          ],
+          skipHigh: true,
+        },
+      ],
+      critical: [
+        {
+          id: "critical-leak",
+          when: [{ deviceId: "dev_leak", field: "detected", value: true }],
+          steps: [{ deviceId: "dev_valve", command: "setPower", value: false }],
+          retryMs: 60_000,
+        },
+      ],
+    });
+    runtime.ingest("dev_leak", { detected: true });
+    const reports = await runtime.evaluateEvents();
+    assert.equal(reports.some((item) => item.ruleId === "critical-leak"), true);
+    assert.equal(reports.some((item) => item.scenarioId === "scen_user"), true);
+    assert.deepEqual(applied, ["dev_lamp:setPower", "dev_valve:setPower"]);
+    applied.length = 0;
+    now = new Date(now.getTime() + 10_000);
+    assert.equal((await runtime.evaluateEvents()).some((item) => item.ruleId === "critical-leak"), false);
+    now = new Date(now.getTime() + 60_000);
+    assert.equal((await runtime.evaluateEvents()).some((item) => item.ruleId === "critical-leak"), true);
+    assert.deepEqual(applied, ["dev_valve:setPower"]);
+  });
+
+  it("maps leak and smoke Wiren Board controls", async () => {
+    const { controlCapability, groupWirenboardControls } = await import("../wb-controls");
+    assert.equal(controlCapability("Leak")?.capability, "leak");
+    assert.equal(controlCapability("Smoke")?.capability, "smoke");
+    const devices = groupWirenboardControls([
+      { topic: "/devices/wb-leak/controls/Leak", value: 1 },
+      { topic: "/devices/wb-msw/controls/Smoke", value: "true" },
+    ]);
+    assert.equal(devices.find((item) => item.externalId === "wb-leak")?.channels[0]?.capability, "leak");
+    assert.equal(devices.find((item) => item.externalId === "wb-msw")?.channels[0]?.capability, "smoke");
+  });
+});

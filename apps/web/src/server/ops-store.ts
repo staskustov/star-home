@@ -379,6 +379,16 @@ export type Scenario = {
   scheduleMinute?: number;
   lastRunAt?: string;
   steps: ScenarioStep[];
+  runtime?: "cloud" | "gateway";
+};
+
+export type AutomationRun = {
+  id: string;
+  gatewayId: string;
+  scenarioId?: string;
+  ruleId?: string;
+  at: string;
+  confirmed: boolean;
 };
 
 export type HomeChipKind = "LIFE_MODE" | "SCENARIO" | "ACTION";
@@ -440,6 +450,7 @@ type OpsFile = {
   commandLogs: DeviceCommandLog[];
   favorites: DeviceFavorite[];
   scenarios: Scenario[];
+  automationRuns: AutomationRun[];
   liveSeq: Record<string, number>;
   chats: SecurityChatMessage[];
   pushDevices: PushDevice[];
@@ -744,6 +755,7 @@ function seed(): OpsFile {
     commandLogs: [],
     favorites: [],
     scenarios: [],
+    automationRuns: [],
     liveSeq: {},
     chats: [],
     pushDevices: [],
@@ -903,6 +915,7 @@ export function trimSmartLayers(file: OpsFile, now = Date.now()): void {
     .slice(-400);
   file.commandLogs = (file.commandLogs ?? []).slice(0, 400);
   file.gatewayExchanges = (file.gatewayExchanges ?? []).slice(0, 200);
+  file.automationRuns = (file.automationRuns ?? []).slice(0, 200);
 }
 
 export function commandExpired(command: GatewayCommand, now = Date.now()): boolean {
@@ -927,6 +940,7 @@ function normalize(file: OpsFile): OpsFile {
   file.commandLogs ??= [];
   file.favorites ??= [];
   file.scenarios ??= [];
+  file.automationRuns ??= [];
   file.liveSeq ??= {};
   file.chats ??= [];
   file.pushDevices ??= [];
@@ -970,6 +984,7 @@ function normalize(file: OpsFile): OpsFile {
     scenario.enabled ??= true;
     scenario.conditions ??= [];
     scenario.description ??= "";
+    scenario.runtime ??= "cloud";
   }
   for (const event of file.smartEvents) {
     event.severity ??= event.kind === "availability" ? "WARNING" : "INFO";

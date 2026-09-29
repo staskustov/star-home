@@ -78,7 +78,7 @@ describe("stage 1 command and registry contracts", () => {
     const deviceId = (registered.body as { id: string }).id;
     const before = ops.readOps().devices.find((item) => item.id === deviceId);
     assert.equal(before?.state?.on, undefined);
-    const commanded = await rpc("commandDeviceSmart", { deviceId, command: "setPower", value: true }, resident);
+    const commanded = await rpc("commandDeviceSmart", { deviceId, command: "setPower", value: true }, objectAdmin);
     assert.equal(commanded.status, 200, JSON.stringify(commanded.body));
     const body = commanded.body as { confirmed: boolean; status: string; message: string; commandId?: string };
     assert.equal(body.confirmed, false);
@@ -121,7 +121,7 @@ describe("stage 1 command and registry contracts", () => {
     );
     const deviceId = (registered.body as { id: string }).id;
     assert.equal(ops.readOps().gateways.find((item) => item.id === gatewayId)?.status, "OFFLINE");
-    const commanded = await rpc("commandDeviceSmart", { deviceId, command: "setPower", value: true }, resident);
+    const commanded = await rpc("commandDeviceSmart", { deviceId, command: "setPower", value: true }, objectAdmin);
     const body = commanded.body as { confirmed: boolean; status: string };
     assert.equal(body.confirmed, false);
     assert.equal(body.status, "queued");

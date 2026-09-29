@@ -10,7 +10,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Select } from "@/components/ui/Select";
 import { ViewToggle, useViewMode } from "@/components/ui/ViewToggle";
 import { commandMessage, runCommand } from "@/lib/command";
-import { formatChannelValue, formatLastContact, formatMoney, gatewayErrorText, gatewayStatusLabel } from "@/lib/format";
+import { formatChannelValue, formatLastContact, formatMoney, formatProbeResult, gatewayErrorText, gatewayStatusLabel } from "@/lib/format";
 
 const FloorPlan = dynamic(() => import("@/components/home/FloorPlan").then((mod) => ({ default: mod.FloorPlan })), { ssr: false });
 import type { AccessEvent } from "@/types/domain";
@@ -388,6 +388,10 @@ type DeskDevice = {
   roomName?: string | null;
   unitId?: string | null;
   unitName?: string | null;
+  handedOver?: boolean;
+  lastProbeAt?: string | null;
+  lastProbeMs?: number | null;
+  lastProbeResult?: string | null;
   channels?: DeskChannel[];
   planFloor?: number | null;
   planX?: number | null;
@@ -521,30 +525,39 @@ export function DeviceDesk({
   const [filter, setFilter] = useState<DeviceFilter>("all");
   const [adding, setAdding] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const [token, setToken] = useState<string | null>(null);
   const [pairToken, setPairToken] = useState<string | null>(null);
-  const [pending, setPending] = useState<{ id: string; command: string } | null>(null);
+  const [probingId, setProbingId] = useState<string | null>(null);
+  const [handingId, setHandingId] = useState<string | null>(null);
   const [pin, setPin] = useState({ deviceId: "", floor: "1", x: "50", y: "50" });
   const [bind, setBind] = useState({ deviceId: "", place: "ROOM", roomId: "" });
 
-  async function testCommand(deviceId: string, command: string, confirmToken?: string) {
+  async function probe(deviceId: string) {
     setNotice(null);
+    setProbingId(deviceId);
+    const result = await runCommand(() => fetch(`/api/smart-home/devices/${deviceId}/probe`, { method: "POST" }));
+    setProbingId(null);
+    setNotice(commandMessage(result.payload, "Не удалось проверить устройство."));
+    if (result.ok) router.refresh();
+  }
+
+  async function handOver(deviceId: string, recall = false) {
+    setNotice(null);
+    setHandingId(deviceId);
     const result = await runCommand(() =>
-      fetch(`/api/smart-home/devices/${deviceId}/command`, {
+      fetch(`/api/smart-home/devices/${deviceId}/handover`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ command, value: command === "setPower" ? true : undefined, confirmToken }),
+        body: JSON.stringify({ recall }),
       }),
     );
-    if (result.payload?.needsConfirm && typeof result.payload.token === "string") {
-      setToken(result.payload.token);
-      setPending({ id: deviceId, command });
-      setNotice("Подтвердите команду.");
-      return;
-    }
-    setToken(null);
-    setPending(null);
-    setNotice(commandMessage(result.payload));
+    setHandingId(null);
+    setNotice(
+      result.ok
+        ? recall
+          ? "Забрано у жильца."
+          : "Передано жильцу."
+        : commandMessage(result.payload, "Не удалось передать жильцу."),
+    );
     if (result.ok) router.refresh();
   }
 
@@ -606,6 +619,53 @@ export function DeviceDesk({
     );
     setNotice(result.ok ? "Помещение сохранено." : commandMessage(result.payload));
     if (result.ok) router.refresh();
+  }
+
+  function deviceLine(device: DeskDevice): string {
+    const probeText = formatProbeResult(device.lastProbeMs, device.lastProbeResult);
+    return [
+      device.kind,
+      deviceStatus(device),
+      devicePlace(device),
+      device.lastSeen ? formatLastContact(device.lastSeen) : null,
+      device.handedOver === false ? "не передано жильцу" : device.lastProbeResult ? "передано жильцу" : null,
+      probeText,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  }
+
+  function deviceActions(device: DeskDevice) {
+    const id = device.id;
+    if (!id) return null;
+    const handedOver = device.handedOver !== false;
+    return (
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Link href={`/admin/devices/${id}`} className="btn btn-secondary btn-compact">
+          Открыть
+        </Link>
+        {canCommand ? (
+          <button type="button" className="btn btn-secondary btn-compact" disabled={probingId === id} onClick={() => void probe(id)}>
+            {probingId === id ? "Проверяем…" : "Проверка"}
+          </button>
+        ) : null}
+        {canPair && handedOver ? (
+          <button type="button" className="btn btn-secondary btn-compact" disabled={handingId === id} onClick={() => void handOver(id, true)}>
+            Забрать у жильца
+          </button>
+        ) : null}
+        {canPair && !handedOver ? (
+          <button
+            type="button"
+            className="btn btn-primary btn-compact"
+            disabled={handingId === id || device.lastProbeResult !== "confirmed"}
+            onClick={() => void handOver(id, false)}
+          >
+            Передать жильцу
+          </button>
+        ) : null}
+      </div>
+    );
   }
 
   const filtered = rows.filter((device) => {
@@ -696,10 +756,7 @@ export function DeviceDesk({
             filtered.map((device) => (
               <li key={device.id ?? `${device.objectId}-${device.name}`} className="panel p-5">
                 <p className="text-[16px] text-ink">{device.name}</p>
-                <p className="mt-2 text-sm text-muted">
-                  {device.kind} · {deviceStatus(device)} · {devicePlace(device)}
-                  {device.lastSeen ? ` · ${formatLastContact(device.lastSeen)}` : ""}
-                </p>
+                <p className="mt-2 text-sm text-muted">{deviceLine(device)}</p>
                 {(device.channels ?? []).filter((channel) => channel.enabled).length ? (
                   <p className="mt-1 text-sm text-muted">
                     {(device.channels ?? [])
@@ -712,18 +769,7 @@ export function DeviceDesk({
                   <p className="mt-1 text-sm text-muted">{device.state}</p>
                 )}
                 {device.lastError ? <p className="mt-1 text-sm text-danger">{gatewayErrorText(device.lastError)}</p> : null}
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {device.id ? (
-                    <Link href={`/admin/devices/${device.id}`} className="btn btn-secondary btn-compact">
-                      Открыть
-                    </Link>
-                  ) : null}
-                  {canCommand && device.id ? (
-                    <button type="button" className="btn btn-secondary btn-compact" onClick={() => void testCommand(device.id as string, "setPower")}>
-                      Тест
-                    </button>
-                  ) : null}
-                </div>
+                {deviceActions(device)}
               </li>
             ))
           )}
@@ -733,10 +779,7 @@ export function DeviceDesk({
           {filtered.map((device) => (
             <li key={device.id ?? `${device.objectId}-${device.name}`} className="px-5 py-4">
               <p className="text-[16px] text-ink">{device.name}</p>
-              <p className="text-sm text-muted">
-                {device.kind} · {deviceStatus(device)} · {devicePlace(device)}
-                {device.lastSeen ? ` · ${formatLastContact(device.lastSeen)}` : ""}
-              </p>
+              <p className="text-sm text-muted">{deviceLine(device)}</p>
               {(device.channels ?? []).filter((channel) => channel.enabled).length ? (
                 <p className="mt-1 text-sm text-muted">
                   {(device.channels ?? [])
@@ -747,27 +790,11 @@ export function DeviceDesk({
                 </p>
               ) : null}
               {device.lastError ? <p className="mt-1 text-sm text-danger">{gatewayErrorText(device.lastError)}</p> : null}
-              <div className="mt-3 flex flex-wrap gap-2">
-                {device.id ? (
-                  <Link href={`/admin/devices/${device.id}`} className="btn btn-secondary btn-compact">
-                    Открыть
-                  </Link>
-                ) : null}
-                {canCommand && device.id ? (
-                  <button type="button" className="btn btn-secondary btn-compact" onClick={() => void testCommand(device.id as string, "setPower")}>
-                    Тест
-                  </button>
-                ) : null}
-              </div>
+              {deviceActions(device)}
             </li>
           ))}
         </List>
       )}
-      {token && pending ? (
-        <button type="button" className="btn btn-primary btn-compact" onClick={() => void testCommand(pending.id, pending.command, token)}>
-          Подтвердить команду
-        </button>
-      ) : null}
       {notice ? <p className="text-[15px] text-muted">{notice}</p> : null}
       {canPair ? (
         <form onSubmit={place} className="panel grid gap-3 px-5 py-5 sm:grid-cols-4">

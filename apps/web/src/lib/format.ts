@@ -70,6 +70,12 @@ export function gatewayStatusLabel(status: string, lastSeen: string | null | und
   return "На связи";
 }
 
+export function formatProbeResult(elapsedMs: number | null | undefined, result: string | null | undefined): string | null {
+  if (typeof elapsedMs !== "number" || !Number.isFinite(elapsedMs)) return null;
+  const ms = Math.max(0, Math.round(elapsedMs));
+  return result === "confirmed" ? `${ms} мс · подтверждено` : `${ms} мс · нет ответа`;
+}
+
 export function formatMoney(amount: number, currency: string): string {
   return new Intl.NumberFormat("ru-RU", {
     style: "currency",

@@ -28,6 +28,7 @@ import {
   updateGateway,
   updateRegistryDevice,
 } from "@/server/device-registry";
+import { handOverDevice, probeDevice } from "@/server/device-commission";
 import { createRoom, removeRoom, updateRoom } from "@/server/rooms";
 import {
   adminMemberships,
@@ -274,6 +275,8 @@ const methodPolicy: Record<string, Route> = {
       }),
   ),
   removeDevice: staff("devices.delete", (actor, input) => removeRegistryDevice(actor, input.deviceId)),
+  probeDevice: staff("devices.command", (actor, input) => probeDevice(actor, input.deviceId)),
+  handOverDevice: staff("devices.edit", (actor, input) => handOverDevice(actor, input.deviceId, input.recall)),
   listGateways: staff("engineering.view", (actor, input) => listRegistryGateways(actor, input.objectId)),
   createGateway: staff("devices.create", (actor, input) => createGateway(actor, { objectId: input.objectId, unitId: input.unitId, name: input.name, adapter: input.adapter }), 201),
   updateGateway: staff("devices.edit", (actor, input) => updateGateway(actor, { gatewayId: input.gatewayId, name: input.name, adapter: input.adapter, unitId: input.unitId })),
@@ -403,6 +406,8 @@ const guardedMethods: Partial<Record<string, AuditAction>> = {
   pollDevice: "DEVICE_POLL",
   setDeviceWork: "DEVICE_STATUS",
   commandDeviceSmart: "DEVICE_COMMAND",
+  probeDevice: "DEVICE_PROBE",
+  handOverDevice: "DEVICE_HANDOVER",
   createScenario: "SCENARIO_CREATE",
   updateScenario: "SCENARIO_EDIT",
   removeScenario: "SCENARIO_DELETE",

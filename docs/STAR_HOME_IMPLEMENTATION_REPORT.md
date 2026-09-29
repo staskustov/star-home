@@ -131,3 +131,64 @@ Live echo Wiren Board, задержка контроллера, физическ
 
 Этап 6: консоль специалиста на `/admin/devices` — проверка с временем ответа, «передать жильцу».
 
+---
+
+## Этап 6. Консоль специалиста (2026-09-29)
+
+### Что сделано
+
+1. `/admin/devices` и карточка устройства: кнопка «Проверка» вместо «Тест». Ответ `N мс · подтверждено` или `N мс · нет ответа`.
+2. `probeDevice` (staff `devices.command`): измеряет `elapsedMs`. Local/http — длительность `executeOnAdapter`. WB/mqtt — очередь и ожидание ACKED, без фальшивого `confirmed`.
+3. «Передать жильцу» / «Забрать у жильца». Новая регистрация: `metadata.handedOver: false`. Без флага (сид) житель видит как раньше. Передача только после `lastProbeResult === confirmed`.
+4. Житель не видит устройство, пока `handedOver === false`. Frontend не SoT.
+
+### Файлы
+
+- `apps/web/src/server/device-commission.ts`, `device-kinds.ts`, `device-registry.ts`
+- `apps/web/src/components/admin/OpsDesk.tsx`, `DeviceDetail.tsx`
+- `apps/api/test/device-commission.test.ts`
+
+### Тесты
+
+Проверка с `elapsedMs`, таймаут WB, ack, скрытие до передачи, сид без флага виден.
+
+### Не подтверждено на железе
+
+Live Wiren Board probe round-trip на объекте.
+
+### Следующий этап
+
+Этап 8: камеры. Этап 7 закрыт в софте; железо автоматизации не подтверждено.
+
+---
+
+## Этап 7. Локальная автоматизация (2026-09-29)
+
+### Что сделано
+
+1. Сценарий несёт `runtime: "cloud" | "gateway"`. Нет поля — облако. EVENT/SCHEDULE на одном не-local шлюзе получают `gateway` при создании.
+2. Облако не исполняет EVENT / SCHEDULE / LIFE_MODE со `runtime: gateway`. Ручной запуск ставит в очередь `runScenario` с `deviceId = scenario.id`, `confirmed: false`.
+3. Pull отдаёт пакет автоматизаций. Агент `agent-6` исполняет EVENT по фронту, SCHEDULE раз в календарный день, критические leak→клапан и smoke/fire→свет с повтором 60 с, без облака.
+4. Отчёт `kind: automation` идемпотентен по `runId`. 5xx/обрыв — существующий outbound buffer.
+5. UI: «в облаке» / «на шлюзе» / «шлюз не исполняет». Нет «работает», если шлюз не исполняет.
+6. HIGH пропускается у пользовательских EVENT/SCHEDULE, не у критических правил.
+
+### Файлы
+
+- `apps/web/src/server/automation.ts`, `scenarios.ts`, `ops-store.ts`, `gateway-channel.ts`
+- `apps/gateway/local-runtime.ts`, `agent.ts`, `wb-controls.ts`
+- `apps/web/src/components/home/ScenarioList.tsx`
+- `apps/api/test/automation.test.ts`, `apps/gateway/test/gateway.test.ts`
+
+### Тесты
+
+Infer gateway, облако не гоняет gateway EVENT, очередь `runScenario`, pack + critical, ingest по `runId`, rising-edge, SCHEDULE раз в день, HIGH skip / critical close.
+
+### Не подтверждено на железе
+
+Локальный runtime на живом Wiren Board без интернета.
+
+### Следующий этап
+
+Этап 8: камеры. Live MQTT discovery как отдельный контур — не этот этап.
+

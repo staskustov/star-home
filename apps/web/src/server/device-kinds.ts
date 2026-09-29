@@ -52,11 +52,34 @@ export function isOpener(kind: string): boolean {
 
 const householdObjectKinds = new Set<DeviceKind>(["GATE", "WICKET", "BARRIER", "LOCK", "WEATHER"]);
 
+export type DeviceProbeResult = "confirmed" | "failed";
+
+export function deviceHandedOver(device: { metadata?: { handedOver?: unknown } | Record<string, unknown> }): boolean {
+  return !device.metadata || device.metadata.handedOver !== false;
+}
+
+export function deviceCommission(device: { metadata?: Record<string, unknown> | undefined }): {
+  handedOver: boolean;
+  lastProbeAt: string | null;
+  lastProbeMs: number | null;
+  lastProbeResult: DeviceProbeResult | null;
+} {
+  const ms = device.metadata?.lastProbeMs;
+  const result = device.metadata?.lastProbeResult;
+  return {
+    handedOver: deviceHandedOver(device),
+    lastProbeAt: typeof device.metadata?.lastProbeAt === "string" ? device.metadata.lastProbeAt : null,
+    lastProbeMs: typeof ms === "number" && Number.isFinite(ms) ? ms : null,
+    lastProbeResult: result === "confirmed" || result === "failed" ? result : null,
+  };
+}
+
 export function residentSeesDevice(device: {
   kind: string;
   unitId?: string | null;
-  metadata?: { engineering?: unknown } | Record<string, unknown>;
+  metadata?: { engineering?: unknown; handedOver?: unknown } | Record<string, unknown>;
 }): boolean {
+  if (!deviceHandedOver(device)) return false;
   if (device.unitId) return true;
   if (device.metadata && "engineering" in device.metadata && device.metadata.engineering === true) return false;
   return householdObjectKinds.has(device.kind as DeviceKind);

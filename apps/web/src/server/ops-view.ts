@@ -2,7 +2,7 @@ import { formatHumidity, formatTemperature } from "@/lib/format";
 import { findRoom, findUnit, roomsOf, unitIdsOf, unitIdsOfBuilding } from "@/server/catalog-store";
 import { capabilitiesFor } from "@/server/device-capabilities";
 import { channelsOf, deriveLifecycle } from "@/server/device-channels";
-import { deviceLabel, isOpener } from "@/server/device-kinds";
+import { deviceCommission, deviceLabel, isOpener } from "@/server/device-kinds";
 import { listAudit } from "@/server/audit-store";
 import { auditRow, auditVisible, shortTime } from "@/server/audit-view";
 import { readOps } from "@/server/ops-store";
@@ -169,6 +169,7 @@ export function deskFor(actor: StaffActor, section: DeskSection) {
           serialNumber: device.serialNumber ?? null,
           externalId: device.externalId ?? null,
           capabilities: device.capabilities ?? [],
+          ...deviceCommission(device),
           channels: channelsOf(host).map((channel) => ({
             id: channel.id,
             capability: channel.capability,

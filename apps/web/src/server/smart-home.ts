@@ -574,6 +574,7 @@ export async function commandDeviceSmart(session: SessionRef | null, input: Comm
 
   const risk = commandRisk(command, device);
   const source = commandSource(viewer.value, input.source);
+  const staffProbe = input.source === "probe" && viewer.value.kind === "staff" && viewerCan(viewer.value, "devices.command");
   if (risk === "HIGH") {
     if (!highAllowed(viewer.value, device)) {
       rememberCommandLog({
@@ -591,7 +592,7 @@ export async function commandDeviceSmart(session: SessionRef | null, input: Comm
       });
       return denied();
     }
-    if (typeof input.confirmToken !== "string" || !input.confirmToken) {
+    if (!staffProbe && (typeof input.confirmToken !== "string" || !input.confirmToken)) {
       const token = newId("sconfirm");
       storePending({ token, userId, deviceId: device.id, command, value, createdAt: new Date().toISOString() });
       return { ok: true, value: { confirmed: false, needsConfirm: true, token, message: "Подтвердите команду." } };

@@ -32,6 +32,8 @@
 
 «Команда выполнена.» только при `confirmed: true`.
 
+Проверка специалиста (`probeDevice`): та же команда, но Cloud **ждёт** ACKED/FAILED/EXPIRED (или таймаут `STAR_HOME_PROBE_TIMEOUT_MS`, по умолчанию 12 с). UI показывает `N мс · подтверждено` или `N мс · нет ответа`. `confirmed: true` только после железа/адаптера.
+
 Очередь шлюза (`gatewayCommands.status`): PENDING → SENT (MQTT ушёл, ещё ждём echo) → ACKED | FAILED | EXPIRED.
 
 SENT не меняет `device.state`. FAILED после `mqtt-timeout` тоже не меняет state. Телеметрия может обновить каналы независимо, когда брокер пришлёт значение.

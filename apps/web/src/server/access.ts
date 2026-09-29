@@ -182,6 +182,8 @@ export async function requireScenarios() {
       scheduleMinute?: number | null;
       conditions?: { deviceId: string; field: string; value?: unknown }[];
       steps: { deviceId: string; command: string; value?: unknown }[];
+      runtime?: "cloud" | "gateway";
+      executes?: boolean;
     }[];
   }>("listScenarios");
   if (result.status === 401) redirect("/");

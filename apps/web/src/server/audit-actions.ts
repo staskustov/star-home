@@ -67,6 +67,8 @@ export const auditActions = {
   GATEWAY_EDIT: { label: "Шлюз изменён", category: "ENGINEERING" },
   GATEWAY_DELETE: { label: "Шлюз удалён", category: "ENGINEERING" },
   DEVICE_COMMAND: { label: "Команда устройству", category: "ENGINEERING" },
+  DEVICE_PROBE: { label: "Проверка устройства", category: "ENGINEERING" },
+  DEVICE_HANDOVER: { label: "Передача жильцу", category: "ENGINEERING" },
   SCENARIO_CREATE: { label: "Сценарий создан", category: "ENGINEERING" },
   SCENARIO_EDIT: { label: "Сценарий изменён", category: "ENGINEERING" },
   SCENARIO_DELETE: { label: "Сценарий удалён", category: "ENGINEERING" },

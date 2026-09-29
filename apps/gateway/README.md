@@ -2,7 +2,7 @@
 
 Агент на объекте. Cloud не открывает MQTT контроллера в интернет.
 
-Версия протокола: `agent-5`.
+Версия протокола: `agent-6`.
 
 ## Что делает
 
@@ -13,6 +13,7 @@
 - MQTT subscribe на `/devices/+/controls/+` (и meta), кэш retained, телеметрия в cloud `kind: state`.
 - Буфер исходящих вызовов при 5xx / обрыве сети (`STAR_HOME_GATEWAY_BUFFER_PATH`).
 - Повторный pull той же команды не публикует MQTT дважды (in-flight lock + память id).
+- Локальные сценарии и критические правила (pack с pull, EVENT/SCHEDULE, leak/fire).
 
 MQTT `confirmed: true` только если после publish на control topic (без `/on`) пришло совпадающее значение. Publish без echo — `sent`, затем `mqtt-timeout` / FAILED. Житель не видит «Сделано» без `confirmed`.
 

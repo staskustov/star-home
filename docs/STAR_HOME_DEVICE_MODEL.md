@@ -31,6 +31,8 @@ SoT: JSON-снимок `ops` (и `catalog` для помещений). Prisma De
 
 Демо-сид: `metadata.demo: true`. Устройства без шлюза с `adapter: local` — явный демо-контур жителя.
 
+Новая регистрация: `metadata.handedOver: false` — житель не видит устройство, пока специалист не передаст после успешной проверки. Поле отсутствует (сид/прод) — устройство видимо по прежним правилам. `lastProbeAt` / `lastProbeMs` / `lastProbeResult` — тоже в JSON metadata.
+
 ## Канал и качество
 
 Значение: `number | boolean | string | null`. Пустое **не** превращается в `0`.
