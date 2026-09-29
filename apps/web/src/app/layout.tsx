@@ -17,7 +17,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     title: "STAR HOME",
-    statusBarStyle: "default",
+    statusBarStyle: "black-translucent",
   },
   icons: {
     icon: [
@@ -32,9 +32,10 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#f04444",
+  themeColor: "#1B1713",
   width: "device-width",
   initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -43,7 +44,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <script
           dangerouslySetInnerHTML={{
-            __html: "try{var raw=localStorage.getItem('star-home-appearance')||'dark:bronze';var parts=raw.split(':');var mode=parts[0]==='light'?'light':'dark';var palette=parts[1]||'bronze';if(mode==='dark')document.documentElement.dataset.theme='dark';if(['bronze','blue','red','yellow','ink'].indexOf(palette)>=0)document.documentElement.dataset.palette=palette}catch(e){document.documentElement.dataset.theme='dark';document.documentElement.dataset.palette='bronze'}",
+            __html: "try{var raw=localStorage.getItem('star-home-appearance')||'dark:bronze';var parts=raw.split(':');var mode=parts[0]==='light'?'light':'dark';var palette=parts[1]||'bronze';if(mode==='light')document.documentElement.removeAttribute('data-theme');else document.documentElement.dataset.theme='dark';if(['bronze','blue','red','yellow','ink'].indexOf(palette)>=0)document.documentElement.dataset.palette=palette;var color=mode==='light'?'#ece5da':'#1b1713';var meta=document.querySelector('meta[name=\"theme-color\"]');if(meta)meta.setAttribute('content',color)}catch(e){document.documentElement.dataset.theme='dark';document.documentElement.dataset.palette='bronze'}",
           }}
         />
       </head>

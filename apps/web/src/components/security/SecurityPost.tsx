@@ -415,7 +415,7 @@ export function SecurityPost({ view }: { view: SecurityPostView }) {
 
   return (
     <div className="min-h-dvh">
-      <header className="sticky top-0 z-20 border-b border-line/60 bg-bg/50 px-5 py-4 backdrop-blur-xl lg:px-10">
+      <header className="sticky top-0 z-20 border-b border-line/60 bg-bg/50 px-5 py-4 pt-[calc(env(safe-area-inset-top,0px)+1rem)] backdrop-blur-xl lg:px-10 lg:pt-4">
         <div className="mx-auto flex max-w-[1440px] flex-wrap items-center gap-x-6 gap-y-3">
           <div className="min-w-0 flex-1">
             <p className="kicker text-accent">STAR HOME</p>

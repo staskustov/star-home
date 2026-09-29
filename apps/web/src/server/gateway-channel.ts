@@ -14,6 +14,7 @@ import {
   refreshChannelFreshness,
 } from "@/server/device-channels";
 import { findGateway, readOps, recordChannelHistory, writeOps } from "@/server/ops-store";
+import { expireStaleGateways, recordGatewayExchange, touchGatewayContact } from "@/server/gateway-contact";
 import { can, objectFor, type StaffActor } from "@/server/rbac/decide";
 import { notifyIfAlert } from "@/server/smart-notices";
 
@@ -70,44 +71,103 @@ export function revokeGateway(actor: StaffActor, gatewayId: unknown): Result<{ g
   return { ok: true, value: { gatewayId: current.id } };
 }
 
-export function pullGateway(token: string | null): Result<{ commands: { id: string; deviceId: string; command: string; value: unknown }[] }> {
+export function pullGateway(token: string | null): Result<{
+  commands: {
+    id: string;
+    deviceId: string;
+    command: string;
+    value: unknown;
+    externalId: string | null;
+    endpoint: string | null;
+    adapter: string;
+  }[];
+}> {
   const gateway = gatewayByToken(token);
   if (!gateway) return { ok: false, status: 401, message: "Нет доступа" };
-  return {
-    ok: true,
-    value: {
-      commands: pullGatewayCommands(gateway.id).map((item) => ({
-        id: item.id,
-        deviceId: item.deviceId,
-        command: item.command,
-        value: item.value,
-      })),
-    },
-  };
+  const file = readOps();
+  expireStaleGateways(file);
+  const current = file.gateways.find((item) => item.id === gateway.id);
+  if (current) touchGatewayContact(current);
+  writeOps(file);
+  const latest = readOps();
+  const commands = pullGatewayCommands(gateway.id).map((item) => {
+    const device = latest.devices.find((row) => row.id === item.deviceId);
+    return {
+      id: item.id,
+      deviceId: item.deviceId,
+      command: item.command,
+      value: item.value,
+      externalId: device?.externalId ?? null,
+      endpoint: device?.endpoint ?? null,
+      adapter: device?.adapter ?? gateway.adapter,
+    };
+  });
+  const logged = readOps();
+  const hub = logged.gateways.find((item) => item.id === gateway.id);
+  if (hub) {
+    recordGatewayExchange(logged, {
+      companyId: hub.companyId,
+      objectId: hub.objectId,
+      unitId: hub.unitId,
+      gatewayId: hub.id,
+      kind: "pull",
+      result: "ok",
+      detail: commands.length ? `pull ${commands.length}` : "pull",
+    });
+    writeOps(logged);
+  }
+  return { ok: true, value: { commands } };
 }
 
 export function ackGateway(
   token: string | null,
-  input: { commandId?: unknown; confirmed?: unknown; state?: unknown; devices?: unknown; error?: unknown },
+  input: { commandId?: unknown; confirmed?: unknown; sent?: unknown; state?: unknown; devices?: unknown; error?: unknown },
 ): Result<{ commandId: string; applied: boolean }> {
   const gateway = gatewayByToken(token);
   if (!gateway) return { ok: false, status: 401, message: "Нет доступа" };
   const result = ackGatewayCommand(gateway.id, input);
   if (result.ok) completeDiscovery(gateway.id, typeof input.commandId === "string" ? input.commandId : "", input);
+  if (result.ok) {
+    const file = readOps();
+    expireStaleGateways(file);
+    const current = file.gateways.find((item) => item.id === gateway.id);
+    if (current) {
+      touchGatewayContact(current);
+      const row = file.gatewayCommands.find((item) => item.id === result.value.commandId);
+      const failed = row?.status === "FAILED" || row?.status === "EXPIRED";
+      recordGatewayExchange(file, {
+        companyId: current.companyId,
+        objectId: current.objectId,
+        unitId: current.unitId,
+        gatewayId: current.id,
+        kind: "ack",
+        result: failed ? "error" : "ok",
+        detail: [`ack`, row?.status, row?.command, typeof input.error === "string" ? input.error : ""]
+          .filter((part) => part && String(part).trim())
+          .join(" "),
+      });
+    }
+    writeOps(file);
+  }
   return result;
 }
 
-export function heartbeatGateway(token: string | null, input: { status?: unknown; version?: unknown }): Result<{ status: string }> {
+export function heartbeatGateway(
+  token: string | null,
+  input: { status?: unknown; version?: unknown; lastError?: unknown },
+): Result<{ status: string }> {
   const gateway = gatewayByToken(token);
   if (!gateway) return { ok: false, status: 401, message: "Нет доступа" };
   const file = readOps();
+  expireStaleGateways(file);
   const current = file.gateways.find((item) => item.id === gateway.id);
   if (!current) return { ok: false, status: 404, message: "Шлюз не найден" };
   if (input.status === "ONLINE" || input.status === "OFFLINE" || input.status === "DEGRADED") current.status = input.status;
   else current.status = "ONLINE";
   if (typeof input.version === "string" && input.version.trim()) current.version = input.version.trim().slice(0, 40);
   current.lastSeen = new Date().toISOString();
-  current.lastError = null;
+  if (typeof input.lastError === "string") current.lastError = input.lastError.trim().slice(0, 200) || null;
+  else if (input.lastError === null || current.status === "ONLINE") current.lastError = null;
   const now = Date.now();
   for (const device of file.devices.filter((item) => item.gatewayId === current.id)) {
     if (current.status === "OFFLINE") {
@@ -122,6 +182,15 @@ export function heartbeatGateway(token: string | null, input: { status?: unknown
     }
     device.status = deriveLifecycle(device);
   }
+  recordGatewayExchange(file, {
+    companyId: current.companyId,
+    objectId: current.objectId,
+    unitId: current.unitId,
+    gatewayId: current.id,
+    kind: "heartbeat",
+    result: current.status === "OFFLINE" ? "error" : "ok",
+    detail: [current.status, current.version, current.lastError].filter(Boolean).join(" "),
+  });
   writeOps(file);
   emitLive({
     objectId: current.objectId,
@@ -139,6 +208,7 @@ export function ingestGatewayState(
   const gateway = gatewayByToken(token);
   if (!gateway) return { ok: false, status: 401, message: "Нет доступа" };
   const file = readOps();
+  expireStaleGateways(file);
   const fromTopic = typeof input.topic === "string" ? mapWirenboardControl(input.topic, input.value ?? input.state) : null;
   const device =
     typeof input.deviceId === "string"
@@ -176,6 +246,19 @@ export function ingestGatewayState(
     state: current.state ?? next,
     capabilities: touched,
   });
+  const hub = file.gateways.find((item) => item.id === gateway.id);
+  if (hub) {
+    touchGatewayContact(hub);
+    recordGatewayExchange(file, {
+      companyId: hub.companyId,
+      objectId: hub.objectId,
+      unitId: hub.unitId,
+      gatewayId: hub.id,
+      kind: "state",
+      result: "ok",
+      detail: `state ${current.externalId ?? current.name}`,
+    });
+  }
   writeOps(file);
   notifyIfAlert({
     companyId: current.companyId,

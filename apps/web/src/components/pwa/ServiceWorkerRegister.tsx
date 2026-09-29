@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { commandInFlight, watchCommands } from "@/lib/command";
 import { PushAuto } from "@/components/pwa/PushAuto";
+import { syncThemeColor } from "@/lib/appearance";
 
 const updatedKey = "star-home-updated";
 
@@ -25,6 +26,10 @@ export function ServiceWorkerRegister() {
       return () => window.clearTimeout(timer);
     }
     return undefined;
+  }, []);
+
+  useEffect(() => {
+    syncThemeColor();
   }, []);
 
   useEffect(() => {

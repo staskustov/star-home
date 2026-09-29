@@ -10,8 +10,8 @@
   "display_override": ["standalone", "minimal-ui"],
   "categories": ["lifestyle"],
   "prefer_related_applications": false,
-  "background_color": "#f04444",
-  "theme_color": "#f04444",
+  "background_color": "#1b1713",
+  "theme_color": "#1b1713",
   "icons": [
     {
       "src": "/brand/icons/icon-180.png",

@@ -6,6 +6,7 @@ import { deviceLabel, isOpener } from "@/server/device-kinds";
 import { listAudit } from "@/server/audit-store";
 import { auditRow, auditVisible, shortTime } from "@/server/audit-view";
 import { readOps } from "@/server/ops-store";
+import { gatewayDisplayStatus, isGatewayStale } from "@/server/gateway-contact";
 import { can, objectsInScope, reaches, type Scoped, type StaffActor } from "@/server/rbac/decide";
 import type { Permission } from "@/server/rbac/permissions";
 
@@ -189,12 +190,26 @@ export function deskFor(actor: StaffActor, section: DeskSection) {
         objectId: gateway.objectId,
         name: gateway.name,
         adapter: gateway.adapter,
-        status: gateway.status,
+        status: gatewayDisplayStatus(gateway),
+        storedStatus: gateway.status,
+        version: gateway.version,
         lastSeen: gateway.lastSeen,
         lastError: gateway.lastError,
+        stale: isGatewayStale(gateway),
         paired: Boolean(gateway.tokenHash),
         connectedDevices: file.devices.filter((device) => device.gatewayId === gateway.id).length,
       })),
+      exchanges: mine(file.gatewayExchanges ?? [])
+        .slice(0, 40)
+        .map((row) => ({
+          id: row.id,
+          objectId: row.objectId,
+          at: row.at,
+          kind: row.kind,
+          result: row.result,
+          detail: row.detail,
+          gatewayName: file.gateways.find((item) => item.id === row.gatewayId)?.name ?? row.gatewayId,
+        })),
       events: mine(file.smartEvents)
         .slice(0, 12)
         .map((event) => ({
@@ -213,10 +228,12 @@ export function deskFor(actor: StaffActor, section: DeskSection) {
           objectId: row.objectId,
           at: row.at,
           deviceId: row.deviceId,
+          deviceName: file.devices.find((item) => item.id === row.deviceId)?.name ?? row.deviceId,
           command: row.command,
           result: row.result,
           source: row.source,
           risk: row.risk,
+          reason: row.reason ?? null,
         })),
       plans: [...new Set(mine(file.devices).map((device) => device.unitId).filter((id): id is string => Boolean(id)))].flatMap((unitId) => {
         const unit = findUnit(unitId);

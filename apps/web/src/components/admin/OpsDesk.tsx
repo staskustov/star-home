@@ -10,10 +10,9 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Select } from "@/components/ui/Select";
 import { ViewToggle, useViewMode } from "@/components/ui/ViewToggle";
 import { commandMessage, runCommand } from "@/lib/command";
-import { formatChannelValue } from "@/lib/format";
+import { formatChannelValue, formatLastContact, formatMoney, gatewayErrorText, gatewayStatusLabel } from "@/lib/format";
 
 const FloorPlan = dynamic(() => import("@/components/home/FloorPlan").then((mod) => ({ default: mod.FloorPlan })), { ssr: false });
-import { formatMoney } from "@/lib/format";
 import type { AccessEvent } from "@/types/domain";
 
 type AccessPointRow = {
@@ -425,6 +424,14 @@ function devicePlace(device: DeskDevice): string {
   return [device.unitName, device.roomName].filter(Boolean).join(" · ") || "Дом";
 }
 
+function commandResultLabel(result: string): string {
+  if (result === "SUCCESS") return "выполнено";
+  if (result === "UNCONFIRMED") return "не подтверждено";
+  if (result === "DENIED") return "отказ";
+  if (result === "ERROR") return "ошибка";
+  return result;
+}
+
 function matchesFilter(device: DeskDevice, filter: DeviceFilter): boolean {
   if (filter === "online") return device.status === "ONLINE" || device.availability === "ONLINE";
   if (filter === "offline") return device.status === "OFFLINE" || device.availability === "OFFLINE";
@@ -442,6 +449,7 @@ export function DeviceDesk({
   rooms = [],
   units = [],
   commandLogs = [],
+  exchanges = [],
   plans = [],
   canCommand = false,
   canPair = false,
@@ -449,11 +457,35 @@ export function DeviceDesk({
 }: {
   devices: DeskDevice[];
   meters?: { objectId: string; name: string; value: string; unit: string }[];
-  gateways?: { id: string; objectId: string; name: string; adapter: string; status: string; lastSeen: string | null; lastError: string | null; paired?: boolean; connectedDevices: number }[];
+  gateways?: {
+    id: string;
+    objectId: string;
+    name: string;
+    adapter: string;
+    status: string;
+    version?: string | null;
+    lastSeen: string | null;
+    lastError: string | null;
+    stale?: boolean;
+    paired?: boolean;
+    connectedDevices: number;
+  }[];
   events?: { id: string; objectId: string; title: string; at: string; result: string; severity?: string; source?: string }[];
   rooms?: DeskRoom[];
   units?: DeskUnit[];
-  commandLogs?: { id: string; objectId: string; at: string; deviceId: string; command: string; result: string; source: string; risk: string }[];
+  commandLogs?: {
+    id: string;
+    objectId: string;
+    at: string;
+    deviceId: string;
+    deviceName?: string;
+    command: string;
+    result: string;
+    source: string;
+    risk: string;
+    reason?: string | null;
+  }[];
+  exchanges?: { id: string; objectId: string; at: string; kind: string; result: string; detail: string; gatewayName?: string }[];
   plans?: { unitId: string; unitName: string; objectId?: string; floors: { floor: number; image: string; pins: { deviceId: string; name: string; x: number; y: number }[] }[] }[];
   canCommand?: boolean;
   canPair?: boolean;
@@ -483,6 +515,7 @@ export function DeviceDesk({
   })();
   const houses = useObjectRows(derivedHouses);
   const commands = useObjectRows(commandLogs);
+  const journal = useObjectRows(exchanges);
   const maps = useObjectRows(plans.map((plan) => ({ ...plan, objectId: plan.objectId ?? "" })).filter((plan) => plan.objectId));
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<DeviceFilter>("all");
@@ -631,11 +664,12 @@ export function DeviceDesk({
           <li key={gateway.id} className="px-5 py-4">
             <p className="text-[16px] text-ink">{gateway.name}</p>
             <p className="text-sm text-muted">
-              {gateway.adapter} · {gateway.status}
-              {gateway.lastSeen ? ` · ${gateway.lastSeen}` : ""}
+              {gatewayStatusLabel(gateway.status, gateway.lastSeen)}
+              {gateway.version ? ` · ${gateway.version}` : ""}
+              {` · ${formatLastContact(gateway.lastSeen)}`}
               {gateway.connectedDevices ? ` · устройств ${gateway.connectedDevices}` : ""}
             </p>
-            {gateway.lastError ? <p className="mt-1 text-sm text-danger">{gateway.lastError}</p> : null}
+            {gatewayErrorText(gateway.lastError) ? <p className="mt-1 text-sm text-danger">{gatewayErrorText(gateway.lastError)}</p> : null}
             <p className="mt-1 text-sm text-muted">{gateway.paired ? "Канал выдан" : "Канал не выдан"}</p>
             {canPair ? (
               <div className="mt-3 flex flex-wrap gap-2">
@@ -664,6 +698,7 @@ export function DeviceDesk({
                 <p className="text-[16px] text-ink">{device.name}</p>
                 <p className="mt-2 text-sm text-muted">
                   {device.kind} · {deviceStatus(device)} · {devicePlace(device)}
+                  {device.lastSeen ? ` · ${formatLastContact(device.lastSeen)}` : ""}
                 </p>
                 {(device.channels ?? []).filter((channel) => channel.enabled).length ? (
                   <p className="mt-1 text-sm text-muted">
@@ -676,7 +711,7 @@ export function DeviceDesk({
                 ) : (
                   <p className="mt-1 text-sm text-muted">{device.state}</p>
                 )}
-                {device.lastError ? <p className="mt-1 text-sm text-danger">{device.lastError}</p> : null}
+                {device.lastError ? <p className="mt-1 text-sm text-danger">{gatewayErrorText(device.lastError)}</p> : null}
                 <div className="mt-3 flex flex-wrap gap-2">
                   {device.id ? (
                     <Link href={`/admin/devices/${device.id}`} className="btn btn-secondary btn-compact">
@@ -700,6 +735,7 @@ export function DeviceDesk({
               <p className="text-[16px] text-ink">{device.name}</p>
               <p className="text-sm text-muted">
                 {device.kind} · {deviceStatus(device)} · {devicePlace(device)}
+                {device.lastSeen ? ` · ${formatLastContact(device.lastSeen)}` : ""}
               </p>
               {(device.channels ?? []).filter((channel) => channel.enabled).length ? (
                 <p className="mt-1 text-sm text-muted">
@@ -710,7 +746,7 @@ export function DeviceDesk({
                     .join(" · ")}
                 </p>
               ) : null}
-              {device.lastError ? <p className="mt-1 text-sm text-danger">{device.lastError}</p> : null}
+              {device.lastError ? <p className="mt-1 text-sm text-danger">{gatewayErrorText(device.lastError)}</p> : null}
               <div className="mt-3 flex flex-wrap gap-2">
                 {device.id ? (
                   <Link href={`/admin/devices/${device.id}`} className="btn btn-secondary btn-compact">
@@ -790,12 +826,23 @@ export function DeviceDesk({
           <FloorPlan floors={plan.floors} editable={canPair} />
         </div>
       ))}
+      <List empty="Журнала обмена нет.">
+        {journal.map((row) => (
+          <li key={row.id} className="px-5 py-4">
+            <p className="text-[16px] text-ink">{row.gatewayName || "Шлюз"}</p>
+            <p className="text-sm text-muted">
+              {formatLastContact(row.at)} · {row.kind} · {row.result === "error" ? "ошибка" : "ок"} · {row.detail}
+            </p>
+          </li>
+        ))}
+      </List>
       <List empty="Журнала команд нет.">
         {commands.map((row) => (
           <li key={row.id} className="px-5 py-4">
-            <p className="text-[16px] text-ink">{row.command}</p>
+            <p className="text-[16px] text-ink">{row.deviceName || row.deviceId} · {row.command}</p>
             <p className="text-sm text-muted">
-              {row.at} · {row.result} · {row.source} · {row.risk}
+              {formatLastContact(row.at)} · {commandResultLabel(row.result)} · {row.source}
+              {row.reason ? ` · ${gatewayErrorText(row.reason) ?? row.reason}` : ""}
             </p>
           </li>
         ))}

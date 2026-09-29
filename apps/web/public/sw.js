@@ -1,4 +1,4 @@
-const CACHE = "star-home-shell-v5";
+const CACHE = "star-home-shell-v6";
 const STATE = "star-home-state";
 const SHELL = ["/offline.html", "/manifest.webmanifest"];
 

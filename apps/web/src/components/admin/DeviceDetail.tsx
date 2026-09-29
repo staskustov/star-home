@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAdminPreview } from "@/components/admin/AdminPreview";
-import { formatChannelValue } from "@/lib/format";
+import { formatChannelValue, formatLastContact, gatewayErrorText } from "@/lib/format";
 import { commandMessage, runCommand } from "@/lib/command";
 import { Select } from "@/components/ui/Select";
 
@@ -48,7 +48,7 @@ export type AdminDevice = {
 
 type Room = { id: string; objectId: string; unitId: string; unitName: string; name: string };
 type Unit = { id: string; objectId: string; name: string };
-type Gateway = { id: string; objectId: string; name: string; adapter: string; status: string };
+type Gateway = { id: string; objectId: string; name: string; adapter: string; status: string; version?: string | null; lastSeen?: string | null; lastError?: string | null };
 
 const statusText: Record<string, string> = {
   ONLINE: "На связи",
@@ -160,8 +160,9 @@ export function DeviceDetail({
       <h1 className="mt-4 text-[36px] leading-none tracking-[-0.04em] text-ink">{device.name}</h1>
       <p className="mt-3 text-[15px] text-muted">
         {device.kind} · {statusText[device.status ?? device.availability ?? "UNKNOWN"] ?? device.status} · {placeText(device)}
+        {device.lastSeen ? ` · ${formatLastContact(device.lastSeen)}` : ""}
       </p>
-      {device.lastError ? <p className="mt-2 text-sm text-danger">{device.lastError}</p> : null}
+      {device.lastError ? <p className="mt-2 text-sm text-danger">{gatewayErrorText(device.lastError)}</p> : null}
 
       <div className="mt-8 space-y-6">
         <section className="panel grid gap-4 p-5 sm:grid-cols-2">
@@ -289,6 +290,10 @@ export function DeviceDetail({
                 <div>
                   <dt>Внешний id</dt>
                   <dd className="text-ink">{device.externalId || "—"}</dd>
+                </div>
+                <div>
+                  <dt>Последний контакт</dt>
+                  <dd className="text-ink">{formatLastContact(device.lastSeen)}</dd>
                 </div>
                 <div>
                   <dt>Шлюз</dt>

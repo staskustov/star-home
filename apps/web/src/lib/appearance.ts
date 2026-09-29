@@ -50,4 +50,19 @@ export function applyAppearance(mode: ThemeMode, palette: PaletteId) {
   if (palette === "green") delete root.dataset.palette;
   else root.dataset.palette = palette;
   localStorage.setItem(appearanceKey, `${mode}:${palette}`);
+  syncThemeColor();
+}
+
+export function syncThemeColor(): void {
+  if (typeof document === "undefined") return;
+  const color = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim() || "#1b1713";
+  const metas = document.querySelectorAll('meta[name="theme-color"]');
+  if (!metas.length) {
+    const meta = document.createElement("meta");
+    meta.name = "theme-color";
+    meta.content = color;
+    document.head.appendChild(meta);
+    return;
+  }
+  metas.forEach((meta) => meta.setAttribute("content", color));
 }

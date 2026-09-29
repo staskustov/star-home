@@ -271,6 +271,11 @@
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
 }
 
+html {
+  background: var(--bg);
+  height: 100%;
+}
+
 body {
   background:
     radial-gradient(900px 420px at 50% -180px, var(--glow), transparent 62%),
@@ -1267,6 +1272,14 @@ select.control,
 }
 
 @media (max-width: 1023px) {
+  .resident-header {
+    padding-top: calc(env(safe-area-inset-top, 0px) + 12px);
+  }
+
+  .resident-cover {
+    margin-top: calc(-1 * env(safe-area-inset-top, 0px));
+  }
+
   .resident-cover .resident-header {
     position: absolute;
     top: 0;
@@ -1302,6 +1315,10 @@ select.control,
   .resident-cover .home-cover {
     border: 0;
     border-radius: 0;
+  }
+
+  .resident-cover .home-cover-inner {
+    padding-top: calc(4.75rem + env(safe-area-inset-top, 0px));
   }
 
   .resident-cover .home-cover.photo-card::after {

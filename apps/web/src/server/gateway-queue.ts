@@ -50,7 +50,7 @@ export function enqueueGatewayCommand(input: {
   return row;
 }
 
-export function markGatewayCommand(commandId: string, status: "ACKED" | "FAILED"): void {
+export function markGatewayCommand(commandId: string, status: "ACKED" | "FAILED" | "SENT"): void {
   const file = readOps();
   const current = file.gatewayCommands.find((item) => item.id === commandId);
   if (!current) return;
@@ -68,22 +68,36 @@ export function pullGatewayCommands(gatewayId: string): GatewayCommand[] {
 
 export function ackGatewayCommand(
   gatewayId: string,
-  input: { commandId?: unknown; confirmed?: unknown; state?: unknown; error?: unknown; devices?: unknown },
+  input: { commandId?: unknown; confirmed?: unknown; sent?: unknown; state?: unknown; error?: unknown; devices?: unknown },
 ): Result<{ commandId: string; applied: boolean }> {
   if (typeof input.commandId !== "string" || !input.commandId) return { ok: false, status: 400, message: "Команда не найдена" };
   const file = readOps();
   expireGatewayCommands(file);
   const row = file.gatewayCommands.find((item) => item.id === input.commandId && item.gatewayId === gatewayId);
   if (!row) return { ok: false, status: 404, message: "Команда не найдена" };
-  if (row.status !== "PENDING" || commandExpired(row)) {
-    if (row.status === "PENDING") row.status = "EXPIRED";
+  if (row.status === "ACKED" || row.status === "FAILED" || row.status === "EXPIRED") {
+    writeOps(file);
+    return { ok: true, value: { commandId: row.id, applied: false } };
+  }
+  if (row.status === "PENDING" && commandExpired(row)) {
+    row.status = "EXPIRED";
     writeOps(file);
     return { ok: true, value: { commandId: row.id, applied: false } };
   }
   const confirmed = input.confirmed === true;
-  row.status = confirmed ? "ACKED" : "FAILED";
-  row.ackedAt = new Date().toISOString();
+  const sent = input.sent === true;
+  const failed = typeof input.error === "string" && Boolean(input.error.trim());
   const discover = row.command === "discover";
+  if (row.status === "SENT" && !confirmed) {
+    if (failed) {
+      row.status = "FAILED";
+      row.ackedAt = new Date().toISOString();
+    }
+    writeOps(file);
+    return { ok: true, value: { commandId: row.id, applied: false } };
+  }
+  row.status = confirmed ? "ACKED" : sent && !failed ? "SENT" : "FAILED";
+  row.ackedAt = new Date().toISOString();
   if (confirmed && !discover && input.state && typeof input.state === "object" && !Array.isArray(input.state)) {
     const device = file.devices.find((item) => item.id === row.deviceId && item.gatewayId === gatewayId);
     if (device) {

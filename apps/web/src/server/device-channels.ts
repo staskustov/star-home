@@ -3,8 +3,8 @@ import { isCapability, type Capability } from "@/server/device-capabilities";
 export const channelDataTypes = ["number", "boolean", "enum", "string"] as const;
 export type ChannelDataType = (typeof channelDataTypes)[number];
 
-export const channelStatuses = ["LIVE", "STALE", "NONE", "ERROR"] as const;
-export type ChannelStatus = (typeof channelStatuses)[number];
+export const channelQualities = ["fresh", "stale", "unavailable", "unknown", "error"] as const;
+export type ChannelQuality = (typeof channelQualities)[number];
 
 export const deviceLifecycles = [
   "DISCOVERED",
@@ -46,6 +46,7 @@ export type PublicChannel = {
   unit: string;
   value: number | boolean | string | null;
   status: ChannelStatus;
+  quality: ChannelQuality;
   writable: boolean;
 };
 
@@ -224,8 +225,18 @@ function writeStateFromChannel(state: ChannelState, channel: DeviceChannel): voi
 }
 
 function finiteOrNull(value: unknown): number | null {
-  const number = Number(value);
+  if (value === null || value === undefined || value === "") return null;
+  if (typeof value === "boolean") return null;
+  const number = typeof value === "number" ? value : Number(value);
   return Number.isFinite(number) ? number : null;
+}
+
+export function qualityOf(status: ChannelStatus, availability?: string | null): ChannelQuality {
+  if (status === "ERROR") return "error";
+  if (status === "STALE") return "stale";
+  if (status === "LIVE") return "fresh";
+  if (availability === "OFFLINE") return "unavailable";
+  return "unknown";
 }
 
 const stateCapabilityKeys: [keyof ChannelState, Capability][] = [
@@ -429,15 +440,19 @@ export function channelsOf(device: ChannelHost): DeviceChannel[] {
 export function publicChannelsOf(device: ChannelHost): PublicChannel[] {
   return channelsOf(device)
     .filter((channel) => channel.enabled)
-    .map((channel) => ({
-      id: channel.id,
-      capability: channel.capability,
-      displayName: channel.displayName,
-      unit: channel.unit,
-      value: channel.value ?? null,
-      status: channelStatus(channel.value ?? null, channel.lastValueAt ?? device.lastSeen),
-      writable: channel.writable,
-    }));
+    .map((channel) => {
+      const status = channelStatus(channel.value ?? null, channel.lastValueAt ?? device.lastSeen);
+      return {
+        id: channel.id,
+        capability: channel.capability,
+        displayName: channel.displayName,
+        unit: channel.unit,
+        value: channel.value ?? null,
+        status,
+        quality: qualityOf(status, device.availability),
+        writable: channel.writable,
+      };
+    });
 }
 
 export function applyStateToChannels(device: ChannelHost): void {

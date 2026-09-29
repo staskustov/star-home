@@ -1,6 +1,7 @@
 import { isOpener } from "@/server/device-kinds";
 import { applyCommandState, type SmartCommandName } from "@/server/smart-commands";
-import { readOps, type Device, type Gateway, type GatewayAdapterKind, type NormalizedState } from "@/server/ops-store";
+import { readOps, writeOps, type Device, type Gateway, type GatewayAdapterKind, type NormalizedState } from "@/server/ops-store";
+import { expireStaleGateways } from "@/server/gateway-contact";
 
 export type AdapterResult = {
   confirmed: boolean;
@@ -14,10 +15,18 @@ export interface GatewayAdapter {
   mapInbound?(topic: string, payload: unknown): { externalId: string; state: NormalizedState } | null;
 }
 
+export function cloudExecutesAdapter(kind: string | null | undefined): boolean {
+  return kind === "local" || kind === "http";
+}
+
 export class LocalGatewayAdapter implements GatewayAdapter {
   readonly kind = "local";
 
   async execute(device: Device, command: string, value: unknown): Promise<AdapterResult> {
+    const gateway = device.gatewayId ? readOps().gateways.find((item) => item.id === device.gatewayId) : undefined;
+    if (!cloudExecutesAdapter(device.adapter) || (gateway && !cloudExecutesAdapter(gateway.adapter))) {
+      return { confirmed: false, error: "local-forbidden-on-paired-gateway" };
+    }
     if ((command === "OPEN" || command === "open" || command === "CLOSE" || command === "close") && isOpener(device.kind)) {
       return { confirmed: true, state: { latch: command === "OPEN" || command === "open" ? "OPEN" : "CLOSED" } };
     }
@@ -61,9 +70,19 @@ export function registerGatewayAdapter(adapter: GatewayAdapter): void {
 }
 
 export function adapterFor(device: Device, gateway?: Gateway | null): GatewayAdapter {
-  if (gateway && byKind.has(gateway.adapter)) return byKind.get(gateway.adapter) ?? localAdapter;
-  if (device.adapter === "http") return httpAdapter;
-  return byKind.get(device.adapter) ?? localAdapter;
+  const kind = gateway?.adapter ?? device.adapter;
+  const found = byKind.get(kind);
+  if (found) return found;
+  if (kind === "http" || device.adapter === "http") return httpAdapter;
+  if (kind && !cloudExecutesAdapter(kind)) {
+    return {
+      kind,
+      async execute(): Promise<AdapterResult> {
+        return { confirmed: false, error: "adapter-unconfigured" };
+      },
+    };
+  }
+  return localAdapter;
 }
 
 export function knownGatewayAdapters(): GatewayAdapterKind[] {
@@ -71,9 +90,15 @@ export function knownGatewayAdapters(): GatewayAdapterKind[] {
 }
 
 export async function executeOnAdapter(device: Device, command: string, value: unknown): Promise<AdapterResult> {
+  const file = readOps();
+  if (expireStaleGateways(file)) writeOps(file);
   const gateway = device.gatewayId ? readOps().gateways.find((item) => item.id === device.gatewayId) : undefined;
+  const kind = gateway?.adapter ?? device.adapter;
   if (gateway?.status === "OFFLINE" && gateway.adapter !== "local") {
     return { confirmed: false, error: "gateway-offline" };
+  }
+  if (!cloudExecutesAdapter(kind)) {
+    return { confirmed: false, error: "awaiting-gateway" };
   }
   return adapterFor(device, gateway).execute(device, command, value);
 }

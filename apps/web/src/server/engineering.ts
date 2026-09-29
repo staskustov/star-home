@@ -2,7 +2,7 @@ import { formatHumidity, formatTemperature } from "@/lib/format";
 import { deviceLabel, type DeviceKind } from "@/server/device-kinds";
 import { rememberReading, runDevice } from "@/server/devices";
 import { recordAudit } from "@/server/operations";
-import { readOps, writeOps, type Device, type DeviceReading } from "@/server/ops-store";
+import { readOps, writeOps, type Device, type DeviceReading, type GatewayAdapterKind } from "@/server/ops-store";
 import { notifyIfAlert } from "@/server/smart-notices";
 import { can, objectFor, objectsInScope, reaches, type StaffActor } from "@/server/rbac/decide";
 import { placeName } from "@/server/security-post";
@@ -28,7 +28,7 @@ const works: { value: DeviceWork; label: string }[] = [
   { value: "FAULT", label: "Неисправно" },
 ];
 
-const links: Record<Device["adapter"], string> = {
+const links: Record<GatewayAdapterKind, string> = {
   local: "Локальный адаптер",
   http: "HTTP",
   matter: "Matter",
@@ -36,6 +36,9 @@ const links: Record<Device["adapter"], string> = {
   modbus: "Modbus",
   onvif: "ONVIF",
   rs485: "RS-485",
+  wirenboard: "Wiren Board",
+  knx: "KNX",
+  zigbee: "Zigbee",
 };
 
 function workOf(device: Device): DeviceWork {

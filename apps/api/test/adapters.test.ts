@@ -133,6 +133,33 @@ describe("gateway adapters", () => {
     assert.equal(result.state?.on, true);
   });
 
+  it("does not let the local adapter confirm a device on a Wiren Board gateway", async () => {
+    const ops = await import("../../web/src/server/ops-store");
+    const { cloudExecutesAdapter } = await import("../../web/src/server/gateway-adapter");
+    assert.equal(cloudExecutesAdapter("wirenboard"), false);
+    assert.equal(cloudExecutesAdapter("mqtt"), false);
+    assert.equal(cloudExecutesAdapter("local"), true);
+    const file = ops.readOps();
+    file.gateways.push({
+      id: "gw_paired_wb",
+      companyId: "cmp_star",
+      objectId: "obj_siyanie",
+      unitId: null,
+      name: "WB paired",
+      adapter: "wirenboard",
+      status: "ONLINE",
+      version: null,
+      lastSeen: null,
+      lastError: null,
+      internalAddress: null,
+    });
+    file.devices.push({ ...light, id: "dev_paired_light", gatewayId: "gw_paired_wb", adapter: "local" });
+    ops.writeOps(file);
+    const result = await executeOnAdapter(file.devices.find((item) => item.id === "dev_paired_light") as Device, "setPower", true);
+    assert.equal(result.confirmed, false);
+    assert.equal(result.error, "awaiting-gateway");
+  });
+
   it("rejects an unknown command on the local adapter", async () => {
     const result = await executeOnAdapter(light, "explode", true);
     assert.equal(result.confirmed, false);
@@ -400,6 +427,148 @@ describe("gateway channel", () => {
     const points = file.smartHistory.filter((point) => point.deviceId === "dev_series");
     assert.equal(points.length, 1);
     assert.equal(points[0]?.state.temperatureC, 22);
+  });
+
+  it("records sent without applying state, then confirms once", async () => {
+    const { createHash } = await import("crypto");
+    const ops = await import("../../web/src/server/ops-store");
+    const queue = await import("../../web/src/server/gateway-queue");
+    const channel = await import("../../web/src/server/gateway-channel");
+    const token = "f".repeat(48);
+    const file = ops.readOps();
+    file.gateways.push({
+      id: "gw_sent",
+      companyId: "cmp_star",
+      objectId: "obj_siyanie",
+      unitId: null,
+      name: "Sent",
+      adapter: "wirenboard",
+      status: "ONLINE",
+      version: null,
+      lastSeen: null,
+      lastError: null,
+      internalAddress: null,
+      tokenHash: createHash("sha256").update(token).digest("hex"),
+    });
+    file.devices.push({ ...light, id: "dev_sent_light", gatewayId: "gw_sent", externalId: "wb-relay-sent", adapter: "wirenboard", state: { on: false } });
+    ops.writeOps(file);
+    const row = queue.enqueueGatewayCommand({ gatewayId: "gw_sent", deviceId: "dev_sent_light", command: "setPower", value: true });
+    const pulled = channel.pullGateway(token);
+    assert.equal(pulled.ok, true);
+    if (pulled.ok) {
+      const command = pulled.value.commands.find((item) => item.id === row.id);
+      assert.equal(command?.externalId, "wb-relay-sent");
+      assert.equal(command?.adapter, "wirenboard");
+    }
+    const sent = channel.ackGateway(token, { commandId: row.id, confirmed: false, sent: true });
+    assert.equal(sent.ok && sent.value.applied, false);
+    assert.equal(ops.readOps().gatewayCommands.find((item) => item.id === row.id)?.status, "SENT");
+    assert.equal(ops.readOps().devices.find((item) => item.id === "dev_sent_light")?.state?.on, false);
+    const confirmed = channel.ackGateway(token, { commandId: row.id, confirmed: true, state: { on: true } });
+    assert.equal(confirmed.ok && confirmed.value.applied, true);
+    assert.equal(ops.readOps().devices.find((item) => item.id === "dev_sent_light")?.state?.on, true);
+  });
+
+  it("marks a timed-out MQTT command FAILED and does not apply state", async () => {
+    const { createHash } = await import("crypto");
+    const ops = await import("../../web/src/server/ops-store");
+    const queue = await import("../../web/src/server/gateway-queue");
+    const channel = await import("../../web/src/server/gateway-channel");
+    const token = "h".repeat(48);
+    const file = ops.readOps();
+    file.gateways.push({
+      id: "gw_timeout",
+      companyId: "cmp_star",
+      objectId: "obj_siyanie",
+      unitId: null,
+      name: "Timeout",
+      adapter: "wirenboard",
+      status: "ONLINE",
+      version: null,
+      lastSeen: null,
+      lastError: null,
+      internalAddress: null,
+      tokenHash: createHash("sha256").update(token).digest("hex"),
+    });
+    file.devices.push({ ...light, id: "dev_timeout_light", gatewayId: "gw_timeout", externalId: "wb-relay-timeout", adapter: "wirenboard", state: { on: false } });
+    ops.writeOps(file);
+    const pending = queue.enqueueGatewayCommand({ gatewayId: "gw_timeout", deviceId: "dev_timeout_light", command: "setPower", value: true });
+    const timedOut = channel.ackGateway(token, { commandId: pending.id, confirmed: false, sent: true, error: "mqtt-timeout" });
+    assert.equal(timedOut.ok, true);
+    assert.equal(timedOut.ok && timedOut.value.applied, false);
+    assert.equal(ops.readOps().gatewayCommands.find((item) => item.id === pending.id)?.status, "FAILED");
+    assert.equal(ops.readOps().devices.find((item) => item.id === "dev_timeout_light")?.state?.on, false);
+    const sentFirst = queue.enqueueGatewayCommand({ gatewayId: "gw_timeout", deviceId: "dev_timeout_light", command: "setPower", value: true });
+    channel.ackGateway(token, { commandId: sentFirst.id, confirmed: false, sent: true });
+    assert.equal(ops.readOps().gatewayCommands.find((item) => item.id === sentFirst.id)?.status, "SENT");
+    channel.ackGateway(token, { commandId: sentFirst.id, confirmed: false, sent: true, error: "mqtt-timeout" });
+    assert.equal(ops.readOps().gatewayCommands.find((item) => item.id === sentFirst.id)?.status, "FAILED");
+    assert.equal(ops.readOps().devices.find((item) => item.id === "dev_timeout_light")?.state?.on, false);
+  });
+
+  it("stores gateway lastError from a degraded heartbeat", async () => {
+    const { createHash } = await import("crypto");
+    const ops = await import("../../web/src/server/ops-store");
+    const channel = await import("../../web/src/server/gateway-channel");
+    const token = "g".repeat(48);
+    const file = ops.readOps();
+    file.gateways.push({
+      id: "gw_err",
+      companyId: "cmp_star",
+      objectId: "obj_siyanie",
+      unitId: null,
+      name: "Err",
+      adapter: "wirenboard",
+      status: "OFFLINE",
+      version: null,
+      lastSeen: null,
+      lastError: null,
+      internalAddress: null,
+      tokenHash: createHash("sha256").update(token).digest("hex"),
+    });
+    ops.writeOps(file);
+    assert.equal(channel.heartbeatGateway(token, { status: "DEGRADED", version: "agent-2.3", lastError: "mqtt-offline" }).ok, true);
+    const gateway = ops.readOps().gateways.find((item) => item.id === "gw_err");
+    assert.equal(gateway?.status, "DEGRADED");
+    assert.equal(gateway?.version, "agent-2.3");
+    assert.equal(gateway?.lastError, "mqtt-offline");
+    const heartbeatLog = ops.readOps().gatewayExchanges.find((row) => row.gatewayId === "gw_err" && row.kind === "heartbeat");
+    assert.equal(heartbeatLog?.detail.includes("DEGRADED"), true);
+  });
+
+  it("expires a silent gateway and does not invent last contact", async () => {
+    const ops = await import("../../web/src/server/ops-store");
+    const contact = await import("../../web/src/server/gateway-contact");
+    const format = await import("../../web/src/lib/format");
+    const file = ops.readOps();
+    file.gateways.push({
+      id: "gw_stale",
+      companyId: "cmp_star",
+      objectId: "obj_siyanie",
+      unitId: null,
+      name: "Stale",
+      adapter: "wirenboard",
+      status: "ONLINE",
+      version: "agent-5",
+      lastSeen: new Date(Date.now() - 10 * 60_000).toISOString(),
+      lastError: null,
+      internalAddress: null,
+      tokenHash: null,
+    });
+    file.devices.push({ ...light, id: "dev_stale_light", gatewayId: "gw_stale", adapter: "wirenboard", lastSeen: new Date(Date.now() - 10 * 60_000).toISOString() });
+    ops.writeOps(file);
+    const now = Date.now();
+    assert.equal(contact.isGatewayStale(ops.readOps().gateways.find((item) => item.id === "gw_stale")!), true);
+    const snapshot = ops.readOps();
+    assert.equal(contact.expireStaleGateways(snapshot, now), true);
+    ops.writeOps(snapshot);
+    const expired = ops.readOps().gateways.find((item) => item.id === "gw_stale");
+    assert.equal(expired?.status, "OFFLINE");
+    assert.equal(expired?.lastError, "heartbeat-stale");
+    assert.equal(snapshot.devices.find((item) => item.id === "dev_stale_light")?.availability, "OFFLINE");
+    assert.equal(format.formatLastContact(null), "нет контакта");
+    assert.equal(format.formatLastContact(new Date(now - 4_000).toISOString(), now), "только что");
+    assert.equal(format.gatewayStatusLabel("UNKNOWN", null), "Нет контакта");
   });
 });
 

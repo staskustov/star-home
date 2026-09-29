@@ -30,7 +30,7 @@ export function AdminFrame({ children }: { children: React.ReactNode }) {
         </aside>
       }
     >
-      <header className="sticky top-0 z-20 border-b border-line/60 bg-bg/40 px-5 py-4 backdrop-blur-xl lg:px-10">
+      <header className="sticky top-0 z-20 border-b border-line/60 bg-bg/40 px-5 py-4 pt-[calc(env(safe-area-inset-top,0px)+1rem)] backdrop-blur-xl lg:px-10 lg:pt-4">
         <div className="flex items-center gap-3">
           <button type="button" className="btn btn-secondary btn-icon md:hidden" aria-label="Меню" onClick={() => setMenuPath(pathname)}>
             <Icon name="menu" />

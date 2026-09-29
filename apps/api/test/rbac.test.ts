@@ -676,7 +676,9 @@ describe("smart home commands", () => {
     delete station.state;
     ops.writeOps(file);
     const empty = (await rpc("home", null, resident)).body as { home: { weather: { temperatureC: number | null } } };
-    assert.equal(empty.home.weather.temperatureC, 12.4);
+    assert.equal(empty.home.weather.temperatureC, null);
+    station.state = { temperatureC: 12.4, humidityPercent: 58, windMs: 2.4, radiationUSv: 0.11 };
+    ops.writeOps(file);
   });
 
   it("lets a resident pick home chips and keeps exactly three life modes", async () => {
@@ -976,7 +978,7 @@ describe("smart home commands", () => {
     assert.equal(sent.status, 200, JSON.stringify(sent.body));
     const commandId = (sent.body as { commandId?: string; status?: string }).commandId;
     assert.ok(commandId);
-    assert.equal((sent.body as { status?: string }).status, "QUEUED");
+    assert.equal((sent.body as { status?: string }).status, "queued");
     const paired = await rpc("pairGateway", { gatewayId }, admin);
     const token = (paired.body as { token: string }).token;
     const channel = await import("../../web/src/server/gateway-channel");

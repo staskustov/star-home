@@ -14,6 +14,7 @@ import { findObject, findRoom, roomsOf } from "@/server/catalog-store";
 import { boundValue, remember } from "@/server/store-bind";
 import type { AccessEvent } from "@/types/domain";
 import { timeZone } from "@/server/time-zone";
+import { isGatewayStale, type GatewayExchange } from "@/server/gateway-contact";
 
 export type Pass = {
   id: string;
@@ -122,7 +123,7 @@ export type Device = {
   place?: DevicePlace;
   kind: DeviceKind;
   name: string;
-  adapter: "local" | "http" | "matter" | "mqtt" | "modbus" | "onvif" | "rs485";
+  adapter: GatewayAdapterKind;
   endpoint?: string;
   work?: "ON" | "OFF" | "FAULT";
   latch?: "OPEN" | "CLOSED";
@@ -300,7 +301,7 @@ export type GatewayCommand = {
   deviceId: string;
   command: string;
   value: unknown;
-  status: "PENDING" | "ACKED" | "FAILED" | "EXPIRED";
+  status: "PENDING" | "SENT" | "ACKED" | "FAILED" | "EXPIRED";
   createdAt: string;
   expiresAt?: string;
   ackedAt?: string;
@@ -435,6 +436,7 @@ type OpsFile = {
   pendingSmart: PendingSmartCommand[];
   gatewayCommands: GatewayCommand[];
   discoveryScans: DiscoveryScan[];
+  gatewayExchanges: GatewayExchange[];
   commandLogs: DeviceCommandLog[];
   favorites: DeviceFavorite[];
   scenarios: Scenario[];
@@ -495,7 +497,7 @@ export function clock(): string {
 }
 
 function seed(): OpsFile {
-  return {
+  const file: OpsFile = {
     passes: [
       {
         id: "pass_24",
@@ -738,6 +740,7 @@ function seed(): OpsFile {
     pendingSmart: [],
     gatewayCommands: [],
     discoveryScans: [],
+    gatewayExchanges: [],
     commandLogs: [],
     favorites: [],
     scenarios: [],
@@ -749,6 +752,10 @@ function seed(): OpsFile {
     homeMetrics: [],
     homeCovers: [],
   };
+  for (const device of file.devices) {
+    device.metadata = { ...device.metadata, demo: true };
+  }
+  return file;
 }
 
 function catalogDevices(): Device[] {
@@ -757,6 +764,14 @@ function catalogDevices(): Device[] {
 
 export function isGatewayAdapter(value: unknown): value is GatewayAdapterKind {
   return typeof value === "string" && (gatewayAdapters as readonly string[]).includes(value);
+}
+
+export function adapterFromGateway(gateway: Gateway | null | undefined): GatewayAdapterKind {
+  return gateway && isGatewayAdapter(gateway.adapter) ? gateway.adapter : "local";
+}
+
+export function isDemoDevice(device: Pick<Device, "adapter" | "gatewayId" | "metadata">): boolean {
+  return device.metadata?.demo === true || (device.adapter === "local" && !device.gatewayId);
 }
 
 export function isDevicePlace(value: unknown): value is DevicePlace {
@@ -809,7 +824,7 @@ export function normalizeDevice(device: Device, reading?: DeviceReading): Device
   if (!device.work) device.work = "ON";
   if (isOpener(device.kind)) device.latch ??= "CLOSED";
   bindDevicePlace(device);
-  if (device.kind === "WEATHER") {
+  if (device.kind === "WEATHER" && isDemoDevice(device)) {
     device.state = {
       temperatureC: device.state?.temperatureC ?? staticOutdoorWeather.temperatureC,
       humidityPercent: device.state?.humidityPercent ?? staticOutdoorWeather.humidityPercent,
@@ -887,6 +902,7 @@ export function trimSmartLayers(file: OpsFile, now = Date.now()): void {
     })
     .slice(-400);
   file.commandLogs = (file.commandLogs ?? []).slice(0, 400);
+  file.gatewayExchanges = (file.gatewayExchanges ?? []).slice(0, 200);
 }
 
 export function commandExpired(command: GatewayCommand, now = Date.now()): boolean {
@@ -907,6 +923,7 @@ function normalize(file: OpsFile): OpsFile {
   file.pendingSmart ??= [];
   file.gatewayCommands ??= [];
   file.discoveryScans ??= [];
+  file.gatewayExchanges ??= [];
   file.commandLogs ??= [];
   file.favorites ??= [];
   file.scenarios ??= [];
@@ -1271,10 +1288,10 @@ function outdoorWeatherOf(devices: Device[]) {
     return typeof value === "number" ? value : null;
   };
   return {
-    temperatureC: numbers((device) => device.state?.temperatureC) ?? staticOutdoorWeather.temperatureC,
-    humidityPercent: numbers((device) => device.state?.humidityPercent) ?? staticOutdoorWeather.humidityPercent,
-    windMs: numbers((device) => device.state?.windMs) ?? staticOutdoorWeather.windMs,
-    radiationUSv: numbers((device) => device.state?.radiationUSv) ?? staticOutdoorWeather.radiationUSv,
+    temperatureC: numbers((device) => device.state?.temperatureC),
+    humidityPercent: numbers((device) => device.state?.humidityPercent),
+    windMs: numbers((device) => device.state?.windMs),
+    radiationUSv: numbers((device) => device.state?.radiationUSv),
     co2Ppm: numbers((device) => device.state?.co2Ppm),
     organics: numbers((device) => device.state?.organics),
   };
@@ -1317,8 +1334,7 @@ function homeController(gateways: Gateway[]): {
   const remote = gateways.filter((gateway) => gateway.adapter !== "local");
   if (!remote.length) return null;
   const rows = remote.map((gateway) => {
-    const seen = gateway.lastSeen ? Date.parse(gateway.lastSeen) : NaN;
-    const stale = gateway.status === "OFFLINE" || !Number.isFinite(seen) || Date.now() - seen > 5 * 60_000;
+    const stale = isGatewayStale(gateway);
     return { name: gateway.name, status: gateway.status, lastSeen: gateway.lastSeen, stale };
   });
   const stale = rows.some((row) => row.stale);

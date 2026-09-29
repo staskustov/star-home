@@ -28,6 +28,27 @@ describe("device channel model", () => {
     assert.equal(unitForCapability("co2"), "ppm");
   });
 
+  it("does not treat a missing temperature as zero", () => {
+    const empty = publicChannelsOf({
+      id: "dev_empty",
+      capabilities: ["temperature", "humidity"],
+      state: { temperatureC: null as unknown as number },
+      availability: "UNKNOWN",
+    });
+    const temperature = empty.find((channel) => channel.capability === "temperature");
+    assert.equal(temperature?.value, null);
+    assert.equal(temperature?.status, "NONE");
+    assert.equal(temperature?.quality, "unknown");
+    assert.notEqual(temperature?.value, 0);
+    const offline = publicChannelsOf({
+      id: "dev_off",
+      capabilities: ["temperature"],
+      availability: "OFFLINE",
+    });
+    assert.equal(offline[0]?.value, null);
+    assert.equal(offline[0]?.quality, "unavailable");
+  });
+
   it("keeps one physical device with many synthesized channels", () => {
     const device = {
       id: "dev_msw",

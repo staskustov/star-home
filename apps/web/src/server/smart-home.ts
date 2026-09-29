@@ -4,7 +4,8 @@ import { capabilitiesFor, isCapability } from "@/server/device-capabilities";
 import { deviceLabel, isOpener, residentSeesDevice } from "@/server/device-kinds";
 import "./adapters/wirenboard";
 import "./adapters/protocol-stubs";
-import { executeOnAdapter } from "@/server/gateway-adapter";
+import { executeOnAdapter, cloudExecutesAdapter } from "@/server/gateway-adapter";
+import { expireStaleGateways } from "@/server/gateway-contact";
 import { enqueueGatewayCommand, markGatewayCommand } from "@/server/gateway-queue";
 import { notifyIfAlert } from "@/server/smart-notices";
 import { emitLive } from "@/server/live-bus";
@@ -531,12 +532,14 @@ export function smartHomeHistory(
 
 export type CommandInput = { deviceId?: unknown; command?: unknown; value?: unknown; confirmToken?: unknown; source?: unknown };
 
+export type CommandOutcome = "accepted" | "queued" | "confirmed" | "failed";
+
 export async function commandDeviceSmart(session: SessionRef | null, input: CommandInput): Promise<Result<{
   confirmed: boolean;
   needsConfirm?: boolean;
   token?: string;
   message: string;
-  status?: string;
+  status?: CommandOutcome;
   commandId?: string;
   lastSeen?: string | null;
   device?: SmartDeviceCard;
@@ -560,8 +563,10 @@ export async function commandDeviceSmart(session: SessionRef | null, input: Comm
   const found = findScopedDevice(viewer.value, deviceId);
   if (!found.ok) return found;
   const device = found.value;
-  const remote = device.gatewayId ? findGateway(device.gatewayId) : undefined;
-  if (remote && remote.adapter !== "local" && !rateOk(`device:${device.id}`, commandsPerDevice)) {
+  const snapshot = readOps();
+  if (expireStaleGateways(snapshot)) writeOps(snapshot);
+  const gateway = device.gatewayId ? findGateway(device.gatewayId) : undefined;
+  if (gateway && gateway.adapter !== "local" && !rateOk(`device:${device.id}`, commandsPerDevice)) {
     return { ok: false, status: 429, message: "Слишком много команд" };
   }
   if (!isSmartCommand(command)) return { ok: false, status: 400, message: "Неизвестная команда" };
@@ -608,20 +613,87 @@ export async function commandDeviceSmart(session: SessionRef | null, input: Comm
     return denied();
   }
 
-  const gateway = device.gatewayId ? findGateway(device.gatewayId) : undefined;
-  const queued =
-    gateway && gateway.adapter !== "local"
-      ? enqueueGatewayCommand({ gatewayId: gateway.id, deviceId: device.id, command, value })
-      : undefined;
-  if (gateway?.status === "OFFLINE" && gateway.adapter !== "local") {
+  const remote = Boolean(gateway && !cloudExecutesAdapter(gateway.adapter));
+  const queued = gateway && remote ? enqueueGatewayCommand({ gatewayId: gateway.id, deviceId: device.id, command, value }) : undefined;
+  if (remote && gateway?.status === "OFFLINE") {
+    rememberCommandLog({
+      actorUserId: userId,
+      source,
+      companyId: device.companyId,
+      objectId: device.objectId,
+      unitId: device.unitId,
+      deviceId: device.id,
+      command,
+      value,
+      risk,
+      result: "UNCONFIRMED",
+      reason: "gateway-offline",
+    });
     return {
       ok: true,
       value: {
         confirmed: false,
-        status: "QUEUED",
+        status: "queued",
         commandId: queued?.id,
         message: "Контроллер недоступен. Команда в очереди.",
         lastSeen: gateway.lastSeen,
+      },
+    };
+  }
+  if (remote) {
+    rememberCommandLog({
+      actorUserId: userId,
+      source,
+      companyId: device.companyId,
+      objectId: device.objectId,
+      unitId: device.unitId,
+      deviceId: device.id,
+      command,
+      value,
+      risk,
+      result: "UNCONFIRMED",
+      reason: "awaiting-gateway",
+    });
+    recordAudit({
+      actorUserId: userId,
+      companyId: device.companyId,
+      objectId: device.objectId,
+      unitId: device.unitId,
+      action: "DEVICE_COMMAND",
+      targetType: "device",
+      targetId: device.id,
+      target: device.name,
+      result: "ERROR",
+      reason: "Ожидает подтверждение шлюза",
+    });
+    emitLive({
+      objectId: device.objectId,
+      kind: "device",
+      title: `${device.name}: команда принята`,
+      deviceId: device.id,
+    });
+    rememberEvent({
+      companyId: device.companyId,
+      objectId: device.objectId,
+      unitId: device.unitId,
+      roomId: device.roomId ?? null,
+      deviceId: device.id,
+      gatewayId: device.gatewayId ?? null,
+      kind: "command",
+      title: `${device.name}: ${command}`,
+      result: "UNCONFIRMED",
+      at: clock(),
+      severity: "INFO",
+      source: eventSource(input.source),
+    });
+    return {
+      ok: true,
+      value: {
+        confirmed: false,
+        status: "accepted",
+        commandId: queued?.id,
+        message: "Команда принята. Ожидаем подтверждение оборудования.",
+        lastSeen: gateway?.lastSeen ?? null,
       },
     };
   }
@@ -713,8 +785,12 @@ export async function commandDeviceSmart(session: SessionRef | null, input: Comm
     ok: true,
     value: {
       confirmed: result.confirmed,
-      message: result.confirmed ? "Команда выполнена." : result.error === "gateway-offline" ? "Контроллер недоступен. Команда в очереди." : "Не удалось подтвердить выполнение.",
-      status: result.confirmed ? "OK" : queued ? "QUEUED" : result.error === "gateway-offline" ? "CONTROLLER_UNAVAILABLE" : "UNCONFIRMED",
+      message: result.confirmed
+        ? "Команда выполнена."
+        : result.error === "gateway-offline"
+          ? "Контроллер недоступен. Команда в очереди."
+          : "Не удалось подтвердить выполнение.",
+      status: result.confirmed ? "confirmed" : result.error === "gateway-offline" ? "queued" : "failed",
       commandId: queued?.id,
       lastSeen: fresh?.lastSeen ?? null,
       device: fresh ? asCard(fresh, viewer.value) : undefined,

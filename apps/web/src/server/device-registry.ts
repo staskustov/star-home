@@ -6,6 +6,7 @@ import {
   mergeChannelsForCapabilities,
   persistChannels,
   channelsOf,
+  qualityOf,
   type DeviceLifecycle,
   type PublicChannel,
 } from "@/server/device-channels";
@@ -13,6 +14,7 @@ import { deviceKinds, deviceLabel, type DeviceKind } from "@/server/device-kinds
 import { recordAudit } from "@/server/operations";
 import {
   gatewaysForObject,
+  adapterFromGateway,
   isDevicePlace,
   isGatewayAdapter,
   newId,
@@ -53,6 +55,7 @@ export type RegistryDevice = {
   status: DeviceLifecycle;
   availability: DeviceAvailability;
   lastSeen: string | null;
+  adapter: GatewayAdapterKind;
   work: "ON" | "OFF" | "FAULT";
 };
 
@@ -116,12 +119,14 @@ function asDevice(device: Device): RegistryDevice {
       unit: channel.unit,
       value: channel.value ?? null,
       status: channel.status,
+      quality: qualityOf(channel.status, normalized.availability),
       writable: channel.writable,
       enabled: channel.enabled,
     })),
     status: normalized.status ?? deriveLifecycle(normalized),
     availability: normalized.availability ?? "UNKNOWN",
     lastSeen: normalized.lastSeen ?? null,
+    adapter: normalized.adapter,
     work: normalized.work === "FAULT" ? "FAULT" : normalized.work === "OFF" ? "OFF" : "ON",
   };
 }
@@ -251,6 +256,7 @@ export function registerDevice(
   const place = bound as { place: DevicePlace; unitId: string | null; roomId: string | null };
   const gatewayId = bindGateway(actor, object.value.id, input.gatewayId);
   if (gatewayId && typeof gatewayId !== "string") return gatewayId;
+  const gateway = typeof gatewayId === "string" ? readOps().gateways.find((item) => item.id === gatewayId) : undefined;
   const manufacturer = cleanOptional(input.manufacturer, 80);
   if (manufacturer && typeof manufacturer !== "string") return manufacturer;
   const model = cleanOptional(input.model, 80);
@@ -272,7 +278,7 @@ export function registerDevice(
     kind: input.kind,
     name,
     displayName: name,
-    adapter: "local",
+    adapter: adapterFromGateway(gateway),
     work: "ON",
     gatewayId: typeof gatewayId === "string" ? gatewayId : null,
     roomId: place.roomId,
@@ -366,6 +372,11 @@ export function updateRegistryDevice(
   device.place = place.place;
   device.roomId = place.roomId;
   device.gatewayId = typeof gatewayId === "string" ? gatewayId : null;
+  if (input.gatewayId !== undefined) {
+    const gateway = device.gatewayId ? file.gateways.find((item) => item.id === device.gatewayId) : undefined;
+    if (gateway) device.adapter = adapterFromGateway(gateway);
+    else if (device.metadata?.demo === true) device.adapter = "local";
+  }
   device.manufacturer = typeof manufacturer === "string" ? manufacturer : null;
   device.model = typeof model === "string" ? model : null;
   device.serialNumber = typeof serialNumber === "string" ? serialNumber : null;
@@ -497,6 +508,11 @@ export function updateGateway(
   gateway.name = name;
   gateway.adapter = adapter;
   gateway.unitId = unitId === null || typeof unitId === "string" ? unitId : gateway.unitId;
+  if (input.adapter !== undefined) {
+    for (const device of file.devices) {
+      if (device.gatewayId === gateway.id) device.adapter = adapter;
+    }
+  }
   writeOps(file);
   recordAudit({
     actorUserId: actor.userId,

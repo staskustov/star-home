@@ -1,17 +1,41 @@
 # STAR HOME Local Gateway agent
 
-Агент на объекте. Cloud не открывает MQTT контроллера.
+Агент на объекте. Cloud не открывает MQTT контроллера в интернет.
 
-- Heartbeat и pull очереди: `POST /api/smart-home/gateways/channel` + `x-star-home-gateway`
-- Токен выдаёт staff в `/admin/devices`. В снимке только hash.
-- Агент **не подтверждает** команду, которую сам не применил (`confirmed: false`).
-- Команда `discover`: читает локальный снимок `STAR_HOME_WB_DISCOVERY` (JSON файл или inline) с topic `/devices/.../controls/...`. Cloud MQTT не открывает.
-- Вне localhost Cloud URL только `https`. Mutual TLS и отдельный binary — отдельно, здесь не подменяем.
-- `--once` — один цикл heartbeat/pull/ack, без демона.
+Версия протокола: `agent-5`.
+
+## Что делает
+
+- Исходящий HTTPS к `POST /api/smart-home/gateways/channel` + заголовок `x-star-home-gateway`.
+- Heartbeat: статус, версия, `lastError`.
+- Pull очереди команд и ack: `confirmed` / `sent` / ошибка.
+- **Apply:** HTTP-endpoint устройства; Wiren Board MQTT publish + ожидание echo; `discover`.
+- MQTT subscribe на `/devices/+/controls/+` (и meta), кэш retained, телеметрия в cloud `kind: state`.
+- Буфер исходящих вызовов при 5xx / обрыве сети (`STAR_HOME_GATEWAY_BUFFER_PATH`).
+- Повторный pull той же команды не публикует MQTT дважды (in-flight lock + память id).
+
+MQTT `confirmed: true` только если после publish на control topic (без `/on`) пришло совпадающее значение. Publish без echo — `sent`, затем `mqtt-timeout` / FAILED. Житель не видит «Сделано» без `confirmed`.
+
+## MQTT
+
+Только localhost: `mqtt://127.0.0.1` или `mqtt://localhost` (в т.ч. `mqtts://`). Иной хост — `broker-forbidden`, соединение не открывается.
 
 ```
-STAR_HOME_CLOUD_URL=http://127.0.0.1:3456 \
+STAR_HOME_CLOUD_URL=https://star-home.example \
 STAR_HOME_GATEWAY_TOKEN=... \
-STAR_HOME_WB_DISCOVERY=./wb-discovery.json \
-npx tsx apps/gateway/agent.ts --once
+STAR_HOME_WB_MQTT_URL=mqtt://127.0.0.1:1883 \
+STAR_HOME_WB_MQTT_USER=... \
+STAR_HOME_WB_MQTT_PASSWORD=... \
+npx tsx agent.ts
 ```
+
+Файл-снимок `STAR_HOME_WB_DISCOVERY` — запасной discovery, если брокер ещё пуст.
+
+`STAR_HOME_WB_COMMAND_TIMEOUT_MS` — ожидание echo (по умолчанию 4000).  
+`STAR_HOME_WB_COMMAND_RETRIES` — дополнительные попытки publish (по умолчанию 2, всего не больше 5).
+
+`STAR_HOME_GATEWAY_ECHO=1` или `STAR_HOME_DEMO=1` — явный тестовый режим: команда подтверждается без железа. В пилоте не включать.
+
+`--once` — один цикл, без демона.
+
+Установка зависимостей: `cd apps/gateway && npm install`.

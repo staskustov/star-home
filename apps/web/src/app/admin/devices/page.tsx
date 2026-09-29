@@ -12,6 +12,7 @@ export default async function DevicesPage() {
       rooms={ops.rooms ?? []}
       units={ops.units ?? []}
       commandLogs={ops.commandLogs}
+      exchanges={ops.exchanges ?? []}
       plans={ops.plans}
       canCommand={ops.canCommand}
       canPair={ops.canPair}

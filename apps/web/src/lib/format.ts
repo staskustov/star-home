@@ -29,6 +29,47 @@ export function formatChannelValue(value: number | boolean | string | null | und
   return unit ? `${formatted} ${unit}` : formatted;
 }
 
+export function formatLastContact(iso: string | null | undefined, now = Date.now()): string {
+  if (!iso) return "нет контакта";
+  const at = Date.parse(iso);
+  if (!Number.isFinite(at)) return "нет контакта";
+  const delta = Math.max(0, now - at);
+  if (delta < 15_000) return "только что";
+  if (delta < 60_000) return `${Math.floor(delta / 1000)} сек назад`;
+  if (delta < 60 * 60_000) {
+    const minutes = Math.floor(delta / 60_000);
+    return minutes === 1 ? "1 мин назад" : `${minutes} мин назад`;
+  }
+  if (delta < 24 * 60 * 60_000) {
+    const hours = Math.floor(delta / (60 * 60_000));
+    return hours === 1 ? "1 ч назад" : `${hours} ч назад`;
+  }
+  return new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(at);
+}
+
+export function gatewayErrorText(error: string | null | undefined): string | null {
+  if (!error?.trim()) return null;
+  const known: Record<string, string> = {
+    "mqtt-offline": "Нет MQTT",
+    "mqtt-reconnect": "Переподключение MQTT",
+    "mqtt-connecting": "Подключение к MQTT",
+    "mqtt-timeout": "Таймаут команды",
+    "mqtt-publish-failed": "Публикация MQTT не прошла",
+    "heartbeat-stale": "Нет heartbeat",
+    "broker-forbidden": "Брокер не localhost",
+    "broker-unconfigured": "Брокер не задан",
+    "gateway-offline": "Шлюз не на связи",
+  };
+  return known[error.trim()] ?? error.trim();
+}
+
+export function gatewayStatusLabel(status: string, lastSeen: string | null | undefined): string {
+  if (!lastSeen) return "Нет контакта";
+  if (status === "OFFLINE" || status === "UNKNOWN") return "Нет связи";
+  if (status === "DEGRADED") return "Связь нестабильна";
+  return "На связи";
+}
+
 export function formatMoney(amount: number, currency: string): string {
   return new Intl.NumberFormat("ru-RU", {
     style: "currency",
