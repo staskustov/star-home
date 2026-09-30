@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { ChannelReadings } from "@/components/home/ChannelReadings";
 import { DeviceCommand } from "@/components/home/DeviceCommand";
 import { FavoriteButton } from "@/components/home/FavoriteButton";
@@ -20,7 +21,11 @@ export default async function DevicePage({ params }: { params: Promise<{ id: str
   return (
     <section>
       <LiveRefresh />
-      <p className="text-[13px] text-muted">{device.roomName ?? "Дом"}</p>
+      <Link href="/devices" className="inline-flex min-h-11 items-center gap-1 text-[13px] text-muted">
+        <Icon name="chevron" className="h-4 w-4 rotate-180" />
+        Назад
+      </Link>
+      <p className="mt-2 text-[13px] text-muted">{device.roomName ?? "Дом"}</p>
       <h1 className="mt-2 text-[28px] tracking-[-0.035em] text-ink sm:text-[34px]">{device.name}</h1>
       <p className="mt-2 text-[15px] text-muted">
         {device.typeLabel}

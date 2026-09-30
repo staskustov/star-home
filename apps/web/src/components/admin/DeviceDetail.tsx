@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAdminPreview } from "@/components/admin/AdminPreview";
+import { Icon } from "@/components/icons";
 import { formatChannelValue, formatLastContact, formatProbeResult, gatewayErrorText } from "@/lib/format";
 import { commandMessage, runCommand } from "@/lib/command";
 import { Select } from "@/components/ui/Select";
@@ -106,7 +107,7 @@ export function DeviceDetail({
   canTechnical?: boolean;
 }) {
   const router = useRouter();
-  const { can } = useAdminPreview();
+  const { selected, can } = useAdminPreview();
   const allowEdit = canEdit || can("devices.edit");
   const allowCommand = canCommand || can("devices.command");
   const allowTechnical = canTechnical || can("engineering.view");
@@ -219,13 +220,21 @@ export function DeviceDetail({
 
   const probeText = formatProbeResult(device.lastProbeMs, device.lastProbeResult);
   const handedOver = device.handedOver !== false;
+  const backHref = device.unitId
+    ? `/admin/devices?scope=objects&unit=${encodeURIComponent(device.unitId)}`
+    : "/admin/devices?scope=project";
 
   return (
     <div className="mx-auto max-w-3xl">
-      <Link href="/admin/devices" className="text-sm text-muted transition-colors hover:text-ink">
-        К устройствам
+      <Link href={backHref} className="inline-flex min-h-11 items-center gap-1 text-[13px] text-muted">
+        <Icon name="chevron" className="h-4 w-4 rotate-180" />
+        Назад
       </Link>
-      <h1 className="mt-4 text-[36px] leading-none tracking-[-0.04em] text-ink">{device.name}</h1>
+      <p className="mt-2 truncate text-[13px] text-muted">
+        {selected?.name ?? "Проект"}
+        {device.unitName ? ` / ${device.unitName}` : ""}
+      </p>
+      <h1 className="mt-2 text-[36px] leading-none tracking-[-0.04em] text-ink">{device.name}</h1>
       <p className="mt-3 text-[15px] text-muted">
         {device.kind} · {statusText[device.status ?? device.availability ?? "UNKNOWN"] ?? device.status} · {placeText(device)}
         {device.source ? ` · ${sourceText[device.source] ?? device.source}` : ""}
