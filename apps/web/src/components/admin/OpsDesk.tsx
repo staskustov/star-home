@@ -550,14 +550,15 @@ export function DeviceDesk({
   const houses = derivedHouses.filter((row) => row.objectId === workingId).slice().sort(houseSort);
   const commands = commandLogs.filter((row) => row.objectId === workingId);
   const journal = exchanges.filter((row) => row.objectId === workingId);
-  const maps = plans
-    .map((plan) => ({ ...plan, objectId: plan.objectId ?? "" }))
-    .filter((plan) => plan.objectId === workingId);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<DeviceFilter>("all");
   const [scope, setScope] = useState<DeviceScope>("house");
   const [houseQuery, setHouseQuery] = useState("");
   const [houseId, setHouseId] = useState("");
+  const maps = plans
+    .map((plan) => ({ ...plan, objectId: plan.objectId ?? "" }))
+    .filter((plan) => plan.objectId === workingId)
+    .filter((plan) => scope === "house" && Boolean(houseId) && plan.unitId === houseId);
   const [adding, setAdding] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [pairToken, setPairToken] = useState<string | null>(null);
@@ -972,7 +973,7 @@ export function DeviceDesk({
         <form onSubmit={place} className="panel grid gap-3 px-5 py-5 sm:grid-cols-4">
           <Select value={pin.deviceId} onChange={(event) => setPin((current) => ({ ...current, deviceId: event.target.value }))} wrapClassName="sm:col-span-4">
             <option value="">Устройство на плане</option>
-            {rows.filter((device) => device.id).map((device) => (
+            {scoped.filter((device) => device.id).map((device) => (
               <option key={device.id} value={device.id}>
                 {device.name}
                 {device.planX != null ? ` · ${device.planFloor}эт` : ""}
@@ -1019,12 +1020,17 @@ export function DeviceDesk({
           </button>
         </form>
       ) : null}
-      {maps.map((plan) => (
-        <div key={plan.unitId}>
-          <p className="mb-2 text-[15px] text-ink">{plan.unitName}</p>
-          <FloorPlan floors={plan.floors} editable={canPair} />
-        </div>
-      ))}
+      {scope === "house" && houseId ? (
+        maps.length ? (
+          maps.map((plan) => (
+            <div key={plan.unitId}>
+              <FloorPlan floors={plan.floors} editable={canPair} />
+            </div>
+          ))
+        ) : (
+          <FloorPlan floors={[]} />
+        )
+      ) : null}
       <List empty="Журнала обмена нет.">
         {journal.map((row) => (
           <li key={row.id} className="px-5 py-4">
