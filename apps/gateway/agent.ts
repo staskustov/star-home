@@ -10,6 +10,7 @@
  */
 
 import { readFileSync } from "fs";
+import { applyQueuedCommand, type ApplyCommand, type ApplyResult } from "./apply";
 import { captureCameraFrame } from "./camera-capture";
 import { createCommandOnce } from "./command-once";
 import { createLocalRuntime, type AutomationPack, type AutomationReport } from "./local-runtime";

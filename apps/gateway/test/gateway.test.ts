@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { applyQueuedCommand, payloadMatches, wirenboardReadTopic, wirenboardSetPayload, wirenboardSetTopic } from "../apply";
+import { applyOne } from "../agent";
 import { assertLocalMqttUrl } from "../broker-url";
 import { createCommandOnce } from "../command-once";
 import { connectLocalMqtt, type MqttClientLike } from "../mqtt-session";
@@ -573,5 +574,26 @@ describe("gateway simulator and real mqtt confirm", () => {
     );
     assert.equal(result.sent, true);
     assert.equal(result.confirmed, false);
+  });
+});
+
+describe("agent apply wiring", () => {
+  it("routes simulator commands through applyQueuedCommand", async () => {
+    const prev = process.env.STAR_HOME_GATEWAY_SIMULATOR;
+    process.env.STAR_HOME_GATEWAY_SIMULATOR = "1";
+    try {
+      const result = await applyOne({
+        id: `gcmd_agent_sim_${Date.now()}`,
+        deviceId: "dev_sim",
+        command: "setPower",
+        value: true,
+        adapter: "simulator",
+      });
+      assert.equal(result.confirmed, true);
+      assert.equal(result.state?.on, true);
+    } finally {
+      if (prev === undefined) delete process.env.STAR_HOME_GATEWAY_SIMULATOR;
+      else process.env.STAR_HOME_GATEWAY_SIMULATOR = prev;
+    }
   });
 });

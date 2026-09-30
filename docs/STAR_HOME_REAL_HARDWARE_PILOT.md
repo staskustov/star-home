@@ -149,9 +149,10 @@ PASS/FAIL:
 
 ## Simulator (до железа)
 
+Полный runbook: `docs/STAR_HOME_SOFTWARE_PILOT.md`.
+
 ```
 STAR_HOME_GATEWAY_SIMULATOR=1
-STAR_HOME_MQTT_CONFIRM=echo
 ```
 
-Шлюз `adapter=simulator`. Результат: **SIMULATOR VERIFIED**. Не записывать как REAL.
+Шлюз только `adapter=simulator`. Результат: **SIMULATOR VERIFIED**. Не записывать как REAL. Не включать `STAR_HOME_GATEWAY_ECHO` / `STAR_HOME_DEMO`. `MQTT_CONFIRM=state` — только в полевом пилоте с брокером объекта.

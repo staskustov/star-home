@@ -270,7 +270,7 @@ export function DeviceAddWizard({
           <label className="block">
             <span className="text-sm text-muted">Шлюз</span>
             <Select value={gatewayId} onChange={(event) => setGatewayId(event.target.value)} wrapClassName="mt-2">
-              {hubs.length === 0 ? <option value="">Нет шлюзов</option> : null}
+              {hubs.length === 0 ? <option value="">Нет шлюзов — сначала создайте шлюз</option> : null}
               {hubs.map((gateway) => (
                 <option key={gateway.id} value={gateway.id}>
                   {gateway.name} · {gateway.adapter}

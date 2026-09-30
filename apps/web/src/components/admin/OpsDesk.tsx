@@ -441,6 +441,18 @@ function commandResultLabel(result: string): string {
   return result;
 }
 
+const gatewayAdapterOptions = [
+  { id: "simulator", label: "Симулятор" },
+  { id: "wirenboard", label: "Wiren Board" },
+  { id: "mqtt", label: "MQTT" },
+  { id: "http", label: "HTTP" },
+  { id: "local", label: "Локальный адаптер" },
+] as const;
+
+function gatewayAdapterLabel(adapter: string): string {
+  return gatewayAdapterOptions.find((item) => item.id === adapter)?.label ?? adapter;
+}
+
 function matchesFilter(device: DeskDevice, filter: DeviceFilter): boolean {
   if (filter === "online") return device.status === "ONLINE" || device.availability === "ONLINE";
   if (filter === "offline") return device.status === "OFFLINE" || device.availability === "OFFLINE";
@@ -537,6 +549,8 @@ export function DeviceDesk({
   const [handingId, setHandingId] = useState<string | null>(null);
   const [pin, setPin] = useState({ deviceId: "", floor: "1", x: "50", y: "50" });
   const [bind, setBind] = useState({ deviceId: "", place: "ROOM", roomId: "" });
+  const [hubName, setHubName] = useState("Симулятор пилота");
+  const [hubAdapter, setHubAdapter] = useState("simulator");
 
   async function probe(deviceId: string) {
     setNotice(null);
@@ -566,6 +580,29 @@ export function DeviceDesk({
         : commandMessage(result.payload, "Не удалось передать жильцу."),
     );
     if (result.ok) router.refresh();
+  }
+
+  async function createHub(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selected) return;
+    setNotice(null);
+    const result = await runCommand(() =>
+      fetch("/api/smart-home/gateways", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ objectId: selected.id, name: hubName, adapter: hubAdapter }),
+      }),
+    );
+    if (!result.ok) {
+      setNotice(commandMessage(result.payload, "Не удалось создать шлюз."));
+      return;
+    }
+    setNotice(
+      hubAdapter === "simulator"
+        ? "Шлюз-симулятор создан. Устройства на нём — MOCK, не REAL."
+        : "Шлюз создан.",
+    );
+    router.refresh();
   }
 
   async function pair(gatewayId: string) {
@@ -714,6 +751,7 @@ export function DeviceDesk({
         />
       ) : null}
       <input value={query} onChange={(event) => setQuery(event.target.value)} className="control" placeholder="Поиск по имени или типу" />
+      {notice ? <p className="text-[15px] text-muted">{notice}</p> : null}
       <div className="flex flex-wrap gap-2">
         {deviceFilters.map((item) => (
           <button
@@ -726,12 +764,38 @@ export function DeviceDesk({
           </button>
         ))}
       </div>
+      {allowCreate && selected ? (
+        <form onSubmit={createHub} className="panel p-5">
+          <p className="text-[16px] text-ink">Создать шлюз</p>
+          <p className="mt-1 text-sm text-muted">Для пилота без железа выбирайте симулятор. Wiren Board без контроллера не ставить.</p>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <label className="block">
+              <span className="text-sm text-muted">Название</span>
+              <input value={hubName} onChange={(event) => setHubName(event.target.value)} className="control mt-2" />
+            </label>
+            <label className="block">
+              <span className="text-sm text-muted">Адаптер</span>
+              <Select value={hubAdapter} onChange={(event) => setHubAdapter(event.target.value)} wrapClassName="mt-2">
+                {gatewayAdapterOptions.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.label}
+                  </option>
+                ))}
+              </Select>
+            </label>
+          </div>
+          <button type="submit" className="mt-5 btn btn-primary">
+            Создать шлюз
+          </button>
+        </form>
+      ) : null}
       <List empty="Шлюзов нет.">
         {hubs.map((gateway) => (
           <li key={gateway.id} className="px-5 py-4">
             <p className="text-[16px] text-ink">{gateway.name}</p>
             <p className="text-sm text-muted">
-              {gatewayStatusLabel(gateway.status, gateway.lastSeen)}
+              {gatewayAdapterLabel(gateway.adapter)}
+              {` · ${gatewayStatusLabel(gateway.status, gateway.lastSeen)}`}
               {gateway.version ? ` · ${gateway.version}` : ""}
               {` · ${formatLastContact(gateway.lastSeen)}`}
               {gateway.connectedDevices ? ` · устройств ${gateway.connectedDevices}` : ""}
@@ -804,7 +868,6 @@ export function DeviceDesk({
           ))}
         </List>
       )}
-      {notice ? <p className="text-[15px] text-muted">{notice}</p> : null}
       {canPair ? (
         <form onSubmit={place} className="panel grid gap-3 px-5 py-5 sm:grid-cols-4">
           <Select value={pin.deviceId} onChange={(event) => setPin((current) => ({ ...current, deviceId: event.target.value }))} wrapClassName="sm:col-span-4">
