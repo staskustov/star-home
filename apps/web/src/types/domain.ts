@@ -175,6 +175,8 @@ export type ResidentHome = {
     name: string;
     label: string;
     kind?: string;
+    icon?: string | null;
+    iconColor?: string | null;
     state: "ON" | "OFF" | "FAULT";
     power?: boolean;
     latch?: "OPEN" | "CLOSED";

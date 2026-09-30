@@ -7,11 +7,13 @@ import { usePathname, useRouter } from "next/navigation";
 import { useAdminPreview } from "@/components/admin/AdminPreview";
 import { DeviceAddWizard } from "@/components/admin/DeviceAddWizard";
 import { Icon } from "@/components/icons";
+import { DeviceTileIcon } from "@/components/GoogleIcon";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Select } from "@/components/ui/Select";
 import { ViewToggle, useViewMode } from "@/components/ui/ViewToggle";
 import { commandMessage, runCommand } from "@/lib/command";
 import { formatChannelValue, formatLastContact, formatMoney, formatProbeResult, gatewayErrorText, gatewayStatusLabel, plural } from "@/lib/format";
+import type { PlanPin } from "@/lib/plan-pin";
 
 const FloorPlan = dynamic(() => import("@/components/home/FloorPlan").then((mod) => ({ default: mod.FloorPlan })), { ssr: false });
 import type { AccessEvent } from "@/types/domain";
@@ -377,6 +379,8 @@ type DeskDevice = {
   name: string;
   kind: string;
   kindCode?: string;
+  icon?: string | null;
+  iconColor?: string | null;
   state: string;
   availability?: string;
   status?: string;
@@ -574,7 +578,7 @@ export function DeviceDesk({
     reason?: string | null;
   }[];
   exchanges?: { id: string; objectId: string; at: string; kind: string; result: string; detail: string; gatewayName?: string }[];
-  plans?: { unitId: string; unitName: string; objectId?: string; floors: { floor: number; image: string; pins: { deviceId: string; name: string; x: number; y: number }[] }[] }[];
+  plans?: { unitId: string; unitName: string; objectId?: string; floors: { floor: number; image: string; pins: PlanPin[] }[] }[];
   canCommand?: boolean;
   canPair?: boolean;
   canCreate?: boolean;
@@ -626,7 +630,8 @@ export function DeviceDesk({
   const [pairToken, setPairToken] = useState<string | null>(null);
   const [probingId, setProbingId] = useState<string | null>(null);
   const [handingId, setHandingId] = useState<string | null>(null);
-  const [pin, setPin] = useState({ deviceId: "", floor: "1", x: "50", y: "50" });
+  const [pin, setPin] = useState({ deviceId: "", floor: "1" });
+  const [placing, setPlacing] = useState(false);
   const [bind, setBind] = useState({ deviceId: "", place: "ROOM", roomId: "" });
   const [hubName, setHubName] = useState("Симулятор пилота");
   const [hubAdapter, setHubAdapter] = useState("simulator");
@@ -697,6 +702,11 @@ export function DeviceDesk({
     if (houses.some((house) => house.id === houseId)) return;
     goDesk({ scope: "objects" });
   }, [workingId, houseId]);
+
+  useEffect(() => {
+    setPlacing(false);
+    setPin({ deviceId: "", floor: "1" });
+  }, [houseId]);
 
   async function probe(deviceId: string) {
     setNotice(null);
@@ -775,21 +785,6 @@ export function DeviceDesk({
     const result = await runCommand(() => fetch(`/api/smart-home/gateways/${gatewayId}/revoke`, { method: "POST" }));
     setPairToken(null);
     setNotice(result.ok ? "Канал отозван." : commandMessage(result.payload));
-    if (result.ok) router.refresh();
-  }
-
-  async function place(event: React.FormEvent) {
-    event.preventDefault();
-    if (!pin.deviceId) return;
-    setNotice(null);
-    const result = await runCommand(() =>
-      fetch(`/api/smart-home/devices/${pin.deviceId}/place`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ planFloor: Number(pin.floor), planX: Number(pin.x), planY: Number(pin.y) }),
-      }),
-    );
-    setNotice(result.ok ? "Метка на плане сохранена." : commandMessage(result.payload));
     if (result.ok) router.refresh();
   }
 
@@ -880,6 +875,9 @@ export function DeviceDesk({
   }
   const bindRooms = inObject ? houseRooms : places;
   const bindDevices = scoped.filter((device) => device.id);
+  const floorOptions = [...new Set(maps.flatMap((plan) => plan.floors.map((floor) => floor.floor)))].sort((left, right) => left - right);
+  const activeFloor = floorOptions.includes(Number(pin.floor)) ? pin.floor : String(floorOptions[0] ?? 1);
+  const placingDevice = bindDevices.find((device) => device.id === pin.deviceId);
 
   function chooseSort(next: DeviceSort) {
     setSortBy(next);
@@ -926,7 +924,10 @@ export function DeviceDesk({
               <ul className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                 {group.devices.map((device) => (
                   <li key={device.id ?? `${device.objectId}-${device.name}`} className="panel p-5">
-                    <p className="text-[16px] text-ink">{device.name}</p>
+                    <p className="flex items-center gap-3 text-[16px] text-ink">
+                      <DeviceTileIcon name={device.icon} kind={device.kindCode ?? device.kind} color={device.iconColor} size={18} />
+                      <span className="min-w-0 truncate">{device.name}</span>
+                    </p>
                     {deviceMeta(device)}
                   </li>
                 ))}
@@ -936,7 +937,10 @@ export function DeviceDesk({
                 <List empty="Устройств нет.">
                   {group.devices.map((device) => (
                     <li key={device.id ?? `${device.objectId}-${device.name}`} className="px-5 py-4">
-                      <p className="text-[16px] text-ink">{device.name}</p>
+                      <p className="flex items-center gap-3 text-[16px] text-ink">
+                        <DeviceTileIcon name={device.icon} kind={device.kindCode ?? device.kind} color={device.iconColor} size={18} />
+                        <span className="min-w-0 truncate">{device.name}</span>
+                      </p>
                       {deviceMeta(device)}
                     </li>
                   ))}
@@ -1194,24 +1198,70 @@ export function DeviceDesk({
               </>
             ) : null}
             {deviceBoard}
-            {canPair ? (
-              <form onSubmit={place} className="panel grid gap-3 px-5 py-5 sm:grid-cols-4">
-                <Select value={pin.deviceId} onChange={(event) => setPin((current) => ({ ...current, deviceId: event.target.value }))} wrapClassName="sm:col-span-4">
-                  <option value="">Устройство на плане</option>
+            {canPair && inObject ? (
+              <section className="panel grid gap-3 px-5 py-5">
+                <div>
+                  <p className="text-[16px] text-ink">На планировку дома</p>
+                  <p className="mt-1 text-sm text-muted">Выберите устройство и перетащите его на план этажа.</p>
+                </div>
+                <Select
+                  value={pin.deviceId}
+                  onChange={(event) => {
+                    setPin((current) => ({ ...current, deviceId: event.target.value }));
+                    setPlacing(false);
+                  }}
+                >
+                  <option value="">Устройство</option>
                   {bindDevices.map((device) => (
                     <option key={device.id} value={device.id}>
                       {device.name}
-                      {device.planX != null ? ` · ${device.planFloor}эт` : ""}
+                      {device.planX != null ? ` · уже на ${device.planFloor} эт` : ""}
                     </option>
                   ))}
                 </Select>
-                <input value={pin.floor} onChange={(event) => setPin((current) => ({ ...current, floor: event.target.value }))} className="control" placeholder="Этаж" />
-                <input value={pin.x} onChange={(event) => setPin((current) => ({ ...current, x: event.target.value }))} className="control" placeholder="X %" />
-                <input value={pin.y} onChange={(event) => setPin((current) => ({ ...current, y: event.target.value }))} className="control" placeholder="Y %" />
-                <button type="submit" className="btn btn-secondary btn-compact">
-                  Поставить
-                </button>
-              </form>
+                {floorOptions.length > 1 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {floorOptions.map((floor) => (
+                      <button
+                        key={floor}
+                        type="button"
+                        className={activeFloor === String(floor) ? "btn btn-primary btn-compact" : "btn btn-secondary btn-compact"}
+                        onClick={() => {
+                          setPin((current) => ({ ...current, floor: String(floor) }));
+                          setPlacing(false);
+                        }}
+                      >
+                        {floor} этаж
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-compact"
+                    disabled={!pin.deviceId || placing}
+                    onClick={() => {
+                      if (!pin.deviceId) return;
+                      setPin((current) => ({ ...current, floor: activeFloor }));
+                      setPlacing(true);
+                      setNotice(null);
+                    }}
+                  >
+                    Добавить на планировку
+                  </button>
+                  {placing ? (
+                    <button type="button" className="btn btn-secondary btn-compact" onClick={() => setPlacing(false)}>
+                      Отмена
+                    </button>
+                  ) : null}
+                </div>
+                {placing ? (
+                  <p className="text-sm text-muted">
+                    Нажмите и удерживайте на плане{floorOptions.length > 1 ? ` ${activeFloor} этажа` : ""}, затем перетащите на место.
+                  </p>
+                ) : null}
+              </section>
             ) : null}
             {canPair ? (
               <form onSubmit={bindRoom} className="panel grid gap-3 px-5 py-5 sm:grid-cols-4">
@@ -1249,7 +1299,24 @@ export function DeviceDesk({
               maps.length ? (
                 maps.map((plan) => (
                   <div key={plan.unitId}>
-                    <FloorPlan floors={plan.floors} editable={canPair} />
+                    <FloorPlan
+                      floors={plan.floors}
+                      editable={canPair}
+                      canCommand={canCommand}
+                      placing={
+                        placing && pin.deviceId
+                          ? {
+                              deviceId: pin.deviceId,
+                              floor: Number(activeFloor),
+                              kind: placingDevice?.kindCode ?? placingDevice?.kind,
+                              icon: placingDevice?.icon,
+                              iconColor: placingDevice?.iconColor,
+                              name: placingDevice?.name,
+                            }
+                          : null
+                      }
+                      onPlaced={() => setPlacing(false)}
+                    />
                   </div>
                 ))
               ) : (

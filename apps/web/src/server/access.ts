@@ -144,6 +144,9 @@ export async function requireSmartDevice(deviceId: string): Promise<{
     id: string;
     name: string;
     typeLabel: string;
+    kind?: string;
+    icon?: string | null;
+    iconColor?: string | null;
     roomName: string | null;
     availability: string;
     stale: boolean;
@@ -165,7 +168,7 @@ export async function requireSmartDevice(deviceId: string): Promise<{
 }
 
 export async function requireFloorPlan(unitId?: string) {
-  const result = await rpc<{ floors?: { floor: number; image: string; pins: { deviceId: string; name: string; x: number; y: number }[] }[] }>("floorPlan", { unitId });
+  const result = await rpc<{ floors?: { floor: number; image: string; pins: import("@/lib/plan-pin").PlanPin[] }[] }>("floorPlan", { unitId });
   if (result.status === 401) redirect("/");
   return result.body.floors ?? [];
 }
@@ -215,6 +218,9 @@ export async function requireRoom(roomId: string) {
       id: string;
       name: string;
       typeLabel: string;
+      kind?: string;
+      icon?: string | null;
+      iconColor?: string | null;
       stale: boolean;
       availability: "ONLINE" | "OFFLINE" | "UNKNOWN";
       canCommand: boolean;

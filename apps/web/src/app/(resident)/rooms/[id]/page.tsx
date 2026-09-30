@@ -2,6 +2,7 @@ import Link from "next/link";
 import { channelSummary } from "@/components/home/ChannelReadings";
 import { DeviceCommand } from "@/components/home/DeviceCommand";
 import { Icon } from "@/components/icons";
+import { DeviceTileIcon } from "@/components/GoogleIcon";
 import { LiveRefresh } from "@/components/pwa/LiveRefresh";
 import { requireRoom } from "@/server/access";
 
@@ -24,9 +25,7 @@ export default async function RoomPage({ params }: { params: Promise<{ id: strin
           return (
           <li key={device.id} className="panel px-5 py-5">
             <Link href={`/devices/${device.id}`} className="flex min-w-0 items-center gap-[14px]">
-              <span className="tile-icon">
-                <Icon name="devices" className="h-[18px] w-[18px]" />
-              </span>
+              <DeviceTileIcon name={device.icon} kind={device.kind ?? device.typeLabel} color={device.iconColor} size={18} />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[16px] text-ink">{device.name}</span>
                 <span className="mt-0.5 block text-[13px] text-muted">{facts || device.typeLabel}</span>

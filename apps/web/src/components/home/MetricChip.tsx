@@ -2,7 +2,7 @@ import { Icon, type IconName } from "@/components/icons";
 
 export type MetricStyle = { key: string; label: string; icon: string; color: string; value?: string };
 
-const metricIcons = new Set<IconName>(["thermo", "drop", "wind", "radiation", "co2", "organics", "climate", "leak"]);
+const metricIcons = new Set<IconName>(["thermo", "drop", "wind", "radiation", "co2", "organics", "climate", "leak", "light"]);
 
 export const defaultMetricLooks: Record<string, { icon: IconName; color: string; label: string }> = {
   temperature: { icon: "thermo", color: "#c2410c", label: "Температура" },

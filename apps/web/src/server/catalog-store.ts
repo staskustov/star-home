@@ -81,6 +81,15 @@ function newId(prefix: string): string {
   return `${prefix}_${randomBytes(8).toString("hex")}`;
 }
 
+function schematicFloor(floor: number): FloorPlan {
+  const rooms =
+    floor === 1
+      ? `<rect x="36" y="36" width="728" height="428" fill="#f7f1e8" stroke="#8a7a66" stroke-width="6"/><line x1="400" y1="36" x2="400" y2="320" stroke="#8a7a66" stroke-width="4"/><line x1="36" y1="320" x2="764" y2="320" stroke="#8a7a66" stroke-width="4"/><text x="70" y="90" font-size="22" fill="#5c5246">Гостиная</text><text x="430" y="90" font-size="22" fill="#5c5246">Кухня</text><text x="70" y="360" font-size="22" fill="#5c5246">Прихожая</text>`
+      : `<rect x="36" y="36" width="728" height="428" fill="#f7f1e8" stroke="#8a7a66" stroke-width="6"/><line x1="400" y1="36" x2="400" y2="464" stroke="#8a7a66" stroke-width="4"/><text x="70" y="90" font-size="22" fill="#5c5246">Спальня</text><text x="430" y="90" font-size="22" fill="#5c5246">Кабинет</text>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500"><rect width="800" height="500" fill="#efe8dc"/>${rooms}</svg>`;
+  return { floor, image: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}` };
+}
+
 function house(number: number): CatalogUnit {
   return {
     id: number === 24 ? "unit_24" : `unit_siyanie_${number}`,
@@ -269,6 +278,10 @@ function normalizeUnits(catalog: Catalog): Catalog {
         sort: 0,
       });
       added = true;
+    }
+    if (unit.id === "unit_24" && unit.plans.length === 0) {
+      unit.floors = Math.max(unit.floors ?? 1, 2);
+      unit.plans = [schematicFloor(1), schematicFloor(2)];
     }
   }
   if (added) persist(catalog);

@@ -1,4 +1,5 @@
 import { formatHumidity, formatTemperature } from "@/lib/format";
+import { planPinOf } from "@/lib/plan-pin";
 import { findRoom, findUnit, roomsOf, unitIdsOf, unitIdsOfBuilding } from "@/server/catalog-store";
 import { capabilitiesFor } from "@/server/device-capabilities";
 import { channelsOf, deriveLifecycle } from "@/server/device-channels";
@@ -158,6 +159,8 @@ export function deskFor(actor: StaffActor, section: DeskSection) {
           name: device.name,
           kind: deviceLabel(device.kind),
           kindCode: device.kind,
+          icon: device.icon ?? null,
+          iconColor: device.iconColor ?? null,
           state: deviceState(device, file.readings),
           availability: device.availability ?? "UNKNOWN",
           status: device.status ?? deriveLifecycle(host),
@@ -261,7 +264,23 @@ export function deskFor(actor: StaffActor, section: DeskSection) {
               image: plan.image,
               pins: pins
                 .filter((device) => device.planFloor === plan.floor)
-                .map((device) => ({ deviceId: device.id, name: device.name, x: device.planX as number, y: device.planY as number })),
+                .map((device) =>
+                  planPinOf({
+                    id: device.id,
+                    name: device.name,
+                    kind: device.kind,
+                    icon: device.icon ?? null,
+                    iconColor: device.iconColor ?? null,
+                    planX: device.planX as number,
+                    planY: device.planY as number,
+                    capabilities: device.capabilities?.length ? device.capabilities : capabilitiesFor(device.kind),
+                    channels: channelsOf({
+                      ...device,
+                      capabilities: device.capabilities?.length ? device.capabilities : capabilitiesFor(device.kind),
+                    }),
+                    state: device.state,
+                  }),
+                ),
             })),
           },
         ];

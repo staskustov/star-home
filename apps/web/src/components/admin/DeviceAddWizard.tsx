@@ -7,6 +7,8 @@ import { capabilitiesFor, type Capability } from "@/server/device-capabilities";
 import { displayNameForCapability, unitForCapability } from "@/server/device-channels";
 import { commandMessage, runCommand } from "@/lib/command";
 import { Select } from "@/components/ui/Select";
+import { IconPicker } from "@/components/admin/IconPicker";
+import { deviceIconOf } from "@/lib/google-icons";
 
 type Gateway = { id: string; objectId: string; name: string; adapter: string; status: string };
 type Room = { id: string; objectId: string; unitId: string; unitName: string; name: string; kind?: string };
@@ -99,6 +101,8 @@ export function DeviceAddWizard({
   const [picked, setPicked] = useState<FoundDevice | null>(null);
   const [name, setName] = useState("");
   const [kind, setKind] = useState<DeviceKind>(objectOnly ? "HEATING" : "LIGHTING");
+  const [icon, setIcon] = useState(deviceIconOf(null, objectOnly ? "HEATING" : "LIGHTING"));
+  const [iconColor, setIconColor] = useState<string | null>(null);
   const [houseQuery, setHouseQuery] = useState("");
   const [unitId, setUnitId] = useState(initialUnitId ?? "");
   const [roomId, setRoomId] = useState(initialRoomId ?? "");
@@ -179,12 +183,14 @@ export function DeviceAddWizard({
     setPicked(device);
     const nextKind = inferKindFromCapabilities(device.channels.map((channel) => channel.capability).filter((item): item is string => Boolean(item)));
     setKind(nextKind);
+    setIcon(deviceIconOf(null, nextKind));
     setName(device.model || device.externalId);
     setChannels(channelsFromFound(device));
   }
 
   function changeKind(next: DeviceKind) {
     setKind(next);
+    setIcon((current) => (current === deviceIconOf(null, kind) ? deviceIconOf(null, next) : current));
     if (!picked) setChannels(channelsFromCaps(next));
   }
 
@@ -215,6 +221,8 @@ export function DeviceAddWizard({
           gatewayId: gatewayId || undefined,
           name: name.trim(),
           kind,
+          icon,
+          iconColor,
           manufacturer: picked?.manufacturer ?? undefined,
           model: picked?.model ?? undefined,
           externalId: picked?.externalId ?? undefined,
@@ -278,6 +286,7 @@ export function DeviceAddWizard({
             </Select>
           </label>
         </div>
+        <IconPicker value={icon} color={iconColor} kind={kind} onChange={setIcon} onColorChange={setIconColor} disabled={busy} />
 
         {objectOnly ? (
           <p className="text-sm text-muted">Общее устройство объекта. Жильцам не передаётся.</p>

@@ -32,6 +32,7 @@ import {
 } from "@/server/ops-store";
 import { bindEngineeringSystem } from "@/server/engineering";
 import { can, objectFor, reaches, unitFor, type StaffActor } from "@/server/rbac/decide";
+import { cleanDeviceIcon, cleanDeviceIconColor, deviceIconOf } from "@/lib/google-icons";
 
 type Failure = { ok: false; status: number; message: string; deviceId?: string };
 type Success<T> = { ok: true; value: T };
@@ -48,6 +49,8 @@ export type RegistryDevice = {
   name: string;
   displayName: string;
   kind: DeviceKind;
+  icon: string;
+  iconColor: string | null;
   typeLabel: string;
   manufacturer: string | null;
   model: string | null;
@@ -118,6 +121,8 @@ function asDevice(device: Device): RegistryDevice {
     name: normalized.name,
     displayName: normalized.displayName ?? normalized.name,
     kind: normalized.kind,
+    icon: deviceIconOf(normalized.icon, normalized.kind),
+    iconColor: cleanDeviceIconColor(normalized.iconColor),
     typeLabel: deviceLabel(normalized.kind),
     manufacturer: normalized.manufacturer ?? null,
     model: normalized.model ?? null,
@@ -267,6 +272,8 @@ export function registerDevice(
     gatewayId?: unknown;
     name: unknown;
     kind: unknown;
+    icon?: unknown;
+    iconColor?: unknown;
     manufacturer?: unknown;
     model?: unknown;
     serialNumber?: unknown;
@@ -312,6 +319,8 @@ export function registerDevice(
     kind: input.kind,
     name,
     displayName: name,
+    icon: cleanDeviceIcon(input.icon) ?? deviceIconOf(null, input.kind),
+    iconColor: cleanDeviceIconColor(input.iconColor),
     adapter: adapterFromGateway(gateway),
     work: "ON",
     gatewayId: typeof gatewayId === "string" ? gatewayId : null,
@@ -354,6 +363,8 @@ export function updateRegistryDevice(
   input: {
     deviceId: unknown;
     name?: unknown;
+    icon?: unknown;
+    iconColor?: unknown;
     roomId?: unknown;
     place?: unknown;
     gatewayId?: unknown;
@@ -399,8 +410,12 @@ export function updateRegistryDevice(
   const nextExternal = typeof externalId === "string" ? externalId : null;
   const duplicate = findDuplicateDevice(file.devices, nextGateway, nextExternal, device.id);
   if (duplicate) return { ok: false, status: 409, message: "Устройство уже добавлено.", deviceId: duplicate.id };
+  const nextIcon = input.icon === undefined ? (device.icon ?? null) : (cleanDeviceIcon(input.icon) ?? deviceIconOf(null, device.kind));
+  const nextIconColor = input.iconColor === undefined ? (device.iconColor ?? null) : cleanDeviceIconColor(input.iconColor);
   const changes = [
     ...(device.name !== name ? [{ field: "Название", from: device.name, to: name }] : []),
+    ...((device.icon ?? "") !== (nextIcon ?? "") ? [{ field: "Иконка", from: device.icon ?? "", to: nextIcon ?? "" }] : []),
+    ...((device.iconColor ?? "") !== (nextIconColor ?? "") ? [{ field: "Цвет иконки", from: device.iconColor ?? "", to: nextIconColor ?? "" }] : []),
     ...((device.roomId ?? null) !== place.roomId ? [{ field: "Помещение", from: device.roomId ?? "", to: place.roomId ?? "" }] : []),
     ...(device.place !== place.place ? [{ field: "Место", from: device.place ?? "", to: place.place }] : []),
     ...((device.gatewayId ?? null) !== (typeof gatewayId === "string" ? gatewayId : null)
@@ -409,6 +424,8 @@ export function updateRegistryDevice(
   ];
   device.name = name;
   device.displayName = name;
+  device.icon = nextIcon;
+  device.iconColor = nextIconColor;
   device.unitId = place.unitId;
   device.place = place.place;
   device.roomId = place.roomId;

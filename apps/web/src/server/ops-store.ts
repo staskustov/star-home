@@ -5,6 +5,7 @@ import { capabilitiesFor, type Capability } from "@/server/device-capabilities";
 import {
   capabilitiesTouchedByState,
   deriveLifecycle,
+  mergeChannelsForCapabilities,
   stateSliceForCapability,
   type DeviceChannel,
   type DeviceLifecycle,
@@ -124,6 +125,8 @@ export type Device = {
   place?: DevicePlace;
   kind: DeviceKind;
   name: string;
+  icon?: string | null;
+  iconColor?: string | null;
   adapter: GatewayAdapterKind;
   endpoint?: string;
   work?: "ON" | "OFF" | "FAULT";
@@ -648,6 +651,8 @@ function seed(): OpsFile {
         name: "Климат дома",
         adapter: "local",
         roomId: "room_24_living",
+        capabilities: ["temperature", "humidity", "co2"],
+        state: { temperatureC: 22.4, humidityPercent: 48, co2Ppm: 640 },
       },
       {
         id: "dev_light_24",
@@ -658,6 +663,7 @@ function seed(): OpsFile {
         name: "Свет в гостиной",
         adapter: "local",
         roomId: "room_24_living",
+        state: { on: true },
       },
       {
         id: "dev_gate_24",
@@ -900,10 +906,27 @@ export function normalizeDevice(device: Device, reading?: DeviceReading): Device
   device.availability ??= "UNKNOWN";
   device.lastSeen ??= null;
   device.status = device.status ?? deriveLifecycle(device);
+  device.icon ??= null;
+  device.iconColor ??= null;
   device.planFloor ??= null;
   device.planX ??= null;
   device.planY ??= null;
   device.metadata ??= {};
+  if (device.id === "dev_climate_24") {
+    const caps = new Set(device.capabilities?.length ? device.capabilities : capabilitiesFor("CLIMATE"));
+    caps.add("co2");
+    device.capabilities = [...caps];
+    device.state = {
+      ...device.state,
+      temperatureC: device.state?.temperatureC ?? reading?.temperatureC ?? 22.4,
+      humidityPercent: device.state?.humidityPercent ?? reading?.humidityPercent ?? 48,
+      co2Ppm: device.state?.co2Ppm ?? 640,
+    };
+    if (device.channels?.length) mergeChannelsForCapabilities(device, device.capabilities);
+  }
+  if (device.id === "dev_light_24") {
+    device.state = { ...device.state, on: device.state?.on ?? true };
+  }
   if (device.adapter === "local" && !device.gatewayId) {
     device.metadata.demo = true;
     if (device.metadata.source == null) device.metadata.source = "DEMO";
@@ -1281,6 +1304,8 @@ export function homeSignals(unitId: string, objectId: string): {
     name: string;
     label: string;
     kind: string;
+    icon?: string | null;
+    iconColor?: string | null;
     state: "ON" | "OFF" | "FAULT";
     power?: boolean;
     latch?: "OPEN" | "CLOSED";
@@ -1375,6 +1400,8 @@ export function homeSignals(unitId: string, objectId: string): {
           name: device.name,
           label: deviceLabel(device.kind),
           kind: device.kind,
+          icon: device.icon ?? null,
+          iconColor: device.iconColor ?? null,
           state: device.work === "OFF" ? "OFF" : device.work === "FAULT" ? "FAULT" : "ON",
           power: device.state?.on,
           latch: opener ? ((device.state?.latch ?? device.latch) === "OPEN" ? "OPEN" : "CLOSED") : undefined,

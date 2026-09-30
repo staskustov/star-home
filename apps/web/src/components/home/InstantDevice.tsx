@@ -2,36 +2,18 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Icon, type IconName } from "@/components/icons";
+import { Icon } from "@/components/icons";
+import { DeviceTileIcon } from "@/components/GoogleIcon";
 import { commandMessage, runCommand } from "@/lib/command";
 import { deviceStatus, statusClass, statusDot } from "@/lib/device-status";
-
-const kindIcon: Record<string, IconName> = {
-  GATE: "gate",
-  WICKET: "gate",
-  BARRIER: "gate",
-  LOCK: "lock",
-  CLIMATE: "climate",
-  CAMERA: "camera",
-  LEAK: "leak",
-  LIGHTING: "devices",
-  CURTAIN: "rooms",
-  Ворота: "gate",
-  Калитка: "gate",
-  Шлагбаум: "gate",
-  Замок: "lock",
-  Климат: "climate",
-  Камера: "camera",
-  Протечка: "leak",
-  Освещение: "devices",
-  Шторы: "rooms",
-};
 
 export type InstantDeviceRow = {
   id?: string;
   name: string;
   label: string;
   kind?: string;
+  icon?: string | null;
+  iconColor?: string | null;
   state: "ON" | "OFF" | "FAULT";
   power?: boolean;
   latch?: "OPEN" | "CLOSED";
@@ -57,7 +39,6 @@ export function InstantDevice({
   const switchable = canCommand && commands.includes("setPower");
   const opener = Boolean(latch !== undefined || commands.includes("open") || commands.includes("close"));
   const status = deviceStatus({ stale: device.stale, work: device.state, power: switchable ? Boolean(power) : power, latch });
-  const icon = kindIcon[device.kind ?? ""] ?? kindIcon[device.label] ?? "devices";
 
   async function togglePower(on: boolean) {
     if (!device.id) return;
@@ -97,9 +78,7 @@ export function InstantDevice({
 
   const body = (
     <>
-      <span className="tile-icon">
-        <Icon name={icon} className="h-[18px] w-[18px]" />
-      </span>
+      <DeviceTileIcon name={device.icon} kind={device.kind} color={device.iconColor} size={18} />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[15px] text-ink">{device.name}</span>
         <span className="mt-0.5 block truncate text-[13px] text-muted">{device.label}</span>

@@ -261,6 +261,8 @@ const methodPolicy: Record<string, Route> = {
         gatewayId: input.gatewayId,
         name: input.name,
         kind: input.kind,
+        icon: input.icon,
+        iconColor: input.iconColor,
         manufacturer: input.manufacturer,
         model: input.model,
         serialNumber: input.serialNumber,
@@ -277,6 +279,8 @@ const methodPolicy: Record<string, Route> = {
       updateRegistryDevice(actor, {
         deviceId: input.deviceId,
         name: input.name,
+        icon: input.icon,
+        iconColor: input.iconColor,
         roomId: input.roomId,
         place: input.place,
         gatewayId: input.gatewayId,

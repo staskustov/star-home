@@ -4,6 +4,7 @@ import { DeviceCommand } from "@/components/home/DeviceCommand";
 import { FavoriteButton } from "@/components/home/FavoriteButton";
 import { HistoryPanel } from "@/components/home/HistoryPanel";
 import { Icon } from "@/components/icons";
+import { DeviceTileIcon } from "@/components/GoogleIcon";
 import { LiveRefresh } from "@/components/pwa/LiveRefresh";
 import { requireSmartDevice } from "@/server/access";
 
@@ -34,9 +35,7 @@ export default async function DevicePage({ params }: { params: Promise<{ id: str
 
       <div className="panel mt-7 px-5 py-5">
         <div className="flex items-center gap-3">
-          <span className="tile-icon">
-            <Icon name="devices" className="h-[18px] w-[18px]" />
-          </span>
+          <DeviceTileIcon name={device.icon} kind={device.kind} color={device.iconColor} size={18} />
           <div>
             <p className={`text-[17px] ${device.stale ? "text-warning" : "text-ink"}`}>
               {device.stale ? (device.lastKnown ? "Последнее известное состояние" : "Нет свежих данных") : (availabilityLabel[device.availability] ?? device.availability)}

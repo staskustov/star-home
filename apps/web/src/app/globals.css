@@ -482,6 +482,25 @@ h3 {
   color: var(--accent);
 }
 
+.g-icon {
+  font-family: "Material Symbols Outlined";
+  font-weight: 400;
+  font-style: normal;
+  font-size: 1.25rem;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  direction: ltr;
+  -webkit-font-feature-settings: "liga";
+  font-feature-settings: "liga";
+  -webkit-font-smoothing: antialiased;
+  font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
+  user-select: none;
+  color: inherit;
+}
+
 :root[data-theme="dark"] .panel {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.04),
@@ -1042,6 +1061,92 @@ select.control,
 .dock-link.is-active {
   background: color-mix(in srgb, var(--accent) 14%, transparent);
   color: var(--ink);
+}
+
+.plan-climate {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  padding: 5px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  background: rgba(255, 251, 245, 0.92);
+  box-shadow: 0 10px 28px rgba(28, 22, 16, 0.16);
+  backdrop-filter: blur(12px);
+}
+
+.plan-metric {
+  display: flex;
+  min-width: 44px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 6px 8px;
+  border-radius: 13px;
+  background: transparent;
+  cursor: pointer;
+  transition: min-width 160ms ease, padding 160ms ease, background 160ms ease;
+}
+
+.plan-metric.is-open {
+  min-width: 92px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, currentColor 10%, #fff);
+}
+
+.plan-metric-value {
+  font-size: 12px;
+  font-weight: 560;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  color: currentColor;
+}
+
+.plan-metric.is-open .plan-metric-value {
+  font-size: 22px;
+  letter-spacing: -0.04em;
+}
+
+.plan-metric-label {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--muted);
+}
+
+.plan-light {
+  display: grid;
+  height: 40px;
+  width: 40px;
+  place-items: center;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  background: rgba(255, 251, 245, 0.92);
+  color: #8a7a66;
+  cursor: pointer;
+  box-shadow: 0 8px 20px rgba(28, 22, 16, 0.16);
+  transition: color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+
+.plan-light.is-on {
+  color: #f0b429;
+  background: rgba(255, 244, 214, 0.96);
+  box-shadow:
+    0 0 0 5px rgba(240, 180, 41, 0.22),
+    0 10px 24px rgba(240, 170, 40, 0.38);
+}
+
+.plan-dot {
+  display: grid;
+  height: 32px;
+  width: 32px;
+  place-items: center;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  background: rgba(255, 251, 245, 0.92);
+  color: var(--ink);
+  box-shadow: 0 8px 20px rgba(28, 22, 16, 0.14);
 }
 }
 

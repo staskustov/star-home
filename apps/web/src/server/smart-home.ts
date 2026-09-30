@@ -30,8 +30,9 @@ import {
 import { can, reaches, staffActor, type StaffActor } from "@/server/rbac/decide";
 import type { Permission } from "@/server/rbac/permissions";
 import { householdCan } from "@/server/rbac/policy";
-import { capabilitiesTouchedByState, deriveLifecycle, publicChannelsOf, type DeviceLifecycle, type PublicChannel } from "@/server/device-channels";
+import { capabilitiesTouchedByState, channelsOf, deriveLifecycle, publicChannelsOf, type DeviceLifecycle, type PublicChannel } from "@/server/device-channels";
 import { commandRisk, deviceCan, isSmartCommand, type SmartCommandName } from "@/server/smart-commands";
+import { planPinOf, type PlanPin } from "@/lib/plan-pin";
 
 type Failure = { ok: false; status: number; message: string };
 type Success<T> = { ok: true; value: T };
@@ -148,6 +149,9 @@ export type SmartDeviceCard = {
   id: string;
   name: string;
   typeLabel: string;
+  kind: string;
+  icon: string | null;
+  iconColor: string | null;
   roomId: string | null;
   roomName: string | null;
   availability: NonNullable<Device["availability"]>;
@@ -189,6 +193,9 @@ function asCard(device: Device, viewer: Viewer): SmartDeviceCard {
     id: device.id,
     name: device.displayName ?? device.name,
     typeLabel: deviceLabel(device.kind),
+    kind: device.kind,
+    icon: device.icon ?? null,
+    iconColor: device.iconColor ?? null,
     roomId: device.roomId ?? null,
     roomName: room?.name ?? null,
     availability: device.availability ?? "UNKNOWN",
@@ -757,7 +764,7 @@ export function placeDevice(
 }
 
 export function floorPlanFor(session: SessionRef | null, unitId?: unknown): Result<{
-  floors: { floor: number; image: string; pins: { deviceId: string; name: string; x: number; y: number }[] }[];
+  floors: { floor: number; image: string; pins: PlanPin[] }[];
 }> {
   const viewer = smartViewer(session);
   if (!viewer.ok) return viewer;
@@ -783,7 +790,23 @@ export function floorPlanFor(session: SessionRef | null, unitId?: unknown): Resu
         image: plan.image,
         pins: devices
           .filter((device) => device.planFloor === plan.floor && device.planX != null && device.planY != null)
-          .map((device) => ({ deviceId: device.id, name: device.displayName ?? device.name, x: device.planX as number, y: device.planY as number })),
+          .map((device) =>
+            planPinOf({
+              id: device.id,
+              name: device.displayName ?? device.name,
+              kind: device.kind,
+              icon: device.icon ?? null,
+              iconColor: device.iconColor ?? null,
+              planX: device.planX as number,
+              planY: device.planY as number,
+              capabilities: device.capabilities?.length ? device.capabilities : capabilitiesFor(device.kind),
+              channels: channelsOf({
+                ...device,
+                capabilities: device.capabilities?.length ? device.capabilities : capabilitiesFor(device.kind),
+              }),
+              state: device.state,
+            }),
+          ),
       })),
     },
   };

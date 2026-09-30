@@ -42,6 +42,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="ru" className={`${inter.variable} h-full antialiased`} data-theme="dark" data-palette="bronze" suppressHydrationWarning>
       <head>
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0..1,0&display=block"
+        />
         <script
           dangerouslySetInnerHTML={{
             __html: "try{var raw=localStorage.getItem('star-home-appearance')||'dark:bronze';var parts=raw.split(':');var mode=parts[0]==='light'?'light':'dark';var palette=parts[1]||'bronze';if(mode==='light')document.documentElement.removeAttribute('data-theme');else document.documentElement.dataset.theme='dark';if(['bronze','blue','red','yellow','ink'].indexOf(palette)>=0)document.documentElement.dataset.palette=palette;var color=mode==='light'?'#ece5da':'#1b1713';var meta=document.querySelector('meta[name=\"theme-color\"]');if(meta)meta.setAttribute('content',color)}catch(e){document.documentElement.dataset.theme='dark';document.documentElement.dataset.palette='bronze'}",

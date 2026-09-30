@@ -8,6 +8,7 @@ import { Icon } from "@/components/icons";
 import { formatChannelValue, formatLastContact, formatProbeResult, gatewayErrorText } from "@/lib/format";
 import { commandMessage, runCommand } from "@/lib/command";
 import { Select } from "@/components/ui/Select";
+import { IconPicker } from "@/components/admin/IconPicker";
 
 type Channel = {
   id: string;
@@ -27,6 +28,8 @@ export type AdminDevice = {
   name: string;
   kind: string;
   kindCode?: string;
+  icon?: string | null;
+  iconColor?: string | null;
   state: string;
   availability?: string;
   status?: string;
@@ -114,6 +117,8 @@ export function DeviceDetail({
   const houses = (units ?? []).filter((item) => item.objectId === device.objectId);
   const hubs = (gateways ?? []).filter((item) => item.objectId === device.objectId);
   const [name, setName] = useState(device.name);
+  const [icon, setIcon] = useState(device.icon ?? "");
+  const [iconColor, setIconColor] = useState<string | null>(device.iconColor ?? null);
   const [place, setPlace] = useState(device.place === "STREET" || device.place === "OBJECT" ? device.place : "ROOM");
   const [unitId, setUnitId] = useState(device.unitId ?? houses[0]?.id ?? "");
   const [roomId, setRoomId] = useState(device.roomId ?? "");
@@ -149,6 +154,8 @@ export function DeviceDetail({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           name: name.trim(),
+          icon,
+          iconColor,
           place: resolvedPlace,
           unitId: resolvedPlace === "OBJECT" ? null : unitId,
           roomId: resolvedPlace === "OBJECT" ? null : roomId,
@@ -250,6 +257,9 @@ export function DeviceDetail({
             <span className="text-sm text-muted">Название</span>
             <input value={name} onChange={(event) => setName(event.target.value)} className="control mt-2" disabled={!allowEdit} />
           </label>
+          <div className="sm:col-span-2">
+            <IconPicker value={icon} color={iconColor} kind={device.kindCode ?? device.kind} onChange={setIcon} onColorChange={setIconColor} disabled={!allowEdit} />
+          </div>
           <div className="sm:col-span-2 grid gap-3 sm:grid-cols-2">
             <button
               type="button"

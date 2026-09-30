@@ -27,7 +27,8 @@ export type IconName =
   | "co2"
   | "organics"
   | "edit"
-  | "plus";
+  | "plus"
+  | "light";
 
 const paths: Record<IconName, ReactNode> = {
   home: (
@@ -299,6 +300,13 @@ const paths: Record<IconName, ReactNode> = {
   plus: (
     <>
       <path d="M12 5v14M5 12h14" />
+    </>
+  ),
+  light: (
+    <>
+      <path d="M9 18h6" />
+      <path d="M10 21h4" />
+      <path d="M12 3a5.2 5.2 0 0 0-3.1 9.4c.6.5 1.1 1.3 1.1 2.1h4c0-.8.5-1.6 1.1-2.1A5.2 5.2 0 0 0 12 3Z" />
     </>
   ),
 };
