@@ -473,18 +473,9 @@ function UnitRow({
     </div>
   ) : null;
 
-  if (editing) {
-    return (
-      <li className={view === "blocks" ? "panel p-5" : "px-5 py-3"}>
-        <UnitEditor
-          objectId={objectId}
-          unit={unit}
-          onSave={onSave}
-          onClose={() => setEditing(false)}
-        />
-      </li>
-    );
-  }
+  const editor = editing ? (
+    <UnitEditor objectId={objectId} unit={unit} onSave={onSave} onClose={() => setEditing(false)} />
+  ) : null;
 
   if (view === "blocks") {
     return (
@@ -494,6 +485,7 @@ function UnitRow({
           <p className="mt-2 line-clamp-2 text-sm text-muted">{unitMeta(unit)}</p>
         </div>
         {actions ? <div className="mt-3">{actions}</div> : null}
+        {editor}
       </li>
     );
   }
@@ -505,6 +497,7 @@ function UnitRow({
         <p className="mt-1 truncate text-sm text-muted">{unitMeta(unit)}</p>
       </div>
       {actions}
+      {editor}
     </li>
   );
 }
@@ -609,8 +602,23 @@ function UnitEditor({
   }, [objectId]);
 
   return (
-    <>
-    <form onSubmit={save} className="grid gap-4">
+    <div className="fixed inset-0 z-40 flex items-end justify-center bg-ink/40 backdrop-blur-sm sm:items-center" onMouseDown={onClose}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="unit-dialog-title"
+        className="panel fade-in max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-t-[28px] p-6 sm:rounded-[28px]"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <h2 id="unit-dialog-title" className="text-[24px] tracking-[-0.03em] text-ink">
+            {unit.name}
+          </h2>
+          <button type="button" onClick={onClose} aria-label="Закрыть" className="btn btn-secondary btn-icon">
+            <Icon name="close" />
+          </button>
+        </div>
+    <form onSubmit={save} className="mt-6 grid gap-4">
       <label className="block">
         <span className="text-sm text-muted">Название</span>
         <input value={name} onChange={(event) => setName(event.target.value)} className="control mt-2" />
@@ -760,7 +768,6 @@ function UnitEditor({
       </div>
     </form>
     {addingRoomId ? (
-      <div className="mt-4">
         <DeviceAddWizard
           objectId={objectId}
           gateways={gateways}
@@ -781,9 +788,9 @@ function UnitEditor({
               .catch(() => undefined);
           }}
         />
-      </div>
     ) : null}
-    </>
+      </div>
+    </div>
   );
 }
 

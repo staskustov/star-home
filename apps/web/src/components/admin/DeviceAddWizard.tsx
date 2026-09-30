@@ -500,7 +500,7 @@ export function DeviceAddWizard({
 
   if (asDialog) {
     return (
-      <div className="fixed inset-0 z-40 flex items-end justify-center bg-ink/40 backdrop-blur-sm sm:items-center" onMouseDown={onClose}>
+      <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink/40 backdrop-blur-sm sm:items-center" onMouseDown={onClose}>
         <section
           className="panel fade-in max-h-[90dvh] w-full max-w-2xl overflow-y-auto rounded-t-[28px] p-6 sm:rounded-[28px]"
           onMouseDown={(event) => event.stopPropagation()}
