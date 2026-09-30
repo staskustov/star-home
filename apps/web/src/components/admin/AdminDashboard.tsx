@@ -181,13 +181,11 @@ export function AdminDashboard({ view }: { view: DashboardView }) {
   if (!object) {
     return (
       <div>
-        <h1 className="text-[36px] leading-none tracking-[-0.04em] text-ink">Объекты</h1>
+        <div className="flex items-start justify-between gap-4">
+          <h1 className="text-[36px] leading-none tracking-[-0.04em] text-ink">Объекты</h1>
+          {view.canCreateObject ? <AddObjectButton /> : null}
+        </div>
         <p className="mt-4 text-[17px] text-muted">Объектов пока нет.</p>
-        {view.canCreateObject ? (
-          <div className="mt-6">
-            <AddObjectButton />
-          </div>
-        ) : null}
       </div>
     );
   }
@@ -196,6 +194,11 @@ export function AdminDashboard({ view }: { view: DashboardView }) {
 
   return (
     <div className="fade-in mx-auto max-w-[1180px] space-y-6">
+      {view.canCreateObject ? (
+        <div className="flex justify-end">
+          <AddObjectButton />
+        </div>
+      ) : null}
       {view.scope === "COMPANY" && view.objects.length > 1 ? (
         <ObjectStrip objects={view.objects} selectedId={object.id} onSelect={select} />
       ) : null}
@@ -216,7 +219,6 @@ export function AdminDashboard({ view }: { view: DashboardView }) {
               Структура
             </Link>
           ) : null}
-          {view.canCreateObject ? <AddObjectButton /> : null}
           {canDeleteObject ? <DeleteObjectButton objectId={object.id} canDelete={object.canDelete !== false} /> : null}
         </div>
       </header>

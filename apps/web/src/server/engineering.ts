@@ -107,7 +107,7 @@ export function engineeringBoard(actor: StaffActor): Success<EngineeringBoard> |
             }),
         };
       }),
-      can: { poll: can(actor, "engineering.command"), edit: can(actor, "engineering.edit") },
+      can: { poll: can(actor, "engineering.command"), edit: can(actor, "engineering.edit"), create: can(actor, "devices.create") },
       works,
     },
   };

@@ -1,4 +1,3 @@
-import { objectPresentation } from "@/lib/object-presentation";
 import { structureCounts, unitIdsOf, unitIdsOfBuilding } from "@/server/catalog-store";
 import { objectHasAssignments } from "@/server/directory";
 import { can, objectsInScope, wholeObject, type StaffActor } from "@/server/rbac/decide";
@@ -22,21 +21,13 @@ const sections: { group: string; permission: Permission; item: NavItem }[] = [
   { group: "Управление", permission: "settings.view", item: { href: "/admin/settings", label: "Настройки", icon: "settings" } },
 ];
 
-function placeLabel(actor: StaffActor): string {
-  const types = new Set(objectsInScope(actor).map((object) => object.type));
-  const [only] = types;
-  return types.size === 1 && only ? objectPresentation[only].placeLabel : "Объекты";
-}
-
 export function sectionsFor(actor: StaffActor): NavGroup[] {
-  const place = placeLabel(actor);
   const groups: NavGroup[] = [];
   for (const section of sections) {
     if (!can(actor, section.permission)) continue;
-    const item = section.item.href === "/admin/objects" ? { ...section.item, label: place } : section.item;
     const group = groups.find((entry) => entry.label === section.group);
-    if (group) group.items.push(item);
-    else groups.push({ label: section.group, items: [item] });
+    if (group) group.items.push(section.item);
+    else groups.push({ label: section.group, items: [section.item] });
   }
   return groups;
 }

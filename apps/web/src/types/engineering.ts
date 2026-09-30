@@ -25,6 +25,6 @@ export type EngineeringBoard = {
     systems: EngineeringSystem[];
     meters: { id: string; name: string; place: string; value: string | null; unit: string; at: string | null }[];
   }[];
-  can: { poll: boolean; edit: boolean };
+  can: { poll: boolean; edit: boolean; create: boolean };
   works: { value: DeviceWork; label: string }[];
 };

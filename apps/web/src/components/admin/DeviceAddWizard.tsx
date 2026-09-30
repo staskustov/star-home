@@ -10,7 +10,7 @@ import { commandMessage, runCommand } from "@/lib/command";
 import { Select } from "@/components/ui/Select";
 
 type Gateway = { id: string; objectId: string; name: string; adapter: string; status: string };
-type Room = { id: string; objectId: string; unitId: string; unitName: string; name: string };
+type Room = { id: string; objectId: string; unitId: string; unitName: string; name: string; kind?: string };
 type Unit = { id: string; objectId: string; name: string };
 type FoundDevice = {
   externalId: string;
@@ -67,6 +67,8 @@ export function DeviceAddWizard({
   initialPlace,
   initialUnitId,
   initialRoomId,
+  lockScope,
+  asDialog,
   onClose,
 }: {
   objectId: string;
@@ -76,11 +78,15 @@ export function DeviceAddWizard({
   initialPlace?: "OBJECT" | "STREET" | "ROOM";
   initialUnitId?: string;
   initialRoomId?: string;
+  lockScope?: "house" | "object";
+  asDialog?: boolean;
   onClose: () => void;
 }) {
   const router = useRouter();
   const hubs = gateways.filter((item) => item.objectId === objectId);
   const houses = units.filter((item) => item.objectId === objectId);
+  const objectOnly = lockScope === "object" || initialPlace === "OBJECT";
+  const houseOnly = lockScope === "house";
   const [step, setStep] = useState(0);
   const [source, setSource] = useState<"discover" | "manual" | null>(null);
   const [gatewayId, setGatewayId] = useState(hubs[0]?.id ?? "");
@@ -95,7 +101,7 @@ export function DeviceAddWizard({
   const [model, setModel] = useState("");
   const [serialNumber, setSerialNumber] = useState("");
   const [externalId, setExternalId] = useState("");
-  const [place, setPlace] = useState<"OBJECT" | "STREET" | "ROOM">(initialPlace ?? "ROOM");
+  const [place, setPlace] = useState<"OBJECT" | "STREET" | "ROOM">(objectOnly ? "OBJECT" : (initialPlace ?? "ROOM"));
   const [unitId, setUnitId] = useState(initialUnitId ?? houses[0]?.id ?? "");
   const [roomId, setRoomId] = useState(initialRoomId ?? "");
   const [channels, setChannels] = useState<DraftChannel[]>(channelsFromCaps("CLIMATE"));
@@ -109,8 +115,13 @@ export function DeviceAddWizard({
   }, [rooms, objectId, unitId]);
 
   useEffect(() => {
-    if (!roomId && roomsOfHouse[0]) setRoomId(roomsOfHouse[0].id);
-  }, [roomId, roomsOfHouse]);
+    if (place === "OBJECT") return;
+    if (roomId && roomsOfHouse.some((room) => room.id === roomId)) return;
+    const street = roomsOfHouse.find((room) => room.kind === "STREET");
+    const indoor = roomsOfHouse.find((room) => room.kind !== "STREET");
+    const next = kind === "WEATHER" ? street ?? indoor : indoor ?? street;
+    if (next) setRoomId(next.id);
+  }, [place, roomId, roomsOfHouse, kind]);
 
   useEffect(() => {
     if (!scanId || scanStatus !== "pending") return;
@@ -182,7 +193,7 @@ export function DeviceAddWizard({
     setExternalId(device.externalId);
     setChannels(channelsFromFound(device));
     if (nextKind === "WEATHER") setPlace("STREET");
-    setStep(2);
+    setStep(objectOnly ? 3 : 2);
   }
 
   function changeKind(next: DeviceKind) {
@@ -191,15 +202,22 @@ export function DeviceAddWizard({
     if (next === "WEATHER") setPlace("STREET");
   }
 
+  function goToPlaceOrChannels() {
+    setStep(objectOnly ? 3 : 2);
+  }
+
   async function save() {
     if (!name.trim()) {
       setNotice("Введите название.");
       return;
     }
-    if (place === "ROOM" && !roomId) {
-      setNotice("Выберите помещение.");
+    if (place !== "OBJECT" && !roomId) {
+      setNotice("Выберите помещение или улицу дома.");
       return;
     }
+    const selectedRoom = rooms.find((room) => room.id === roomId);
+    const resolvedPlace: "OBJECT" | "STREET" | "ROOM" =
+      objectOnly || place === "OBJECT" ? "OBJECT" : selectedRoom?.kind === "STREET" || place === "STREET" ? "STREET" : "ROOM";
     setBusy(true);
     setNotice(null);
     const enabled = channels.filter((channel) => channel.enabled);
@@ -216,9 +234,9 @@ export function DeviceAddWizard({
           model: model.trim() || undefined,
           serialNumber: serialNumber.trim() || undefined,
           externalId: externalId.trim() || undefined,
-          place,
-          roomId: place === "ROOM" ? roomId : null,
-          unitId: place === "ROOM" ? unitId : null,
+          place: resolvedPlace,
+          roomId: resolvedPlace === "OBJECT" ? null : roomId || null,
+          unitId: resolvedPlace === "OBJECT" ? null : unitId || null,
           capabilities: enabled.map((channel) => channel.capability),
           channels,
         }),
@@ -235,11 +253,11 @@ export function DeviceAddWizard({
     if (id) router.push(`/admin/devices/${id}`);
   }
 
-  return (
-    <section className="panel p-5">
+  const inner = (
+    <>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-[16px] text-ink">Добавить устройство</p>
+          <p className="text-[16px] text-ink">{objectOnly ? "Устройство объекта" : "Добавить устройство"}</p>
           <p className="mt-1 text-sm text-muted">{steps[step]}</p>
         </div>
         <button type="button" className="btn btn-secondary btn-compact" onClick={onClose}>
@@ -355,7 +373,7 @@ export function DeviceAddWizard({
             <input value={externalId} onChange={(event) => setExternalId(event.target.value)} className="control mt-2" />
           </label>
           <div className="sm:col-span-2">
-            <button type="button" className="btn btn-primary btn-compact" onClick={() => setStep(2)}>
+            <button type="button" className="btn btn-primary btn-compact" onClick={goToPlaceOrChannels}>
               Дальше
             </button>
           </div>
@@ -368,20 +386,25 @@ export function DeviceAddWizard({
             <span className="text-sm text-muted">Название</span>
             <input value={name} onChange={(event) => setName(event.target.value)} className="control mt-2" />
           </label>
-          <div className="grid gap-3 sm:grid-cols-3">
-            {(["ROOM", "OBJECT", "STREET"] as const).map((item) => (
+          {houseOnly ? (
+            <p className="text-sm text-muted">Привяжите устройство к дому: помещение внутри или улица у этого дома.</p>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2">
               <button
-                key={item}
                 type="button"
-                className={`btn btn-compact ${place === item ? "btn-primary" : "btn-secondary"}`}
-                disabled={kind === "WEATHER" && item !== "STREET"}
-                onClick={() => setPlace(item)}
+                className={`btn btn-compact ${place !== "OBJECT" ? "btn-primary" : "btn-secondary"}`}
+                onClick={() => setPlace(kind === "WEATHER" ? "STREET" : "ROOM")}
               >
-                {item === "ROOM" ? "Дом и помещение" : item === "OBJECT" ? "Объект целиком" : "Улица посёлка"}
+                Дом
               </button>
-            ))}
-          </div>
-          {place === "ROOM" ? (
+              <button type="button" className={`btn btn-compact ${place === "OBJECT" ? "btn-primary" : "btn-secondary"}`} onClick={() => setPlace("OBJECT")}>
+                Весь объект
+              </button>
+            </div>
+          )}
+          {place === "OBJECT" ? (
+            <p className="text-sm text-muted">Общее устройство объекта. Жильцам не передаётся — его видно в инженерии.</p>
+          ) : (
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="block">
                 <span className="text-sm text-muted">Дом</span>
@@ -393,6 +416,7 @@ export function DeviceAddWizard({
                   }}
                   wrapClassName="mt-2"
                 >
+                  {houses.length === 0 ? <option value="">Нет домов — сначала структура</option> : null}
                   {houses.map((unit) => (
                     <option key={unit.id} value={unit.id}>
                       {unit.name}
@@ -401,17 +425,18 @@ export function DeviceAddWizard({
                 </Select>
               </label>
               <label className="block">
-                <span className="text-sm text-muted">Помещение</span>
+                <span className="text-sm text-muted">Помещение или улица</span>
                 <Select value={roomId} onChange={(event) => setRoomId(event.target.value)} wrapClassName="mt-2">
+                  {roomsOfHouse.length === 0 ? <option value="">Нет помещений</option> : null}
                   {roomsOfHouse.map((room) => (
                     <option key={room.id} value={room.id}>
-                      {room.name}
+                      {room.kind === "STREET" ? "Улица у дома" : room.name}
                     </option>
                   ))}
                 </Select>
               </label>
             </div>
-          ) : null}
+          )}
           <button type="button" className="btn btn-primary btn-compact" onClick={() => setStep(3)}>
             Дальше
           </button>
@@ -470,6 +495,21 @@ export function DeviceAddWizard({
       ) : null}
 
       {notice ? <p className="mt-4 text-sm text-muted">{notice}</p> : null}
-    </section>
+    </>
   );
+
+  if (asDialog) {
+    return (
+      <div className="fixed inset-0 z-40 flex items-end justify-center bg-ink/40 backdrop-blur-sm sm:items-center" onMouseDown={onClose}>
+        <section
+          className="panel fade-in max-h-[90dvh] w-full max-w-2xl overflow-y-auto rounded-t-[28px] p-6 sm:rounded-[28px]"
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          {inner}
+        </section>
+      </div>
+    );
+  }
+
+  return <section className="panel p-5">{inner}</section>;
 }

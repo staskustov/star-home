@@ -14,7 +14,7 @@ import {
 } from "@/server/people-store";
 import { hashPassword } from "@/server/password";
 import { can, objectsInScope, unitFor, unitInScope, type StaffActor } from "@/server/rbac/decide";
-import type { Role } from "@/types/domain";
+import type { ObjectType, Role } from "@/types/domain";
 
 type Failure = { ok: false; status: number; message: string };
 type Success<T> = { ok: true; value: T };
@@ -50,6 +50,8 @@ export type ResidentGroup = {
 
 export type ResidentObjectChoices = {
   id: string;
+  name: string;
+  type: ObjectType;
   groups: ResidentGroup[];
 };
 
@@ -121,6 +123,8 @@ export function residentBoard(actor: StaffActor): {
     people,
     objects: objects.map((object) => ({
       id: object.id,
+      name: object.name,
+      type: object.type,
       groups: groupsFor(actor, object.id),
     })),
     can: {

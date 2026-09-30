@@ -98,10 +98,10 @@ describe("navigation", () => {
     assert.ok(managed.includes("/admin/requests"));
   });
 
-  it("names the place by the object type", async () => {
+  it("names the objects section objects", async () => {
     const body = (await rpc("admin", null, objectAdmin)).body as Admin;
     const place = body.sections?.flatMap((group) => group.items).find((item) => item.href === "/admin/objects");
-    assert.equal(place?.label, "Посёлок");
+    assert.equal(place?.label, "Объекты");
   });
 
   it("gives the console shell only the structure of objects in scope", async () => {

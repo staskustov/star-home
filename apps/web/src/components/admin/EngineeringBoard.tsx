@@ -3,12 +3,15 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAdminPreview } from "@/components/admin/AdminPreview";
+import { DeviceAddWizard } from "@/components/admin/DeviceAddWizard";
+import { Icon } from "@/components/icons";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Select } from "@/components/ui/Select";
 import { commandMessage, runCommand } from "@/lib/command";
 import type { DeviceWork, EngineeringBoard as Board, EngineeringDevice, EngineeringSystem } from "@/types/engineering";
 
 type Notice = { text: string; ok: boolean };
+type Hub = { id: string; objectId: string; name: string; adapter: string; status: string };
 
 function SystemState({ system }: { system: EngineeringSystem }) {
   if (system.tone === "muted") return <span className="text-[15px] text-muted">{system.state}</span>;
@@ -91,15 +94,50 @@ function DeviceRow({ device, objectId, board }: { device: EngineeringDevice; obj
 
 export function EngineeringBoard({ board }: { board: Board }) {
   const { selected } = useAdminPreview();
+  const router = useRouter();
   const current = board.objects.find((object) => object.objectId === selected?.id) ?? board.objects[0];
+  const [adding, setAdding] = useState(false);
+  const [gateways, setGateways] = useState<Hub[]>([]);
+
+  async function openAdd() {
+    if (!current) return;
+    setAdding(true);
+    const result = await runCommand(() => fetch(`/api/smart-home/gateways?objectId=${current.objectId}`));
+    const list = Array.isArray(result.payload?.gateways) ? (result.payload.gateways as Hub[]) : [];
+    setGateways(list);
+  }
 
   return (
     <div className="mx-auto max-w-5xl">
-      <p className="kicker text-accent">Системы</p>
-      <h1 className="mt-2 text-[36px] leading-none tracking-[-0.04em] text-ink">Инженерия</h1>
-      <p className="mt-3 max-w-2xl text-[15px] text-muted">
-        Состояние инженерных систем {selected ? `объекта «${selected.name}»` : "объекта"}. Показания приходят только от подключённых устройств; опрос выполняет адаптер.
-      </p>
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="kicker text-accent">Системы</p>
+          <h1 className="mt-2 text-[36px] leading-none tracking-[-0.04em] text-ink">Инженерия</h1>
+          <p className="mt-3 max-w-2xl text-[15px] text-muted">
+            Состояние инженерных систем {selected ? `объекта «${selected.name}»` : "объекта"}. Показания приходят только от подключённых устройств; опрос выполняет адаптер.
+          </p>
+        </div>
+        {board.can.create && current ? (
+          <button type="button" className="btn btn-primary btn-icon" aria-label="Добавить устройство объекта" onClick={() => void openAdd()}>
+            <Icon name="plus" />
+          </button>
+        ) : null}
+      </div>
+
+      {adding && current ? (
+        <DeviceAddWizard
+          objectId={current.objectId}
+          gateways={gateways}
+          rooms={[]}
+          units={[]}
+          lockScope="object"
+          asDialog
+          onClose={() => {
+            setAdding(false);
+            router.refresh();
+          }}
+        />
+      ) : null}
 
       {!current ? (
         <p className="panel mt-8 p-6 text-[15px] text-muted">Нет доступных объектов.</p>

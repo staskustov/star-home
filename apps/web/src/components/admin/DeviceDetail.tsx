@@ -60,7 +60,7 @@ export type AdminDevice = {
   channels: Channel[];
 };
 
-type Room = { id: string; objectId: string; unitId: string; unitName: string; name: string };
+type Room = { id: string; objectId: string; unitId: string; unitName: string; name: string; kind?: string };
 type Unit = { id: string; objectId: string; name: string };
 type Gateway = { id: string; objectId: string; name: string; adapter: string; status: string; version?: string | null; lastSeen?: string | null; lastError?: string | null };
 
@@ -83,8 +83,8 @@ const statusText: Record<string, string> = {
 };
 
 function placeText(device: AdminDevice): string {
-  if (device.place === "STREET") return "Улица посёлка";
   if (device.place === "OBJECT") return "Объект целиком";
+  if (device.place === "STREET") return device.unitName ? `${device.unitName} · улица` : "Улица объекта";
   return [device.unitName, device.roomName].filter(Boolean).join(" · ") || "Дом";
 }
 
@@ -140,15 +140,17 @@ export function DeviceDetail({
   async function save() {
     setBusy(true);
     setNotice(null);
+    const selectedRoom = roomsOfHouse.find((room) => room.id === roomId);
+    const resolvedPlace = place === "OBJECT" ? "OBJECT" : selectedRoom?.kind === "STREET" ? "STREET" : "ROOM";
     const result = await runCommand(() =>
       fetch(`/api/smart-home/devices/${device.id}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           name: name.trim(),
-          place,
-          unitId: place === "ROOM" ? unitId : null,
-          roomId: place === "ROOM" ? roomId : null,
+          place: resolvedPlace,
+          unitId: resolvedPlace === "OBJECT" ? null : unitId,
+          roomId: resolvedPlace === "OBJECT" ? null : roomId,
           gatewayId: gatewayId || null,
           channels,
         }),
@@ -239,20 +241,25 @@ export function DeviceDetail({
             <span className="text-sm text-muted">Название</span>
             <input value={name} onChange={(event) => setName(event.target.value)} className="control mt-2" disabled={!allowEdit} />
           </label>
-          <div className="sm:col-span-2 grid gap-3 sm:grid-cols-3">
-            {(["ROOM", "OBJECT", "STREET"] as const).map((item) => (
-              <button
-                key={item}
-                type="button"
-                className={`btn btn-compact ${place === item ? "btn-primary" : "btn-secondary"}`}
-                disabled={!allowEdit || (device.kindCode === "WEATHER" && item !== "STREET")}
-                onClick={() => setPlace(item)}
-              >
-                {item === "ROOM" ? "Дом и помещение" : item === "OBJECT" ? "Объект целиком" : "Улица посёлка"}
-              </button>
-            ))}
+          <div className="sm:col-span-2 grid gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              className={`btn btn-compact ${place !== "OBJECT" ? "btn-primary" : "btn-secondary"}`}
+              disabled={!allowEdit}
+              onClick={() => setPlace(device.kindCode === "WEATHER" ? "STREET" : "ROOM")}
+            >
+              Дом
+            </button>
+            <button
+              type="button"
+              className={`btn btn-compact ${place === "OBJECT" ? "btn-primary" : "btn-secondary"}`}
+              disabled={!allowEdit || device.kindCode === "WEATHER"}
+              onClick={() => setPlace("OBJECT")}
+            >
+              Весь объект
+            </button>
           </div>
-          {place === "ROOM" ? (
+          {place !== "OBJECT" ? (
             <>
               <label className="block">
                 <span className="text-sm text-muted">Дом</span>
@@ -273,17 +280,19 @@ export function DeviceDetail({
                 </Select>
               </label>
               <label className="block">
-                <span className="text-sm text-muted">Помещение</span>
+                <span className="text-sm text-muted">Помещение или улица</span>
                 <Select value={roomId} disabled={!allowEdit} onChange={(event) => setRoomId(event.target.value)} wrapClassName="mt-2">
                   {roomsOfHouse.map((room) => (
                     <option key={room.id} value={room.id}>
-                      {room.name}
+                      {room.kind === "STREET" ? "Улица у дома" : room.name}
                     </option>
                   ))}
                 </Select>
               </label>
             </>
-          ) : null}
+          ) : (
+            <p className="sm:col-span-2 text-sm text-muted">Общее устройство объекта. Жильцам не передаётся.</p>
+          )}
           <label className="block sm:col-span-2">
             <span className="text-sm text-muted">Шлюз</span>
             <Select value={gatewayId} disabled={!allowEdit} onChange={(event) => setGatewayId(event.target.value)} wrapClassName="mt-2">

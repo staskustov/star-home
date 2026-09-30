@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAdminPreview } from "@/components/admin/AdminPreview";
 import { DeviceAddWizard } from "@/components/admin/DeviceAddWizard";
+import { Icon } from "@/components/icons";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Select } from "@/components/ui/Select";
 import { ViewToggle, useViewMode } from "@/components/ui/ViewToggle";
@@ -428,8 +429,8 @@ function deviceStatus(device: DeskDevice): string {
 }
 
 function devicePlace(device: DeskDevice): string {
-  if (device.place === "STREET") return "Улица посёлка";
   if (device.place === "OBJECT") return "Объект";
+  if (device.place === "STREET") return device.unitName ? `${device.unitName} · улица` : "Улица объекта";
   return [device.unitName, device.roomName].filter(Boolean).join(" · ") || "Дом";
 }
 
@@ -655,9 +656,9 @@ export function DeviceDesk({
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(
-          bind.place === "ROOM"
-            ? { place: "ROOM", roomId: bind.roomId }
-            : { place: bind.place, unitId: null, roomId: null },
+          bind.place === "OBJECT"
+            ? { place: "OBJECT", unitId: null, roomId: null }
+            : { place: bind.place, roomId: bind.roomId },
         ),
       }),
     );
@@ -730,8 +731,8 @@ export function DeviceDesk({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <ViewToggle value={view} onChange={setView} />
         {allowCreate && selected ? (
-          <button type="button" className="btn btn-primary btn-compact" onClick={() => setAdding(true)}>
-            Добавить
+          <button type="button" className="btn btn-primary btn-icon" aria-label="Добавить устройство" onClick={() => setAdding(true)}>
+            <Icon name="plus" />
           </button>
         ) : null}
       </div>
@@ -745,8 +746,11 @@ export function DeviceDesk({
             unitId: room.unitId ?? "",
             unitName: room.unitName ?? "",
             name: room.name,
+            kind: room.kind,
           }))}
           units={houses}
+          lockScope="house"
+          asDialog
           onClose={() => setAdding(false)}
         />
       ) : null}
@@ -899,18 +903,18 @@ export function DeviceDesk({
           </Select>
           <Select value={bind.place} onChange={(event) => setBind((current) => ({ ...current, place: event.target.value }))}>
             <option value="OBJECT">Объект</option>
-            <option value="STREET">Улица посёлка</option>
+            <option value="STREET">Улица дома</option>
             <option value="ROOM">Дом / помещение</option>
           </Select>
           <Select
             value={bind.roomId}
             onChange={(event) => setBind((current) => ({ ...current, roomId: event.target.value }))}
-            disabled={bind.place !== "ROOM"}
+            disabled={bind.place === "OBJECT"}
           >
             <option value="">Помещение или улица дома</option>
             {places.map((room) => (
               <option key={room.id} value={room.id}>
-                {room.unitName ? `${room.unitName} · ${room.name}` : room.name}
+                {room.unitName ? `${room.unitName} · ${room.kind === "STREET" ? "улица" : room.name}` : room.name}
               </option>
             ))}
           </Select>

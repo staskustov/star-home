@@ -408,13 +408,13 @@ function UnitList({
   ));
   const more =
     limit < units.length ? (
-      <li ref={sentinelRef} className="px-5 py-4 text-sm text-muted">
+      <li ref={sentinelRef} className="col-span-full px-1 py-3 text-sm text-muted">
         Ещё {units.length - limit}…
       </li>
     ) : null;
   if (view === "blocks") {
     return (
-      <ul className="mt-4 grid gap-3">
+      <ul className="mt-4 grid grid-cols-1 gap-3 md:[grid-template-columns:repeat(auto-fill,minmax(10.75rem,1fr))]">
         {rows}
         {more}
       </ul>
@@ -488,12 +488,12 @@ function UnitRow({
 
   if (view === "blocks") {
     return (
-      <li className="panel flex flex-col justify-between p-5">
-        <div>
-          <p className="text-[18px] tracking-[-0.03em] text-ink">{unit.name}</p>
-          <p className="mt-2 text-sm text-muted">{unitMeta(unit)}</p>
+      <li className="panel flex flex-col justify-between p-4">
+        <div className="min-w-0">
+          <p className="truncate text-[16px] tracking-[-0.03em] text-ink">{unit.name}</p>
+          <p className="mt-2 line-clamp-2 text-sm text-muted">{unitMeta(unit)}</p>
         </div>
-        {actions ? <div className="mt-4">{actions}</div> : null}
+        {actions ? <div className="mt-3">{actions}</div> : null}
       </li>
     );
   }
@@ -764,11 +764,13 @@ function UnitEditor({
         <DeviceAddWizard
           objectId={objectId}
           gateways={gateways}
-          rooms={rooms.map((room) => ({ id: room.id, objectId, unitId: unit.id, unitName: unit.name, name: room.name }))}
+          rooms={rooms.map((room) => ({ id: room.id, objectId, unitId: unit.id, unitName: unit.name, name: room.name, kind: room.kind }))}
           units={[{ id: unit.id, objectId, name: unit.name }]}
           initialPlace="ROOM"
           initialUnitId={unit.id}
           initialRoomId={addingRoomId}
+          lockScope="house"
+          asDialog
           onClose={() => {
             setAddingRoomId(null);
             fetch(`/api/catalog/units/${unit.id}`)

@@ -1,4 +1,4 @@
-import { findObject, findRoom } from "@/server/catalog-store";
+import { findObject, findRoom, roomsOf } from "@/server/catalog-store";
 import { cleanCapabilities, type Capability } from "@/server/device-capabilities";
 import {
   deriveLifecycle,
@@ -199,15 +199,25 @@ function bindPlace(
   const explicit = isDevicePlace(input.place) ? input.place : null;
   const hasHome = Boolean(input.unitId) || Boolean(input.roomId);
   const place: DevicePlace = explicit ?? (hasHome ? "ROOM" : input.kind === "WEATHER" ? "STREET" : "OBJECT");
-  if (place === "STREET" || place === "OBJECT") {
-    return { place, unitId: null, roomId: null };
+  if (place === "OBJECT") {
+    return { place: "OBJECT", unitId: null, roomId: null };
   }
   const roomId = bindRoom(actor, objectId, typeof input.unitId === "string" ? input.unitId : null, input.roomId);
   if (roomId && typeof roomId !== "string") return roomId;
-  if (typeof roomId !== "string") return { ok: false, status: 400, message: "Если устройство в доме, выберите помещение или улицу дома" };
-  const room = findRoom(roomId);
-  if (!room) return { ok: false, status: 404, message: "Помещение не найдено" };
-  return { place: "ROOM", unitId: room.unitId, roomId };
+  if (typeof roomId === "string") {
+    const room = findRoom(roomId);
+    if (!room) return { ok: false, status: 404, message: "Помещение не найдено" };
+    return { place: room.kind === "STREET" || place === "STREET" ? "STREET" : "ROOM", unitId: room.unitId, roomId: room.id };
+  }
+  if (place === "STREET") {
+    const unitId = bindUnit(actor, objectId, input.unitId);
+    if (unitId && typeof unitId !== "string") return unitId;
+    if (typeof unitId !== "string") return { place: "STREET", unitId: null, roomId: null };
+    const street = roomsOf(unitId).find((room) => room.kind === "STREET");
+    if (!street) return { ok: false, status: 400, message: "У дома нет улицы" };
+    return { place: "STREET", unitId, roomId: street.id };
+  }
+  return { ok: false, status: 400, message: "Если устройство в доме, выберите помещение или улицу дома" };
 }
 
 function bindRoom(actor: StaffActor, objectId: string, unitId: string | null, roomId: unknown): string | null | Failure {
@@ -310,6 +320,7 @@ export function registerDevice(
     status: "UNCONFIGURED",
     metadata: {
       handedOver: false,
+      engineering: place.place === "OBJECT",
       source: adapterFromGateway(gateway) === "simulator" ? "MOCK" : adapterFromGateway(gateway) === "local" ? "DEMO" : gateway ? "REAL" : "UNKNOWN",
       ...(adapterFromGateway(gateway) === "simulator" ? { simulator: true } : {}),
     },

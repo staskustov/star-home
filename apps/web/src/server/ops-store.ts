@@ -823,29 +823,40 @@ export function isDevicePlace(value: unknown): value is DevicePlace {
 }
 
 function bindDevicePlace(device: Device): void {
-  const rooms = device.unitId ? roomsOf(device.unitId) : [];
-  const streetRoom = rooms.find((room) => room.kind === "STREET");
-  const indoor = rooms.find((room) => room.kind !== "STREET") ?? rooms[0];
-  const outdoorName = /улиц|двор|калитк|ворот|шлагбаум/i.test(device.name);
-  if (device.place === "STREET" || device.kind === "WEATHER") {
-    device.place = "STREET";
+  if (device.place === "OBJECT") {
     device.unitId = null;
     device.roomId = null;
     return;
   }
   if (device.roomId) {
     const room = findRoom(device.roomId);
-    device.place = "ROOM";
-    if (room) device.unitId = room.unitId;
+    if (room) {
+      device.unitId = room.unitId;
+      device.place = room.kind === "STREET" ? "STREET" : "ROOM";
+      return;
+    }
+  }
+  if (device.place === "STREET" || device.kind === "WEATHER") {
+    device.place = "STREET";
+    if (device.unitId) {
+      const street = roomsOf(device.unitId).find((room) => room.kind === "STREET");
+      if (street) device.roomId = street.id;
+    } else {
+      device.roomId = null;
+    }
     return;
   }
   if (device.unitId) {
+    const rooms = roomsOf(device.unitId);
+    const streetRoom = rooms.find((room) => room.kind === "STREET");
+    const indoor = rooms.find((room) => room.kind !== "STREET") ?? rooms[0];
+    const outdoorName = /улиц|двор|калитк|ворот|шлагбаум/i.test(device.name);
     const room = outdoorName || device.kind === "CAMERA" ? streetRoom ?? indoor : indoor;
-    device.place = "ROOM";
+    device.place = room?.kind === "STREET" ? "STREET" : "ROOM";
     device.roomId = room?.id ?? null;
     return;
   }
-  device.place = outdoorName ? "STREET" : "OBJECT";
+  device.place = /улиц|двор|калитк|ворот|шлагбаум/i.test(device.name) ? "STREET" : "OBJECT";
   device.roomId = null;
 }
 
