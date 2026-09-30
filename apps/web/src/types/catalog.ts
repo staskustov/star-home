@@ -32,6 +32,7 @@ export type CatalogTree = {
     type: ObjectType;
     address: string;
     securityPhone?: string | null;
+    residentSeesProjectCameras?: boolean;
     canDelete: boolean;
   };
   buildings: CatalogBuildingNode[] | null;

@@ -12,4 +12,4 @@ export const residentNav: NavItem[] = [
   { href: "/profile", label: "Настройки", icon: "settings" },
 ];
 
-export const residentDock = ["/home", "/rooms", "/service"];
+export const residentDock = ["/home", "/rooms", "/devices"];

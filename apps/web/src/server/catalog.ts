@@ -17,7 +17,7 @@ import {
   updateCatalogUnit,
 } from "@/server/catalog-store";
 import { deviceLabel } from "@/server/device-kinds";
-import { readOps } from "@/server/ops-store";
+import { projectCamerasOpen, readOps, setProjectCamerasOpen } from "@/server/ops-store";
 import type { AuditInput } from "@/server/audit-store";
 import { buildingHasStaff, objectHasAssignments, unitHasAssignment } from "@/server/directory";
 import { recordAudit } from "@/server/operations";
@@ -96,6 +96,7 @@ export function treeFor(actor: StaffActor, objectId: string): Success<CatalogTre
       type: tree.object.type,
       address: tree.object.address,
       securityPhone: tree.object.securityPhone ?? null,
+      residentSeesProjectCameras: projectCamerasOpen(objectId),
       canDelete: whole && can(actor, "objects.delete") && !objectHasAssignments(objectId, unitIdsOf(objectId)),
     },
     buildings: tree.buildings
@@ -144,7 +145,7 @@ export function createObject(
 export function updateObject(
   actor: StaffActor,
   objectId: string,
-  input: { name: unknown; address: unknown; securityPhone?: unknown },
+  input: { name: unknown; address: unknown; securityPhone?: unknown; residentSeesProjectCameras?: unknown },
 ): Success<{ id: string }> | Failure {
   const owned = ownObject(actor, objectId, "objects.edit");
   if (!owned.ok) return owned;
@@ -154,12 +155,18 @@ export function updateObject(
   if (typeof address !== "string") return address;
   const phone = cleanPhone(input.securityPhone);
   if (typeof phone !== "string") return phone;
+  const shareCameras = input.residentSeesProjectCameras === true || input.residentSeesProjectCameras === false ? input.residentSeesProjectCameras : undefined;
+  const camerasWas = projectCamerasOpen(objectId);
   const changes = [
     ...(owned.value.name !== name ? [{ field: "Название", from: owned.value.name, to: name }] : []),
     ...(owned.value.address !== address ? [{ field: "Адрес", from: owned.value.address, to: address }] : []),
-    ...( (owned.value.securityPhone ?? "") !== phone ? [{ field: "Телефон охраны", from: owned.value.securityPhone ?? "", to: phone }] : []),
+    ...((owned.value.securityPhone ?? "") !== phone ? [{ field: "Телефон охраны", from: owned.value.securityPhone ?? "", to: phone }] : []),
+    ...(shareCameras !== undefined && shareCameras !== camerasWas
+      ? [{ field: "Камеры проекта", from: camerasWas ? "Да" : "Нет", to: shareCameras ? "Да" : "Нет" }]
+      : []),
   ];
   updateCatalogObject(objectId, { name, address, securityPhone: phone || null });
+  if (shareCameras !== undefined) setProjectCamerasOpen(objectId, shareCameras);
   if (changes.length) note(actor, "OBJECT_EDIT", { objectId, targetType: "object", targetId: objectId, target: name, changes });
   return { ok: true, value: { id: objectId } };
 }

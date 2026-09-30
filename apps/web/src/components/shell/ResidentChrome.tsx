@@ -4,14 +4,17 @@ import { StarLogo } from "@/components/brand/StarLogo";
 import { ResponsiveContainer } from "@/components/shell/ResponsiveContainer";
 import { TopBarActions } from "@/components/shell/TopBarActions";
 import { usePathname } from "next/navigation";
+import type { NavItem } from "@/types/domain";
 
 export function ResidentChrome({
   sidebar,
   bottomNav,
+  menuItems,
   children,
 }: {
   sidebar?: React.ReactNode;
   bottomNav?: React.ReactNode;
+  menuItems?: NavItem[];
   children: React.ReactNode;
 }) {
   const cover = usePathname() === "/home";
@@ -22,9 +25,9 @@ export function ResidentChrome({
         <header className="resident-header sticky top-0 z-20 flex items-center justify-between gap-3 overflow-visible border-b border-line/60 bg-bg px-5 py-3 lg:justify-end lg:px-8">
           <p className="flex min-w-0 items-center gap-2 text-[15px] font-medium tracking-[-0.02em] text-ink lg:hidden">
             <StarLogo className="h-[18px] w-[18px] shrink-0" />
-            Star Home
+            STAR HOME
           </p>
-          <TopBarActions />
+          <TopBarActions menuItems={menuItems} />
         </header>
         <div
           className={`resident-main mx-auto w-full max-w-[680px] pb-32 lg:px-10 lg:pt-8 lg:pb-16 ${cover ? "px-0 pt-0" : "px-5 pt-6"}`}

@@ -20,6 +20,7 @@ export default function ResidentLayout({ children }: { children: React.ReactNode
         </aside>
       }
       bottomNav={<BottomNavigation items={residentNav} dock={residentDock} />}
+      menuItems={residentNav.filter((item) => !residentDock.includes(item.href))}
     >
       {children}
     </AppShell>

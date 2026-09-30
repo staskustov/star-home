@@ -15,6 +15,7 @@ import {
   findDevice,
   findGateway,
   newId,
+  projectCamerasOpen,
   readOps,
   recordChannelHistory,
   writeOps,
@@ -224,7 +225,7 @@ function asCard(device: Device, viewer: Viewer): SmartDeviceCard {
 function scopedDevices(viewer: Viewer, objectId?: string): Device[] {
   return readOps().devices.filter((device) => {
     if (!viewerReaches(viewer, device)) return false;
-    if (viewer.kind === "home" && !residentSeesDevice(device)) return false;
+    if (viewer.kind === "home" && !residentSeesDevice(device, { projectCameras: projectCamerasOpen(device.objectId) })) return false;
     if (objectId && device.objectId !== objectId) return false;
     return true;
   });
@@ -249,7 +250,7 @@ function findScopedDevice(viewer: Viewer, deviceId: unknown): Result<Device> {
   const device = findDevice(deviceId);
   if (!device || device.companyId !== viewerCompany(viewer)) return { ok: false, status: 404, message: "Устройство не найдено" };
   if (!viewerReaches(viewer, device)) return denied();
-  if (viewer.kind === "home" && !residentSeesDevice(device)) return denied();
+  if (viewer.kind === "home" && !residentSeesDevice(device, { projectCameras: projectCamerasOpen(device.objectId) })) return denied();
   return { ok: true, value: device };
 }
 

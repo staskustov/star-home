@@ -1,10 +1,11 @@
 import { formatHumidity, formatTemperature } from "@/lib/format";
-import { deviceLabel, type DeviceKind } from "@/server/device-kinds";
+import { deviceLabel } from "@/server/device-kinds";
 import { rememberReading, runDevice } from "@/server/devices";
 import { recordAudit } from "@/server/operations";
-import { readOps, writeOps, type Device, type DeviceReading, type GatewayAdapterKind } from "@/server/ops-store";
+import { newId, readOps, writeOps, type Device, type DeviceReading, type EngineeringSystemRecord, type GatewayAdapterKind } from "@/server/ops-store";
 import { notifyIfAlert } from "@/server/smart-notices";
 import { can, objectFor, objectsInScope, reaches, type StaffActor } from "@/server/rbac/decide";
+import { text } from "@/server/schema";
 import { placeName } from "@/server/security-post";
 import type { DeviceWork, EngineeringBoard, EngineeringDevice, EngineeringSystem } from "@/types/engineering";
 
@@ -12,15 +13,6 @@ type Failure = { ok: false; status: number; message: string };
 type Success<T> = { ok: true; value: T };
 
 const denied: Failure = { ok: false, status: 403, message: "Нет доступа" };
-
-const systems: { id: string; name: string; kinds: readonly DeviceKind[] }[] = [
-  { id: "heat", name: "Климат и отопление", kinds: ["CLIMATE", "HEATING"] },
-  { id: "water", name: "Вода и протечки", kinds: ["WATER", "LEAK", "IRRIGATION"] },
-  { id: "power", name: "Электричество и свет", kinds: ["POWER", "LIGHTING", "CURTAIN"] },
-  { id: "fire", name: "Пожарная безопасность", kinds: ["SMOKE", "FIRE"] },
-];
-
-const engineeringKinds = new Set<string>(systems.flatMap((system) => system.kinds));
 
 const works: { value: DeviceWork; label: string }[] = [
   { value: "ON", label: "В работе" },
@@ -55,6 +47,15 @@ function readingOf(device: Device, readings: DeviceReading[]): string | null {
   return reading ? `${formatTemperature(reading.temperatureC)} · ${formatHumidity(reading.humidityPercent)}` : null;
 }
 
+export function engineeringSystemIdOf(device: { metadata?: Record<string, unknown> }): string | null {
+  const value = device.metadata?.engineeringSystemId;
+  return typeof value === "string" && value ? value : null;
+}
+
+export function isEngineeringDevice(device: Device): boolean {
+  return device.place === "OBJECT" || device.metadata?.engineering === true || Boolean(engineeringSystemIdOf(device));
+}
+
 function systemState(devices: Device[]): Pick<EngineeringSystem, "state" | "tone"> {
   if (devices.length === 0) return { state: "Не подключено", tone: "muted" };
   const faults = devices.filter((device) => workOf(device) === "FAULT").length;
@@ -78,6 +79,20 @@ function deviceRow(device: Device, readings: DeviceReading[]): EngineeringDevice
   };
 }
 
+function systemsOf(objectId: string): EngineeringSystemRecord[] {
+  return (readOps().engineeringSystems ?? [])
+    .filter((system) => system.objectId === objectId)
+    .slice()
+    .sort((left, right) => left.sort - right.sort || left.name.localeCompare(right.name, "ru"));
+}
+
+function namedSystems(objectId: string, devices: Device[], readings: DeviceReading[]): EngineeringSystem[] {
+  return systemsOf(objectId).map((system) => {
+    const members = devices.filter((device) => engineeringSystemIdOf(device) === system.id);
+    return { id: system.id, name: system.name, ...systemState(members), devices: members.map((device) => deviceRow(device, readings)) };
+  });
+}
+
 export function engineeringBoard(actor: StaffActor): Success<EngineeringBoard> | Failure {
   if (!can(actor, "engineering.view")) return denied;
   const file = readOps();
@@ -85,13 +100,10 @@ export function engineeringBoard(actor: StaffActor): Success<EngineeringBoard> |
     ok: true,
     value: {
       objects: objectsInScope(actor).map((object) => {
-        const devices = file.devices.filter((device) => device.objectId === object.id && engineeringKinds.has(device.kind) && reaches(actor, device));
+        const devices = file.devices.filter((device) => device.objectId === object.id && isEngineeringDevice(device) && reaches(actor, device));
         return {
           objectId: object.id,
-          systems: systems.map((system) => {
-            const members = devices.filter((device) => system.kinds.includes(device.kind));
-            return { id: system.id, name: system.name, ...systemState(members), devices: members.map((device) => deviceRow(device, file.readings)) };
-          }),
+          systems: namedSystems(object.id, devices, file.readings),
           meters: file.meters
             .filter((meter) => meter.objectId === object.id && reaches(actor, meter))
             .map((meter) => {
@@ -107,7 +119,12 @@ export function engineeringBoard(actor: StaffActor): Success<EngineeringBoard> |
             }),
         };
       }),
-      can: { poll: can(actor, "engineering.command"), edit: can(actor, "engineering.edit"), create: can(actor, "devices.create") },
+      can: {
+        poll: can(actor, "engineering.command"),
+        edit: can(actor, "engineering.edit"),
+        create: can(actor, "engineering.edit"),
+        createDevice: can(actor, "devices.create"),
+      },
       works,
     },
   };
@@ -118,11 +135,109 @@ function engineeringDevice(actor: StaffActor, objectId: unknown, deviceId: unkno
   if (!object.ok) return object;
   if (typeof deviceId !== "string" || !deviceId) return { ok: false, status: 404, message: "Устройство не найдено" };
   const device = readOps().devices.find(
-    (item) => item.id === deviceId && item.objectId === object.value.id && item.companyId === object.value.companyId && engineeringKinds.has(item.kind),
+    (item) => item.id === deviceId && item.objectId === object.value.id && item.companyId === object.value.companyId && isEngineeringDevice(item),
   );
   if (!device) return { ok: false, status: 404, message: "Устройство не найдено" };
   if (!reaches(actor, device)) return denied;
   return { ok: true, value: device };
+}
+
+export function bindEngineeringSystem(objectId: string, value: unknown): string | null | Failure {
+  if (value == null || value === "") return null;
+  if (typeof value !== "string") return { ok: false, status: 400, message: "Система не найдена" };
+  const system = systemsOf(objectId).find((item) => item.id === value);
+  if (!system) return { ok: false, status: 400, message: "Система не найдена" };
+  return system.id;
+}
+
+export function createEngineeringSystem(
+  actor: StaffActor,
+  input: { objectId: unknown; name: unknown },
+): Success<{ id: string }> | Failure {
+  if (!can(actor, "engineering.edit")) return denied;
+  const object = objectFor(actor, input.objectId);
+  if (!object.ok) return object;
+  const name = text(input.name, 2, 80);
+  if (!name) return { ok: false, status: 400, message: "Введите название системы" };
+  const file = readOps();
+  const siblings = (file.engineeringSystems ?? []).filter((system) => system.objectId === object.value.id);
+  const next: EngineeringSystemRecord = {
+    id: newId("esys"),
+    companyId: object.value.companyId,
+    objectId: object.value.id,
+    name,
+    sort: siblings.reduce((max, system) => Math.max(max, system.sort), 0) + 1,
+  };
+  file.engineeringSystems = [...(file.engineeringSystems ?? []), next];
+  writeOps(file);
+  recordAudit({
+    actorUserId: actor.userId,
+    companyId: actor.companyId,
+    objectId: object.value.id,
+    action: "ENGINEERING_SYSTEM_CREATE",
+    targetType: "engineering-system",
+    targetId: next.id,
+    target: name,
+  });
+  return { ok: true, value: { id: next.id } };
+}
+
+export function updateEngineeringSystem(
+  actor: StaffActor,
+  input: { systemId: unknown; name: unknown },
+): Success<{ id: string }> | Failure {
+  if (!can(actor, "engineering.edit")) return denied;
+  if (typeof input.systemId !== "string" || !input.systemId) return { ok: false, status: 404, message: "Система не найдена" };
+  const file = readOps();
+  const system = (file.engineeringSystems ?? []).find((item) => item.id === input.systemId);
+  if (!system) return { ok: false, status: 404, message: "Система не найдена" };
+  const object = objectFor(actor, system.objectId);
+  if (!object.ok) return object;
+  const name = text(input.name, 2, 80);
+  if (!name) return { ok: false, status: 400, message: "Введите название системы" };
+  if (system.name === name) return { ok: true, value: { id: system.id } };
+  const from = system.name;
+  system.name = name;
+  writeOps(file);
+  recordAudit({
+    actorUserId: actor.userId,
+    companyId: actor.companyId,
+    objectId: system.objectId,
+    action: "ENGINEERING_SYSTEM_EDIT",
+    targetType: "engineering-system",
+    targetId: system.id,
+    target: name,
+    changes: [{ field: "Название", from, to: name }],
+  });
+  return { ok: true, value: { id: system.id } };
+}
+
+export function removeEngineeringSystem(actor: StaffActor, systemId: unknown): Success<{ id: string }> | Failure {
+  if (!can(actor, "engineering.edit")) return denied;
+  if (typeof systemId !== "string" || !systemId) return { ok: false, status: 404, message: "Система не найдена" };
+  const file = readOps();
+  const system = (file.engineeringSystems ?? []).find((item) => item.id === systemId);
+  if (!system) return { ok: false, status: 404, message: "Система не найдена" };
+  const object = objectFor(actor, system.objectId);
+  if (!object.ok) return object;
+  file.engineeringSystems = (file.engineeringSystems ?? []).filter((item) => item.id !== system.id);
+  for (const device of file.devices) {
+    if (engineeringSystemIdOf(device) !== system.id) continue;
+    const metadata = { ...(device.metadata ?? {}) };
+    delete metadata.engineeringSystemId;
+    device.metadata = metadata;
+  }
+  writeOps(file);
+  recordAudit({
+    actorUserId: actor.userId,
+    companyId: actor.companyId,
+    objectId: system.objectId,
+    action: "ENGINEERING_SYSTEM_DELETE",
+    targetType: "engineering-system",
+    targetId: system.id,
+    target: system.name,
+  });
+  return { ok: true, value: { id: system.id } };
 }
 
 export async function pollDeviceFor(actor: StaffActor, objectId: unknown, deviceId: unknown): Promise<Success<{ confirmed: boolean; message: string }> | Failure> {

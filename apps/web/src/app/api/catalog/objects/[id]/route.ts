@@ -7,8 +7,19 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const body = (await request.json().catch(() => null)) as { name?: unknown; address?: unknown; securityPhone?: unknown } | null;
-  return jsonRpc("updateObject", { objectId: id, name: body?.name, address: body?.address, securityPhone: body?.securityPhone });
+  const body = (await request.json().catch(() => null)) as {
+    name?: unknown;
+    address?: unknown;
+    securityPhone?: unknown;
+    residentSeesProjectCameras?: unknown;
+  } | null;
+  return jsonRpc("updateObject", {
+    objectId: id,
+    name: body?.name,
+    address: body?.address,
+    securityPhone: body?.securityPhone,
+    residentSeesProjectCameras: body?.residentSeesProjectCameras,
+  });
 }
 
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {

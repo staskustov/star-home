@@ -6,7 +6,7 @@ import { residentSeesDevice } from "@/server/device-kinds";
 import { modeForUnit, modesForObject, setUnitMode } from "@/server/life-mode-store";
 import { createPass, createRequest, openGate, payOldest } from "@/server/operations";
 import { roomsOf } from "@/server/catalog-store";
-import { homeSignals, newId, passesForUnit, readOps, writeOps, type Device, type PendingTool } from "@/server/ops-store";
+import { homeSignals, newId, passesForUnit, projectCamerasOpen, readOps, writeOps, type Device, type PendingTool } from "@/server/ops-store";
 import { householdCan } from "@/server/rbac/policy";
 
 export type AiReply = {
@@ -43,7 +43,7 @@ const unconfirmed: Proposal = { reply: "Не удалось подтвердит
 
 function unitDevices(place: Place): Device[] {
   return readOps().devices.filter(
-    (device) => device.objectId === place.objectId && (device.unitId === place.unitId || device.unitId === null) && residentSeesDevice(device),
+    (device) => device.objectId === place.objectId && (device.unitId === place.unitId || device.unitId === null) && residentSeesDevice(device, { projectCameras: projectCamerasOpen(device.objectId) }),
   );
 }
 

@@ -10,7 +10,13 @@ export function EditObjectButton({
   compact = false,
   iconOnly = false,
 }: {
-  object: { id: string; name: string; address: string; securityPhone?: string | null };
+  object: {
+    id: string;
+    name: string;
+    address: string;
+    securityPhone?: string | null;
+    residentSeesProjectCameras?: boolean;
+  };
   compact?: boolean;
   iconOnly?: boolean;
 }) {
@@ -19,14 +25,20 @@ export function EditObjectButton({
   const [name, setName] = useState(object.name);
   const [address, setAddress] = useState(object.address);
   const [securityPhone, setSecurityPhone] = useState(object.securityPhone ?? "");
+  const [shareCameras, setShareCameras] = useState(Boolean(object.residentSeesProjectCameras));
   const [error, setError] = useState<string | null>(null);
 
-  function close() {
-    setOpen(false);
-    setError(null);
+  function fill() {
     setName(object.name);
     setAddress(object.address);
     setSecurityPhone(object.securityPhone ?? "");
+    setShareCameras(Boolean(object.residentSeesProjectCameras));
+    setError(null);
+  }
+
+  function close() {
+    setOpen(false);
+    fill();
   }
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -35,14 +47,14 @@ export function EditObjectButton({
     const response = await fetch(`/api/catalog/objects/${object.id}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name, address, securityPhone }),
+      body: JSON.stringify({ name, address, securityPhone, residentSeesProjectCameras: shareCameras }),
     });
     const payload = (await response.json().catch(() => null)) as { message?: string } | null;
     if (!response.ok) {
       setError(payload?.message ?? "Не удалось сохранить");
       return;
     }
-    close();
+    setOpen(false);
     router.refresh();
   }
 
@@ -53,10 +65,7 @@ export function EditObjectButton({
         className={iconOnly ? "btn btn-secondary btn-icon" : `btn btn-secondary ${compact ? "btn-compact" : ""}`}
         aria-label={iconOnly ? "Редактировать" : undefined}
         onClick={() => {
-          setName(object.name);
-          setAddress(object.address);
-          setSecurityPhone(object.securityPhone ?? "");
-          setError(null);
+          fill();
           setOpen(true);
         }}
       >
@@ -73,7 +82,7 @@ export function EditObjectButton({
           >
             <div className="flex items-start justify-between gap-4">
               <h2 id="edit-object-title" className="text-[24px] tracking-[-0.03em] text-ink">
-                Объект
+                Проект
               </h2>
               <button type="button" onClick={close} aria-label="Закрыть" className="btn btn-secondary btn-icon">
                 <Icon name="close" />
@@ -91,6 +100,18 @@ export function EditObjectButton({
               <label className="mt-4 block">
                 <span className="text-sm text-muted">Телефон охраны</span>
                 <input value={securityPhone} onChange={(event) => setSecurityPhone(event.target.value)} className="control mt-2" type="tel" inputMode="tel" placeholder="+7…" />
+              </label>
+              <label className="mt-4 flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  className="mt-1 h-4 w-4 accent-[var(--accent)]"
+                  checked={shareCameras}
+                  onChange={(event) => setShareCameras(event.target.checked)}
+                />
+                <span className="text-sm text-ink">
+                  Жильцы видят камеры проекта
+                  <span className="mt-1 block text-[13px] text-muted">Общие камеры посёлка. Камеры дома житель видит и без этой отметки.</span>
+                </span>
               </label>
               {error ? (
                 <p role="alert" className="mt-3 text-sm text-danger">
@@ -118,44 +139,34 @@ export function DeleteObjectButton({
   compact?: boolean;
 }) {
   const router = useRouter();
-  const { selectedId, select, objects } = useAdminPreview();
-  const [pending, setPending] = useState(false);
+  const { can } = useAdminPreview();
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  if (!can("objects.delete")) return null;
 
-  async function remove() {
-    if (canDelete === false) {
-      setError("Объект с людьми удалить нельзя.");
-      return;
-    }
-    if (!pending) {
-      setPending(true);
-      setError(null);
-      return;
-    }
+  async function onDelete() {
+    if (!canDelete || busy) return;
+    setBusy(true);
+    setError(null);
     const response = await fetch(`/api/catalog/objects/${objectId}`, { method: "DELETE" });
     const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+    setBusy(false);
     if (!response.ok) {
-      setPending(false);
       setError(payload?.message ?? "Не удалось удалить");
       return;
     }
-    if (selectedId === objectId) {
-      const next = objects.find((item) => item.id !== objectId);
-      if (next) select(next.id);
-    }
     router.refresh();
+    router.push("/admin/objects");
   }
 
   return (
-    <div>
-      <button type="button" className={`btn btn-danger ${compact ? "btn-compact" : ""}`} onClick={remove}>
-        {pending ? "Подтвердить удаление" : "Удалить"}
+    <div className="inline-flex flex-col items-start">
+      <button type="button" className={`btn btn-secondary ${compact ? "btn-compact" : ""}`} disabled={!canDelete || busy} onClick={() => void onDelete()}>
+        Удалить
       </button>
-      {error ? (
-        <p role="alert" className="mt-2 text-sm text-danger">
-          {error}
-        </p>
-      ) : null}
+      {!canDelete ? <p className="mt-2 text-sm text-muted">Объект с людьми удалить нельзя.</p> : null}
+      {error ? <p className="mt-2 text-sm text-danger">{error}</p> : null}
     </div>
   );
 }
+

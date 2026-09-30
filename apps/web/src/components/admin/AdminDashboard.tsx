@@ -120,8 +120,8 @@ function Systems({ object }: { object: DashboardObject }) {
         <h2 id="systems-title" className="text-[20px] tracking-[-0.03em] text-ink">
           Системы
         </h2>
-        <Link href="/admin/devices" className="text-[13px] text-muted transition-colors hover:text-ink">
-          Все устройства
+        <Link href="/admin/engineering" className="text-[13px] text-muted transition-colors hover:text-ink">
+          Инженерия
         </Link>
       </div>
       {object.systems.length === 0 ? (

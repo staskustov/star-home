@@ -168,7 +168,8 @@ export type ResidentHome = {
   paymentHistory: { title: string; amount: number; currency: string }[];
   categories: string[];
   rooms: { id?: string; name: string; deviceCount?: number; temperatureC?: number | null; humidityPercent?: number | null }[];
-  cameras: { id?: string; name: string; state: string; hasFrame?: boolean }[];
+  plans?: { floor: number; image: string; pins: { id: string; name: string; x: number; y: number }[] }[];
+  cameras: { id?: string; name: string; state: string; hasFrame?: boolean; scope?: "house" | "project" }[];
   devices: {
     id?: string;
     name: string;
@@ -237,6 +238,7 @@ export type AdminObjectSnapshot = {
   buildings: number | null;
   units: number;
   canDelete: boolean;
+  residentSeesProjectCameras?: boolean;
 };
 
 export type NavItem = {

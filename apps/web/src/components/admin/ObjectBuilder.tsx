@@ -116,6 +116,7 @@ export function ObjectBuilder({ tree }: { tree: CatalogTree }) {
                 name: tree.object.name,
                 address: tree.object.address,
                 securityPhone: tree.object.securityPhone,
+                residentSeesProjectCameras: tree.object.residentSeesProjectCameras,
               }}
               iconOnly
             />

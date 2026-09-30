@@ -14,9 +14,10 @@ export const homeChipIcons = [
   "settings",
   "home",
   "payments",
+  "service",
 ] as const;
 
-export const homeChipActions = ["open-gate", "open-point", "guests", "security", "pay", "lights-off", "curtains-close", "night"] as const;
+export const homeChipActions = ["open-gate", "open-point", "guests", "security", "service", "pay", "lights-off", "curtains-close", "night"] as const;
 
 export type HomeChipIcon = (typeof homeChipIcons)[number];
 export type HomeChipAction = (typeof homeChipActions)[number];

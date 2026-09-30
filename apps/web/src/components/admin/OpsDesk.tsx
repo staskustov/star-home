@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -12,6 +12,7 @@ import { Select } from "@/components/ui/Select";
 import { ViewToggle, useViewMode } from "@/components/ui/ViewToggle";
 import { commandMessage, runCommand } from "@/lib/command";
 import { formatChannelValue, formatLastContact, formatMoney, formatProbeResult, gatewayErrorText, gatewayStatusLabel } from "@/lib/format";
+import { objectPresentation } from "@/lib/object-presentation";
 
 const FloorPlan = dynamic(() => import("@/components/home/FloorPlan").then((mod) => ({ default: mod.FloorPlan })), { ssr: false });
 import type { AccessEvent } from "@/types/domain";
@@ -402,15 +403,14 @@ type DeskDevice = {
 
 type DeskRoom = { id: string; objectId: string; unitId?: string; unitName?: string; name: string; kind?: string };
 type DeskUnit = { id: string; objectId: string; name: string };
-type DeviceFilter = "all" | "online" | "offline" | "unconfigured" | "object" | "home";
+type DeviceFilter = "all" | "online" | "offline" | "unconfigured";
+type DeviceScope = "object" | "house";
 
 const deviceFilters: { id: DeviceFilter; label: string }[] = [
   { id: "all", label: "Все" },
   { id: "online", label: "На связи" },
   { id: "offline", label: "Нет связи" },
   { id: "unconfigured", label: "Без настройки" },
-  { id: "object", label: "Объект" },
-  { id: "home", label: "Дом" },
 ];
 
 function deviceStatus(device: DeskDevice): string {
@@ -458,9 +458,15 @@ function matchesFilter(device: DeskDevice, filter: DeviceFilter): boolean {
   if (filter === "online") return device.status === "ONLINE" || device.availability === "ONLINE";
   if (filter === "offline") return device.status === "OFFLINE" || device.availability === "OFFLINE";
   if (filter === "unconfigured") return device.status === "UNCONFIGURED";
-  if (filter === "object") return device.place === "OBJECT";
-  if (filter === "home") return device.place === "ROOM";
   return true;
+}
+
+function objectLevel(device: DeskDevice): boolean {
+  return device.place === "OBJECT" || (device.place === "STREET" && !device.unitId);
+}
+
+function houseSort(left: { name: string }, right: { name: string }): number {
+  return left.name.localeCompare(right.name, "ru", { numeric: true });
 }
 
 export function DeviceDesk({
@@ -517,13 +523,17 @@ export function DeviceDesk({
 }) {
   const [view, setView] = useViewMode("devices");
   const router = useRouter();
-  const { selected, can } = useAdminPreview();
+  const { selected, objects, can } = useAdminPreview();
+  const multiObject = objects.length > 1;
+  const [objectId, setObjectId] = useState(selected?.id ?? objects[0]?.id ?? "");
+  const workingId = (multiObject ? objectId : selected?.id) || objects[0]?.id || "";
+  const working = objects.find((item) => item.id === workingId) ?? selected;
   const allowCreate = canCreate || can("devices.create");
-  const rows = useObjectRows(devices);
-  const readings = useObjectRows(meters);
-  const hubs = useObjectRows(gateways);
-  const log = useObjectRows(events);
-  const places = useObjectRows(rooms);
+  const rows = devices.filter((row) => row.objectId === workingId);
+  const readings = meters.filter((row) => row.objectId === workingId);
+  const hubs = gateways.filter((row) => row.objectId === workingId);
+  const log = events.filter((row) => row.objectId === workingId);
+  const places = rooms.filter((row) => row.objectId === workingId);
   const derivedHouses = (() => {
     const seen = new Map<string, DeskUnit>();
     for (const row of units) seen.set(row.id, row);
@@ -537,12 +547,17 @@ export function DeviceDesk({
     }
     return [...seen.values()];
   })();
-  const houses = useObjectRows(derivedHouses);
-  const commands = useObjectRows(commandLogs);
-  const journal = useObjectRows(exchanges);
-  const maps = useObjectRows(plans.map((plan) => ({ ...plan, objectId: plan.objectId ?? "" })).filter((plan) => plan.objectId));
+  const houses = derivedHouses.filter((row) => row.objectId === workingId).slice().sort(houseSort);
+  const commands = commandLogs.filter((row) => row.objectId === workingId);
+  const journal = exchanges.filter((row) => row.objectId === workingId);
+  const maps = plans
+    .map((plan) => ({ ...plan, objectId: plan.objectId ?? "" }))
+    .filter((plan) => plan.objectId === workingId);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<DeviceFilter>("all");
+  const [scope, setScope] = useState<DeviceScope>("house");
+  const [houseQuery, setHouseQuery] = useState("");
+  const [houseId, setHouseId] = useState("");
   const [adding, setAdding] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [pairToken, setPairToken] = useState<string | null>(null);
@@ -552,6 +567,13 @@ export function DeviceDesk({
   const [bind, setBind] = useState({ deviceId: "", place: "ROOM", roomId: "" });
   const [hubName, setHubName] = useState("Симулятор пилота");
   const [hubAdapter, setHubAdapter] = useState("simulator");
+  const unitsLabel = working ? objectPresentation[working.type].unitsLabel : "Дома";
+  const visibleHouses = useMemo(() => {
+    const needle = houseQuery.trim().toLowerCase();
+    return needle ? houses.filter((house) => house.name.toLowerCase().includes(needle)) : houses;
+  }, [houses, houseQuery]);
+  const selectedHouse = houses.find((house) => house.id === houseId) ?? null;
+  const canAdd = allowCreate && Boolean(workingId) && (scope === "object" || Boolean(houseId));
 
   async function probe(deviceId: string) {
     setNotice(null);
@@ -585,13 +607,13 @@ export function DeviceDesk({
 
   async function createHub(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selected) return;
+    if (!workingId) return;
     setNotice(null);
     const result = await runCommand(() =>
       fetch("/api/smart-home/gateways", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ objectId: selected.id, name: hubName, adapter: hubAdapter }),
+        body: JSON.stringify({ objectId: workingId, name: hubName, adapter: hubAdapter }),
       }),
     );
     if (!result.ok) {
@@ -713,7 +735,8 @@ export function DeviceDesk({
     );
   }
 
-  const filtered = rows.filter((device) => {
+  const scoped = rows.filter((device) => (scope === "object" ? objectLevel(device) : Boolean(houseId) && device.unitId === houseId));
+  const filtered = scoped.filter((device) => {
     if (!matchesFilter(device, filter)) return false;
     const text = query.trim().toLowerCase();
     if (!text) return true;
@@ -726,19 +749,91 @@ export function DeviceDesk({
     );
   });
 
+  const emptyDevices = scope === "house" && !houseId ? "Выберите дом, чтобы увидеть устройства." : "Устройств нет.";
+
   return (
-    <Shell title="Устройства">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <ViewToggle value={view} onChange={setView} />
-        {allowCreate && selected ? (
+    <div className="mx-auto max-w-3xl">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="text-[36px] leading-none tracking-[-0.04em] text-ink">Устройства</h1>
+          <p className="mt-3 text-[15px] text-muted">{working?.name ?? "Объект не выбран"}</p>
+        </div>
+        {canAdd ? (
           <button type="button" className="btn btn-primary btn-icon" aria-label="Добавить устройство" onClick={() => setAdding(true)}>
             <Icon name="plus" />
           </button>
         ) : null}
       </div>
-      {adding && selected ? (
+      <div className="mt-8 space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <ViewToggle value={view} onChange={setView} />
+      </div>
+      {multiObject ? (
+        <label className="block">
+          <span className="text-sm text-muted">Объект</span>
+          <Select
+            wrapClassName="mt-2"
+            value={workingId}
+            onChange={(event) => {
+              setObjectId(event.target.value);
+              setHouseId("");
+              setHouseQuery("");
+            }}
+          >
+            {objects.map((object) => (
+              <option key={object.id} value={object.id}>
+                {object.name}
+              </option>
+            ))}
+          </Select>
+        </label>
+      ) : null}
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          className={`btn btn-compact ${scope === "object" ? "btn-primary" : "btn-secondary"}`}
+          onClick={() => setScope("object")}
+        >
+          Объект
+        </button>
+        <button
+          type="button"
+          className={`btn btn-compact ${scope === "house" ? "btn-primary" : "btn-secondary"}`}
+          onClick={() => setScope("house")}
+        >
+          {unitsLabel}
+        </button>
+      </div>
+      {scope === "house" ? (
+        <div>
+          <label className="block">
+            <span className="text-sm text-muted">Найти {unitsLabel.toLowerCase()}</span>
+            <input
+              value={houseQuery}
+              onChange={(event) => setHouseQuery(event.target.value)}
+              className="control mt-2"
+              placeholder="Номер или название"
+            />
+          </label>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {visibleHouses.slice(0, 16).map((house) => (
+              <button
+                key={house.id}
+                type="button"
+                className={`btn btn-compact ${house.id === houseId ? "btn-primary" : "btn-secondary"}`}
+                onClick={() => setHouseId(house.id)}
+              >
+                {house.name}
+              </button>
+            ))}
+          </div>
+          {visibleHouses.length > 16 ? <p className="mt-2 text-sm text-muted">Найдено {visibleHouses.length}. Уточните поиск.</p> : null}
+          {selectedHouse ? <p className="mt-3 text-[15px] text-ink">{selectedHouse.name}</p> : null}
+        </div>
+      ) : null}
+      {adding && workingId ? (
         <DeviceAddWizard
-          objectId={selected.id}
+          objectId={workingId}
           gateways={hubs}
           rooms={places.map((room) => ({
             id: room.id,
@@ -749,7 +844,8 @@ export function DeviceDesk({
             kind: room.kind,
           }))}
           units={houses}
-          lockScope="house"
+          lockScope={scope === "object" ? "object" : "house"}
+          initialUnitId={scope === "house" ? houseId : undefined}
           asDialog
           onClose={() => setAdding(false)}
         />
@@ -768,7 +864,7 @@ export function DeviceDesk({
           </button>
         ))}
       </div>
-      {allowCreate && selected ? (
+      {allowCreate && workingId ? (
         <form onSubmit={createHub} className="panel p-5">
           <p className="text-[16px] text-ink">Создать шлюз</p>
           <p className="mt-1 text-sm text-muted">Для пилота без железа выбирайте симулятор. Wiren Board без контроллера не ставить.</p>
@@ -828,7 +924,7 @@ export function DeviceDesk({
       {view === "blocks" ? (
         <ul className="grid gap-3 sm:grid-cols-2">
           {filtered.length === 0 ? (
-            <li className="panel px-5 py-4 text-[15px] text-muted">Устройств нет.</li>
+            <li className="panel px-5 py-4 text-[15px] text-muted">{emptyDevices}</li>
           ) : (
             filtered.map((device) => (
               <li key={device.id ?? `${device.objectId}-${device.name}`} className="panel p-5">
@@ -852,7 +948,7 @@ export function DeviceDesk({
           )}
         </ul>
       ) : (
-        <List empty="Устройств нет.">
+        <List empty={emptyDevices}>
           {filtered.map((device) => (
             <li key={device.id ?? `${device.objectId}-${device.name}`} className="px-5 py-4">
               <p className="text-[16px] text-ink">{device.name}</p>
@@ -970,7 +1066,8 @@ export function DeviceDesk({
           </li>
         ))}
       </List>
-    </Shell>
+      </div>
+    </div>
   );
 }
 

@@ -1,9 +1,9 @@
 import { plural } from "@/lib/format";
 import { objectPresentation } from "@/lib/object-presentation";
 import { findBuilding, findUnit, structureCounts, unitIdsOf, unitIdsOfBuilding, type CatalogObject } from "@/server/catalog-store";
-import type { DeviceKind } from "@/server/device-kinds";
 import { findUserById, objectHasAssignments, residentCount } from "@/server/directory";
-import { alarmsForObject, devicesForObject, eventsForObject, outdoorWeather, passesForObject, readOps, requestsForObject, type Device } from "@/server/ops-store";
+import { engineeringSystemIdOf } from "@/server/engineering";
+import { alarmsForObject, devicesForObject, eventsForObject, outdoorWeather, passesForObject, projectCamerasOpen, readOps, requestsForObject, type Device } from "@/server/ops-store";
 import { auditLabel } from "@/server/audit-actions";
 import { listAudit } from "@/server/audit-store";
 import { auditVisible, shortTime } from "@/server/audit-view";
@@ -11,15 +11,6 @@ import { can, objectsInScope, reaches, wholeObject, type Scoped, type StaffActor
 import { auditCategoriesOf } from "@/server/rbac/policy";
 import type { DashboardAttention, DashboardFeedItem, DashboardObject, DashboardPulse, DashboardSystem, DashboardView } from "@/types/dashboard";
 import { timeZone } from "@/server/time-zone";
-
-const systemGroups: { id: string; name: string; kinds: readonly DeviceKind[] }[] = [
-  { id: "access", name: "Доступ", kinds: ["GATE", "WICKET", "BARRIER", "LOCK"] },
-  { id: "cameras", name: "Камеры", kinds: ["CAMERA"] },
-  { id: "climate", name: "Климат", kinds: ["CLIMATE", "HEATING"] },
-  { id: "sensors", name: "Датчики", kinds: ["LEAK", "SMOKE", "FIRE", "MOTION", "WEATHER"] },
-  { id: "utilities", name: "Ресурсы", kinds: ["POWER", "WATER"] },
-  { id: "comfort", name: "Комфорт", kinds: ["LIGHTING", "IRRIGATION", "CURTAIN"] },
-];
 
 const feedLimit = 8;
 
@@ -158,30 +149,27 @@ function pulseFor(actor: StaffActor, object: CatalogObject): DashboardPulse[] {
   return pulse;
 }
 
-function systemState(devices: Device[], groupId: string): Pick<DashboardSystem, "state" | "tone"> {
+function systemState(devices: Device[]): Pick<DashboardSystem, "state" | "tone"> {
   const total = devices.length;
   const faults = devices.filter((device) => device.work === "FAULT").length;
   const off = devices.filter((device) => device.work === "OFF").length;
-  if (groupId === "cameras") {
-    const media = readOps().cameraMedia;
-    const live = devices.filter((device) => media.some((item) => item.deviceId === device.id && item.host)).length;
-    if (faults > 0) return { tone: "danger", state: total > 1 ? `${faults} из ${total} неисправно` : "Неисправно" };
-    if (live === 0) return { tone: "warning", state: "Не подключены" };
-    return { tone: "warning", state: `Настроены ${live} из ${total}` };
-  }
+  if (total === 0) return { tone: "warning", state: "Не подключено" };
   if (faults > 0) return { tone: "danger", state: total > 1 ? `${faults} из ${total} неисправно` : "Неисправно" };
-  if (off > 0) return { tone: "warning", state: `${total - off} из ${total} на связи` };
-  return { tone: "success", state: "На связи" };
+  if (off > 0) return { tone: "warning", state: `${total - off} из ${total} в работе` };
+  return { tone: "success", state: "В работе" };
 }
 
 function systemsFor(actor: StaffActor, object: CatalogObject): DashboardSystem[] | null {
-  if (!can(actor, "devices.view")) return null;
+  if (!can(actor, "engineering.view") && !can(actor, "devices.view")) return null;
   const devices = within(actor, devicesForObject(object.id));
-  return systemGroups.flatMap((group) => {
-    const members = devices.filter((device) => group.kinds.includes(device.kind));
-    if (members.length === 0) return [];
-    return [{ id: group.id, name: group.name, ...systemState(members, group.id) }];
-  });
+  return (readOps().engineeringSystems ?? [])
+    .filter((system) => system.objectId === object.id)
+    .slice()
+    .sort((left, right) => left.sort - right.sort || left.name.localeCompare(right.name, "ru"))
+    .map((system) => {
+      const members = devices.filter((device) => engineeringSystemIdOf(device) === system.id);
+      return { id: system.id, name: system.name, ...systemState(members) };
+    });
 }
 
 function feedFor(actor: StaffActor, object: CatalogObject): DashboardFeedItem[] | null {
@@ -220,6 +208,7 @@ function objectDashboard(actor: StaffActor, object: CatalogObject): DashboardObj
     address: object.address,
     securityPhone: object.securityPhone ?? null,
     canDelete: wholeObject(actor) && can(actor, "objects.delete") && !objectHasAssignments(object.id, unitIdsOf(object.id)),
+    residentSeesProjectCameras: projectCamerasOpen(object.id),
     status: statusFor(actor, attention),
     attention: attention.slice(0, attentionLimit),
     pulse: pulseFor(actor, object),

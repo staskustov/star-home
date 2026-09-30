@@ -14,28 +14,40 @@ function devicesLabel(count: number) {
   return `${count} устройств`;
 }
 
+type Plan = { floor: number; image: string; pins: { id: string; name: string; x: number; y: number }[] };
+
 export function HomeHero({
   unitName,
   rooms,
+  plans = [],
   temperatureC,
   humidityPercent,
   metrics,
 }: {
   unitName: string;
   rooms: { id?: string; name: string; deviceCount?: number; temperatureC?: number | null; humidityPercent?: number | null }[];
+  plans?: Plan[];
   temperatureC: number | null;
   humidityPercent: number | null;
   metrics?: MetricStyle[];
 }) {
   const [index, setIndex] = useState(0);
   const slides = [
-    { name: unitName, href: "/rooms", deviceCount: rooms.reduce((sum, room) => sum + (room.deviceCount ?? 0), 0), temperatureC, humidityPercent },
+    {
+      name: unitName,
+      href: "/rooms",
+      deviceCount: rooms.reduce((sum, room) => sum + (room.deviceCount ?? 0), 0),
+      temperatureC,
+      humidityPercent,
+      plans,
+    },
     ...rooms.map((room) => ({
       name: room.name,
       href: room.id ? `/rooms/${room.id}` : "/rooms",
       deviceCount: room.deviceCount ?? 0,
       temperatureC: room.temperatureC ?? null,
       humidityPercent: room.humidityPercent ?? null,
+      plans: [] as Plan[],
     })),
   ];
   const temp = metricLook(metrics, "temperature");
@@ -51,14 +63,32 @@ export function HomeHero({
     <section aria-label="Помещения">
       <div className="film" onScroll={onScroll}>
         {slides.map((slide, position) => (
-          <Link key={`${slide.name}-${position}`} href={slide.href} className="panel w-full shrink-0 snap-center px-4 py-3">
+          <Link key={`${slide.name}-${position}`} href={slide.href} className="panel w-full shrink-0 snap-center overflow-hidden px-4 py-3">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <h2 className="truncate text-[18px] leading-tight tracking-[-0.03em] text-ink">{slide.name}</h2>
+                <h2 className="truncate text-[18px] leading-tight tracking-[-0.03em] text-ink">{position === 0 ? `Объект · ${slide.name}` : slide.name}</h2>
                 <p className="mt-1 text-[13px] text-muted">{devicesLabel(slide.deviceCount)}</p>
               </div>
               <Icon name="chevron" className="h-4 w-4 shrink-0 text-muted" />
             </div>
+            {slide.plans.length ? (
+              <div className="mt-3 flex gap-2 overflow-x-auto">
+                {slide.plans.map((plan) => (
+                  <div key={plan.floor} className="home-plan relative shrink-0 overflow-hidden rounded-2xl">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={plan.image} alt={`Планировка ${plan.floor} этажа`} className="h-full w-full object-cover" />
+                    {plan.pins.map((pin) => (
+                      <span
+                        key={pin.id}
+                        title={pin.name}
+                        className="absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent ring-2 ring-white"
+                        style={{ left: `${pin.x}%`, top: `${pin.y}%` }}
+                      />
+                    ))}
+                  </div>
+                ))}
+              </div>
+            ) : null}
             {slide.temperatureC !== null || slide.humidityPercent !== null ? (
               <p className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[15px]">
                 {slide.temperatureC !== null ? (

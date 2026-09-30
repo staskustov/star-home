@@ -62,7 +62,7 @@ describe("stage 6 specialist console", () => {
   it("keeps seed devices visible when handedOver is omitted", async () => {
     const cards = (await rpc("smartHomeDevices", {}, resident)).body as { devices: { id: string }[] };
     assert.ok(cards.devices.some((item) => item.id === "dev_light_24"));
-    assert.ok(cards.devices.some((item) => item.id === "dev_gate_siyanie"));
+    assert.ok(!cards.devices.some((item) => item.id === "dev_gate_siyanie"));
   });
 
   it("probes a local device and reports elapsed milliseconds", async () => {

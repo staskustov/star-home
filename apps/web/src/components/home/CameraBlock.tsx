@@ -6,7 +6,7 @@ import { Icon } from "@/components/icons";
 import { commandMessage, runCommand } from "@/lib/command";
 import type { Tone } from "@/types/domain";
 
-type HomeCamera = { id?: string; name: string; state: string; hasFrame?: boolean };
+type HomeCamera = { id?: string; name: string; state: string; hasFrame?: boolean; scope?: "house" | "project" };
 
 const toneDot: Record<Tone, string> = {
   success: "bg-success",
@@ -16,12 +16,13 @@ const toneDot: Record<Tone, string> = {
 };
 
 export function CameraBlock({ cameras }: { cameras: HomeCamera[] }) {
+  const ordered = [...cameras.filter((item) => item.scope !== "project"), ...cameras.filter((item) => item.scope === "project")];
   const [viewer, setViewer] = useState<number | null>(null);
   const [mounted, setMounted] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [frameAt, setFrameAt] = useState<Record<string, number>>({});
-  const camera = viewer !== null ? cameras[viewer] ?? cameras[0] : null;
+  const camera = viewer !== null ? ordered[viewer] ?? ordered[0] : null;
   const tone = toneFor(camera?.state ?? "");
   const frameStamp = camera?.id ? frameAt[camera.id] : undefined;
   const showFrame = Boolean(camera?.id && (frameStamp || camera.hasFrame));
@@ -45,11 +46,11 @@ export function CameraBlock({ cameras }: { cameras: HomeCamera[] }) {
     };
   }, [viewer]);
 
-  const selectedId = viewer === null ? undefined : cameras[viewer]?.id;
+  const selectedId = viewer === null ? undefined : ordered[viewer]?.id;
 
   useEffect(() => {
     if (viewer === null) return;
-    const current = cameras[viewer];
+    const current = ordered[viewer];
     if (!current?.id) return;
     void requestFrame(current);
     // Request once per selected camera, not on every cameras array identity change.
@@ -74,7 +75,7 @@ export function CameraBlock({ cameras }: { cameras: HomeCamera[] }) {
     }
   }
 
-  if (cameras.length === 0) return null;
+  if (ordered.length === 0) return null;
 
   const dialog =
     camera && mounted
@@ -90,7 +91,7 @@ export function CameraBlock({ cameras }: { cameras: HomeCamera[] }) {
                 <p className="truncate text-[17px] tracking-[-0.02em] text-[#f7f1e8]">{camera.name}</p>
                 <p className="mt-0.5 flex items-center gap-1.5 text-[13px] text-[#f7f1e8]/70">
                   <span className={`h-1.5 w-1.5 rounded-full ${toneDot[tone]}`} aria-hidden />
-                  {camera.state}
+                  {camera.scope === "project" ? "Проект" : "Объект"} · {camera.state}
                 </p>
               </div>
               <button type="button" className="btn btn-secondary btn-compact shrink-0" onClick={() => setViewer(null)}>
@@ -112,9 +113,9 @@ export function CameraBlock({ cameras }: { cameras: HomeCamera[] }) {
               )}
               {notice ? <p className="text-[13px] text-[#f7f1e8]/70">{notice}</p> : null}
             </div>
-            {cameras.length > 1 ? (
+            {ordered.length > 1 ? (
               <div className="flex gap-2 overflow-x-auto px-5 py-4" role="list" aria-label="Камеры">
-                {cameras.map((item, position) => (
+                {ordered.map((item, position) => (
                   <button
                     key={item.id ?? item.name}
                     type="button"
@@ -123,7 +124,8 @@ export function CameraBlock({ cameras }: { cameras: HomeCamera[] }) {
                     onClick={() => setViewer(position)}
                     className={`shrink-0 rounded-2xl px-3 py-2 text-left text-[13px] ${position === viewer ? "bg-white/16 text-[#f7f1e8]" : "bg-white/8 text-[#f7f1e8]/70"}`}
                   >
-                    {item.name}
+                    <span className="block">{item.name}</span>
+                    <span className="mt-0.5 block text-[11px] opacity-70">{item.scope === "project" ? "Проект" : "Объект"}</span>
                   </button>
                 ))}
               </div>
@@ -137,27 +139,33 @@ export function CameraBlock({ cameras }: { cameras: HomeCamera[] }) {
 
   return (
     <>
-      <section aria-label="Камеры" className="panel overflow-hidden">
-        <button
-          type="button"
-          aria-haspopup="dialog"
-          aria-expanded={viewer !== null}
-          onClick={() => setViewer(0)}
-          className="flex min-h-[60px] w-full items-center gap-3 px-5 py-3 text-left"
-        >
-          <span className="tile-icon">
-            <Icon name="camera" className="h-[18px] w-[18px]" />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block text-[17px] tracking-[-0.02em] text-ink">Камеры</span>
-            <span className="mt-0.5 block text-[13px] text-muted">
-              {cameras.some((item) => item.state === "Есть кадр")
-                ? `Есть кадр ${cameras.filter((item) => item.state === "Есть кадр").length} из ${cameras.length}`
-                : `Не подключены ${cameras.length}`}
-            </span>
-          </span>
-          <Icon name="chevron" className="h-5 w-5 rotate-90 text-muted" />
-        </button>
+      <section aria-label="Камеры">
+        <div className="film">
+          {ordered.map((item, index) => (
+            <button
+              key={item.id ?? item.name}
+              type="button"
+              aria-haspopup="dialog"
+              aria-expanded={viewer === index}
+              onClick={() => setViewer(index)}
+              className={`panel shrink-0 snap-center overflow-hidden px-4 py-3 text-left ${ordered.length === 1 ? "w-full" : "w-[78%]"}`}
+            >
+              <span className="flex items-center gap-3">
+                <span className="tile-icon">
+                  <Icon name="camera" className="h-[18px] w-[18px]" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[17px] tracking-[-0.02em] text-ink">{item.name}</span>
+                  <span className="mt-0.5 block text-[13px] text-muted">
+                    {item.scope === "project" ? "Проект" : "Объект"}
+                    {item.state ? ` · ${item.state}` : ""}
+                  </span>
+                </span>
+                <Icon name="chevron" className="h-4 w-4 shrink-0 rotate-90 text-muted" />
+              </span>
+            </button>
+          ))}
+        </div>
       </section>
       {dialog}
     </>

@@ -30,6 +30,7 @@ import {
   type GatewayAdapterKind,
   type GatewayStatus,
 } from "@/server/ops-store";
+import { bindEngineeringSystem } from "@/server/engineering";
 import { can, objectFor, reaches, unitFor, type StaffActor } from "@/server/rbac/decide";
 
 type Failure = { ok: false; status: number; message: string; deviceId?: string };
@@ -272,6 +273,7 @@ export function registerDevice(
     externalId?: unknown;
     capabilities?: unknown;
     channels?: unknown;
+    engineeringSystemId?: unknown;
   },
 ): Success<{ id: string }> | Failure {
   if (!can(actor, "devices.create")) return denied;
@@ -280,9 +282,12 @@ export function registerDevice(
   const name = cleanName(input.name);
   if (typeof name !== "string") return name;
   if (!isKind(input.kind)) return { ok: false, status: 400, message: "Выберите тип устройства" };
-  const bound = bindPlace(actor, object.value.id, input);
+  const systemId = bindEngineeringSystem(object.value.id, input.engineeringSystemId);
+  if (systemId && typeof systemId !== "string") return systemId;
+  const bound = bindPlace(actor, object.value.id, systemId ? { ...input, place: "OBJECT", unitId: null, roomId: null } : input);
   if ("ok" in bound && bound.ok === false) return bound;
   const place = bound as { place: DevicePlace; unitId: string | null; roomId: string | null };
+  if (systemId && place.place !== "OBJECT") return { ok: false, status: 400, message: "Устройство системы ставится на объект." };
   const gatewayId = bindGateway(actor, object.value.id, input.gatewayId);
   if (gatewayId && typeof gatewayId !== "string") return gatewayId;
   const gateway = typeof gatewayId === "string" ? readOps().gateways.find((item) => item.id === gatewayId) : undefined;
@@ -320,7 +325,8 @@ export function registerDevice(
     status: "UNCONFIGURED",
     metadata: {
       handedOver: false,
-      engineering: place.place === "OBJECT",
+      engineering: place.place === "OBJECT" || Boolean(systemId),
+      ...(typeof systemId === "string" ? { engineeringSystemId: systemId } : {}),
       source: adapterFromGateway(gateway) === "simulator" ? "MOCK" : adapterFromGateway(gateway) === "local" ? "DEMO" : gateway ? "REAL" : "UNKNOWN",
       ...(adapterFromGateway(gateway) === "simulator" ? { simulator: true } : {}),
     },

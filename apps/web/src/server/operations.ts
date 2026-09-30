@@ -336,6 +336,8 @@ export async function openPointFor(session: SessionRef | null, pointId: unknown)
   const place = placeFromSession(session, "access.gate.open");
   if (!place.ok) return place;
   if (typeof pointId !== "string" || !pointId) return { ok: false as const, status: 400, message: "Точка доступа не найдена" };
+  const device = accessPoint(place.value.objectId, place.value.unitId, pointId);
+  if (!device) return { ok: false as const, status: 404, message: "Точка доступа не найдена" };
   return { ok: true as const, value: await openAccessPoint(place.value, pointId) };
 }
 
@@ -343,6 +345,8 @@ export async function closePointFor(session: SessionRef | null, pointId: unknown
   const place = placeFromSession(session, "access.gate.open");
   if (!place.ok) return place;
   if (typeof pointId !== "string" || !pointId) return { ok: false as const, status: 400, message: "Точка доступа не найдена" };
+  const device = accessPoint(place.value.objectId, place.value.unitId, pointId);
+  if (!device) return { ok: false as const, status: 404, message: "Точка доступа не найдена" };
   return { ok: true as const, value: await closeAccessPoint(place.value, pointId) };
 }
 

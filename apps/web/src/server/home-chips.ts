@@ -2,7 +2,7 @@ import { homeChipActions, homeChipIcons } from "@/lib/home-chips";
 import { findObject } from "@/server/catalog-store";
 import { findMembership } from "@/server/directory";
 import { modesForObject } from "@/server/life-mode-store";
-import { isOpener } from "@/server/device-kinds";
+import { isOpener, residentSeesDevice } from "@/server/device-kinds";
 import { newId, readOps, writeOps, type HomeChip, type HomeChipKind } from "@/server/ops-store";
 import { recordAudit } from "@/server/operations";
 import { can, objectFor, type StaffActor } from "@/server/rbac/decide";
@@ -89,25 +89,37 @@ function lockedScenarioIds(objectId: string, companyId: string): string[] {
     .map((chip) => chip.id);
 }
 
-export function decorateActionChips(objectId: string, chips: HomeChipView[]): HomeChipView[] {
-  const devices = readOps().devices.filter((device) => device.objectId === objectId);
-  const openers = devices.filter((device) => isOpener(device.kind));
-  return chips.map((chip) => {
+export function decorateActionChips(objectId: string, chips: HomeChipView[], unitId?: string): HomeChipView[] {
+  const devices = readOps().devices.filter((device) => device.objectId === objectId && (!unitId || device.unitId === unitId));
+  const openers = devices.filter((device) => isOpener(device.kind) && residentSeesDevice(device));
+  return chips.flatMap((chip) => {
+    if (chip.action === "open-gate" || chip.action === "open-point") {
+      const bound = chip.deviceId ? openers.find((device) => device.id === chip.deviceId) : undefined;
+      const byAction =
+        chip.action === "open-gate"
+          ? openers.find((device) => device.kind === "GATE")
+          : openers.find((device) => device.kind === "WICKET" || device.kind === "BARRIER" || device.kind === "LOCK" || device.kind === "GATE");
+      const device = bound ?? byAction;
+      if (!device) return [];
+      return [
+        {
+          ...chip,
+          deviceId: device.id,
+          latch: (device.state?.latch ?? device.latch) === "OPEN" ? "OPEN" : "CLOSED",
+          stale: device.availability === "OFFLINE" || device.work === "FAULT" || device.work === "OFF",
+        },
+      ];
+    }
     const bound = chip.deviceId ? openers.find((device) => device.id === chip.deviceId) : undefined;
-    const byAction =
-      chip.action === "open-gate"
-        ? openers.find((device) => device.kind === "GATE")
-        : chip.action === "open-point"
-          ? openers.find((device) => device.kind === "WICKET" || device.kind === "BARRIER" || device.kind === "LOCK")
-          : undefined;
-    const device = bound ?? byAction;
-    if (!device) return chip;
-    return {
-      ...chip,
-      deviceId: device.id,
-      latch: (device.state?.latch ?? device.latch) === "OPEN" ? "OPEN" : "CLOSED",
-      stale: device.availability === "OFFLINE" || device.work === "FAULT" || device.work === "OFF",
-    };
+    if (!bound) return [chip];
+    return [
+      {
+        ...chip,
+        deviceId: bound.id,
+        latch: (bound.state?.latch ?? bound.latch) === "OPEN" ? "OPEN" : "CLOSED",
+        stale: bound.availability === "OFFLINE" || bound.work === "FAULT" || bound.work === "OFF",
+      },
+    ];
   });
 }
 
@@ -121,21 +133,7 @@ function defaultsFor(objectId: string, companyId: string): HomeChip[] {
     { id: `chip_${objectId}_night`, companyId, objectId, name: "Ночь", icon: "night", kind: "ACTION", strip: "scenarios", action: "night", sort: 40, locked: true },
     { id: `chip_${objectId}_security`, companyId, objectId, name: "Охрана", icon: "security", kind: "ACTION", strip: "actions", action: "security", sort: 20, locked: true },
     { id: `chip_${objectId}_guests`, companyId, objectId, name: "Гости", icon: "guests", kind: "ACTION", strip: "actions", action: "guests", sort: 30, locked: true },
-    ...readOps()
-      .devices.filter((device) => device.objectId === objectId && device.unitId === null && isOpener(device.kind) && device.kind !== "GATE")
-      .map((device, index) => ({
-        id: `chip_${objectId}_${device.id}`,
-        companyId,
-        objectId,
-        name: device.name,
-        icon: device.kind === "LOCK" ? "lock" : "gate",
-        kind: "ACTION" as const,
-        strip: "actions" as const,
-        action: "open-point" as const,
-        deviceId: device.id,
-        sort: 16 + index,
-        locked: true,
-      })),
+    { id: `chip_${objectId}_service`, companyId, objectId, name: "Сервис", icon: "service", kind: "ACTION", strip: "actions", action: "service", sort: 40, locked: true },
   ];
 }
 
@@ -186,7 +184,7 @@ export function homeLayoutFor(userId: string, unitId: string, objectId: string, 
     scenarioIds: [...new Set([...(stored?.scenarioIds ?? defaultIds(objectId, "scenarios")), ...lockedScenarioIds(objectId, companyId)])],
     actionIds: stored?.actionIds ?? defaultIds(objectId, "actions"),
     scenarioChips: pickChips(objectId, companyId, stored?.scenarioIds, "scenarios"),
-    actionChips: decorateActionChips(objectId, pickChips(objectId, companyId, stored?.actionIds, "actions")),
+    actionChips: decorateActionChips(objectId, pickChips(objectId, companyId, stored?.actionIds, "actions"), unitId),
     available,
   };
 }

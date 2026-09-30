@@ -12,6 +12,7 @@ import type { DeviceWork, EngineeringBoard as Board, EngineeringDevice, Engineer
 
 type Notice = { text: string; ok: boolean };
 type Hub = { id: string; objectId: string; name: string; adapter: string; status: string };
+type NameMode = { kind: "create" } | { kind: "rename"; id: string; name: string };
 
 function SystemState({ system }: { system: EngineeringSystem }) {
   if (system.tone === "muted") return <span className="text-[15px] text-muted">{system.state}</span>;
@@ -92,19 +93,109 @@ function DeviceRow({ device, objectId, board }: { device: EngineeringDevice; obj
   );
 }
 
+function NameDialog({
+  title,
+  submitLabel,
+  value,
+  onChange,
+  onSubmit,
+  onClose,
+}: {
+  title: string;
+  submitLabel: string;
+  value: string;
+  onChange: (value: string) => void;
+  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-40 flex items-end justify-center bg-ink/40 backdrop-blur-sm sm:items-center" onMouseDown={onClose}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="system-name-title"
+        className="panel fade-in w-full max-w-md rounded-t-[28px] p-6 sm:rounded-[28px]"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <h2 id="system-name-title" className="text-[24px] tracking-[-0.03em] text-ink">
+            {title}
+          </h2>
+          <button type="button" onClick={onClose} aria-label="Закрыть" className="btn btn-secondary btn-icon">
+            <Icon name="close" />
+          </button>
+        </div>
+        <form onSubmit={onSubmit} className="mt-6">
+          <label className="block">
+            <span className="text-sm text-muted">Название</span>
+            <input value={value} onChange={(event) => onChange(event.target.value)} className="control mt-2" autoFocus />
+          </label>
+          <button type="submit" className="mt-6 btn btn-primary btn-block">
+            {submitLabel}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 export function EngineeringBoard({ board }: { board: Board }) {
   const { selected } = useAdminPreview();
   const router = useRouter();
   const current = board.objects.find((object) => object.objectId === selected?.id) ?? board.objects[0];
-  const [adding, setAdding] = useState(false);
+  const [addingTo, setAddingTo] = useState<string | null>(null);
   const [gateways, setGateways] = useState<Hub[]>([]);
+  const [nameMode, setNameMode] = useState<NameMode | null>(null);
+  const [name, setName] = useState("");
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  async function openAdd() {
+  async function openAdd(systemId: string) {
     if (!current) return;
-    setAdding(true);
+    setAddingTo(systemId);
     const result = await runCommand(() => fetch(`/api/smart-home/gateways?objectId=${current.objectId}`));
     const list = Array.isArray(result.payload?.gateways) ? (result.payload.gateways as Hub[]) : [];
     setGateways(list);
+  }
+
+  async function saveSystem(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!current || !nameMode) return;
+    setError(null);
+    const result =
+      nameMode.kind === "create"
+        ? await runCommand(() =>
+            fetch("/api/engineering/systems", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ objectId: current.objectId, name }),
+            }),
+          )
+        : await runCommand(() =>
+            fetch(`/api/engineering/systems/${encodeURIComponent(nameMode.id)}`, {
+              method: "PATCH",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ name }),
+            }),
+          );
+    if (!result.ok) {
+      setError(commandMessage(result.payload, "Не удалось сохранить систему."));
+      return;
+    }
+    setNameMode(null);
+    setName("");
+    router.refresh();
+  }
+
+  async function removeSystem(systemId: string) {
+    setError(null);
+    const result = await runCommand(() => fetch(`/api/engineering/systems/${encodeURIComponent(systemId)}`, { method: "DELETE" }));
+    if (!result.ok) {
+      setError(commandMessage(result.payload, "Не удалось удалить систему."));
+      return;
+    }
+    setPendingDelete(null);
+    router.refresh();
   }
 
   return (
@@ -114,26 +205,48 @@ export function EngineeringBoard({ board }: { board: Board }) {
           <p className="kicker text-accent">Системы</p>
           <h1 className="mt-2 text-[36px] leading-none tracking-[-0.04em] text-ink">Инженерия</h1>
           <p className="mt-3 max-w-2xl text-[15px] text-muted">
-            Состояние инженерных систем {selected ? `объекта «${selected.name}»` : "объекта"}. Показания приходят только от подключённых устройств; опрос выполняет адаптер.
+            Инженерные системы {selected ? `объекта «${selected.name}»` : "объекта"}. Назовите систему и добавьте к ней устройства объекта.
           </p>
         </div>
         {board.can.create && current ? (
-          <button type="button" className="btn btn-primary btn-icon" aria-label="Добавить устройство объекта" onClick={() => void openAdd()}>
+          <button
+            type="button"
+            className="btn btn-primary btn-icon"
+            aria-label="Добавить систему"
+            onClick={() => {
+              setName("");
+              setNameMode({ kind: "create" });
+            }}
+          >
             <Icon name="plus" />
           </button>
         ) : null}
       </div>
 
-      {adding && current ? (
+      {error ? <p className="mt-4 text-[15px] text-danger">{error}</p> : null}
+
+      {nameMode ? (
+        <NameDialog
+          title={nameMode.kind === "create" ? "Новая система" : "Название системы"}
+          submitLabel={nameMode.kind === "create" ? "Добавить" : "Сохранить"}
+          value={name}
+          onChange={setName}
+          onSubmit={(event) => void saveSystem(event)}
+          onClose={() => setNameMode(null)}
+        />
+      ) : null}
+
+      {addingTo && current ? (
         <DeviceAddWizard
           objectId={current.objectId}
           gateways={gateways}
           rooms={[]}
           units={[]}
           lockScope="object"
+          engineeringSystemId={addingTo}
           asDialog
           onClose={() => {
-            setAdding(false);
+            setAddingTo(null);
             router.refresh();
           }}
         />
@@ -141,14 +254,40 @@ export function EngineeringBoard({ board }: { board: Board }) {
 
       {!current ? (
         <p className="panel mt-8 p-6 text-[15px] text-muted">Нет доступных объектов.</p>
+      ) : current.systems.length === 0 ? (
+        <p className="panel mt-8 p-6 text-[15px] text-muted">Пока нет систем. Добавьте отопление, воду, электричество или свою.</p>
       ) : (
         <>
           <div className="mt-8 grid gap-5 md:grid-cols-2">
             {current.systems.map((system) => (
               <section key={system.id} className="panel p-5 sm:p-6" aria-label={system.name}>
-                <div className="flex items-baseline justify-between gap-4">
-                  <h2 className="text-[19px] tracking-[-0.02em] text-ink">{system.name}</h2>
-                  <SystemState system={system} />
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h2 className="text-[19px] tracking-[-0.02em] text-ink">{system.name}</h2>
+                    <div className="mt-2">
+                      <SystemState system={system} />
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {board.can.edit ? (
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-icon"
+                        aria-label={`Изменить ${system.name}`}
+                        onClick={() => {
+                          setName(system.name);
+                          setNameMode({ kind: "rename", id: system.id, name: system.name });
+                        }}
+                      >
+                        <Icon name="edit" />
+                      </button>
+                    ) : null}
+                    {board.can.createDevice ? (
+                      <button type="button" className="btn btn-primary btn-icon" aria-label={`Добавить устройство в ${system.name}`} onClick={() => void openAdd(system.id)}>
+                        <Icon name="plus" />
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
                 {system.devices.length === 0 ? (
                   <p className="mt-3 text-[14px] text-muted">Устройства этой системы не подключены.</p>
@@ -159,6 +298,23 @@ export function EngineeringBoard({ board }: { board: Board }) {
                     ))}
                   </ul>
                 )}
+                {board.can.edit ? (
+                  pendingDelete === system.id ? (
+                    <div className="mt-4 flex flex-wrap items-center gap-2">
+                      <p className="text-[13px] text-muted">Удалить систему? Устройства останутся на объекте.</p>
+                      <button type="button" className="btn btn-primary btn-compact" onClick={() => void removeSystem(system.id)}>
+                        Удалить
+                      </button>
+                      <button type="button" className="btn btn-secondary btn-compact" onClick={() => setPendingDelete(null)}>
+                        Отмена
+                      </button>
+                    </div>
+                  ) : (
+                    <button type="button" className="mt-4 text-[13px] text-muted" onClick={() => setPendingDelete(system.id)}>
+                      Удалить систему
+                    </button>
+                  )
+                ) : null}
               </section>
             ))}
           </div>

@@ -216,7 +216,8 @@ async function projectOps(prisma: PrismaClient, body: Record<string, unknown>): 
     await prisma.securityEvent.upsert({ where: { id: alarm.id }, create: { id: alarm.id, companyId: alarm.companyId, objectId: alarm.objectId, unitId: alarm.unitId, ...row }, update: row });
   }
   for (const notice of list<{ id: string; companyId: string; userId: string; title: string; body: string; at: string }>(body.notices)) {
-    await prisma.notification.upsert({ where: { id: notice.id }, create: notice, update: { title: notice.title, body: notice.body, at: notice.at } });
+    const row = { companyId: notice.companyId, userId: notice.userId, title: notice.title, body: notice.body, at: notice.at };
+    await prisma.notification.upsert({ where: { id: notice.id }, create: { id: notice.id, ...row }, update: { title: notice.title, body: notice.body, at: notice.at } });
   }
   for (const turn of list<{ id: string; companyId: string; userId: string; unitId: string; prompt: string; reply: string }>(body.turns)) {
     const row = { companyId: turn.companyId, userId: turn.userId, unitId: turn.unitId, prompt: turn.prompt, reply: turn.reply };

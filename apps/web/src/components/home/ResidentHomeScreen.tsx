@@ -11,10 +11,12 @@ import { HomeChipStrip, type HomeChipTile } from "@/components/home/HomeChipStri
 import { HomeCover } from "@/components/home/HomeCover";
 import { HomeHero } from "@/components/home/HomeHero";
 import { HomeQuickGrid } from "@/components/home/HomeQuickGrid";
+import { ServiceDialog } from "@/components/home/ServiceDialog";
 import { Icon } from "@/components/icons";
 import { LiveRefresh } from "@/components/pwa/LiveRefresh";
 import { StatusToast } from "@/components/ui/StatusToast";
 import { commandMessage, runCommand, unconfirmed } from "@/lib/command";
+import { formatMoney } from "@/lib/format";
 import { greetingForHour } from "@/lib/greeting";
 import type { LifeMode, ResidentHome } from "@/types/domain";
 
@@ -63,6 +65,7 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
   const [toast, setToast] = useState<{ text: string; at: number } | null>(null);
   const [securityOpen, setSecurityOpen] = useState(false);
   const [guestOpen, setGuestOpen] = useState(false);
+  const [serviceOpen, setServiceOpen] = useState(false);
   const [actionChips, setActionChips] = useState(() => visibleActionChips(data));
   const [points, setPoints] = useState(data.accessPoints ?? []);
 
@@ -151,6 +154,10 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
       setSecurityOpen(true);
       return;
     }
+    if (id === "service") {
+      setServiceOpen(true);
+      return;
+    }
     if (id === "lights-off" || id === "curtains-close" || id === "night") {
       setNotice(null);
       const result = await runCommand(() =>
@@ -197,11 +204,20 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
         indoor={data.climate}
       />
       <div className="home-body">
-        <HomeChipStrip chips={visibleScenarioChips(data)} label="Сценарии" activeMode={current.mode} onSelect={onChip} />
-
-        {data.controller?.message ? (
-          <p className="panel px-5 py-4 text-[15px] text-warning">{data.controller.message}</p>
+        {data.balance ? (
+          <Link href="/payments" className="panel flex items-center gap-3 px-4 py-3">
+            <span className="tile-icon">
+              <Icon name="payments" className="h-[18px] w-[18px]" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[16px] text-ink">Коммунальные платежи</span>
+              <span className="mt-0.5 block text-[13px] text-muted">К оплате {formatMoney(data.balance.amount, data.balance.currency)}</span>
+            </span>
+            <Icon name="chevron" className="h-4 w-4 shrink-0 text-muted" />
+          </Link>
         ) : null}
+
+        <HomeChipStrip chips={visibleScenarioChips(data)} label="Сценарии" activeMode={current.mode} onSelect={onChip} />
 
         <CameraBlock cameras={data.cameras} />
         <HomeQuickGrid
@@ -209,27 +225,18 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
           chips={actionChips}
           guestCount={data.guestCount ?? 0}
           securityStatus={data.securityStatus ?? "Норма"}
+          serviceStatus={data.todayRequest ? data.todayRequest.title : "Нет заявок"}
           onSelect={onChip}
         />
 
         <HomeHero
           unitName={data.unit.name}
           rooms={data.rooms}
+          plans={data.plans ?? []}
           temperatureC={data.climate?.temperatureC ?? null}
           humidityPercent={data.climate?.humidityPercent ?? null}
           metrics={data.weather?.metrics}
         />
-
-        <Link href="/payments" className="panel flex items-center gap-3 px-4 py-3">
-          <span className="tile-icon">
-            <Icon name="payments" className="h-[18px] w-[18px]" />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block text-[16px] text-ink">Коммунальные платежи</span>
-            <span className="mt-0.5 block text-[13px] text-muted">{data.balance ? "Оплатите услуги поселка" : "Открытых счетов нет"}</span>
-          </span>
-          <Icon name="chevron" className="h-4 w-4 shrink-0 text-muted" />
-        </Link>
 
         {notice ? (
           <p role="status" className="fade-in text-[15px] text-muted">
@@ -239,6 +246,7 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
       </div>
       <SecuritySheet open={securityOpen} onClose={() => setSecurityOpen(false)} />
       <GuestPassDialog open={guestOpen} onClose={() => setGuestOpen(false)} canCreate={data.canPass !== false} />
+      <ServiceDialog open={serviceOpen} onClose={() => setServiceOpen(false)} categories={data.serviceCategories?.length ? data.serviceCategories : data.categories} />
       <StatusToast text={toast?.text ?? null} stamp={toast?.at} />
     </div>
   );

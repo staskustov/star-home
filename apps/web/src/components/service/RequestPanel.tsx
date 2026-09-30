@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { commandMessage, runCommand, unconfirmed } from "@/lib/command";
 import { Select } from "@/components/ui/Select";
@@ -18,10 +18,14 @@ const statusLabel: Record<string, string> = {
 
 export function RequestPanel({
   categories,
-  requests,
+  requests: initialRequests,
+  compact = false,
+  onCreated,
 }: {
   categories: string[];
-  requests: { id: string; category: string; text: string; status: string }[];
+  requests?: { id: string; category: string; text: string; status: string }[];
+  compact?: boolean;
+  onCreated?: () => void;
 }) {
   const router = useRouter();
   const [category, setCategory] = useState(categories[0] ?? "");
@@ -29,7 +33,22 @@ export function RequestPanel({
   const [fileName, setFileName] = useState("");
   const [fileBase64, setFileBase64] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
+  const [requests, setRequests] = useState(initialRequests ?? []);
   const selected = categories.includes(category) ? category : (categories[0] ?? "");
+
+  useEffect(() => {
+    if (initialRequests) setRequests(initialRequests);
+  }, [initialRequests]);
+
+  useEffect(() => {
+    if (!initialRequests) void load();
+  }, [initialRequests]);
+
+  async function load() {
+    const response = await fetch("/api/requests", { cache: "no-store" });
+    const payload = (await response.json().catch(() => null)) as { requests?: { id: string; category: string; text: string; status: string }[] } | null;
+    if (Array.isArray(payload?.requests)) setRequests(payload.requests);
+  }
 
   async function add(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -49,14 +68,20 @@ export function RequestPanel({
     setFileName("");
     setFileBase64("");
     setNotice("Заявка создана.");
+    await load();
     router.refresh();
+    onCreated?.();
   }
 
   return (
     <section>
-      <h1 className="text-[32px] tracking-[-0.03em] text-ink">Сервис</h1>
-      <p className="mt-2 text-[15px] text-muted">Заявки по дому</p>
-      <form onSubmit={add} className="mt-8 space-y-3 panel p-5">
+      {compact ? null : (
+        <>
+          <h1 className="text-[32px] tracking-[-0.03em] text-ink">Сервис</h1>
+          <p className="mt-2 text-[15px] text-muted">Заявки по дому</p>
+        </>
+      )}
+      <form onSubmit={add} className={`${compact ? "mt-0" : "mt-8"} space-y-3 ${compact ? "" : "panel p-5"}`}>
         <label className="block">
           <span className="text-sm text-muted">Тема</span>
           <Select wrapClassName="mt-2" value={selected} onChange={(event) => setCategory(event.target.value)}>

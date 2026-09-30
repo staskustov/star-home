@@ -1,5 +1,6 @@
 import { structureCounts, unitIdsOf, unitIdsOfBuilding } from "@/server/catalog-store";
 import { objectHasAssignments } from "@/server/directory";
+import { projectCamerasOpen } from "@/server/ops-store";
 import { can, objectsInScope, wholeObject, type StaffActor } from "@/server/rbac/decide";
 import type { Permission } from "@/server/rbac/permissions";
 import type { AdminObjectSnapshot, NavGroup, NavItem } from "@/types/domain";
@@ -21,9 +22,12 @@ const sections: { group: string; permission: Permission; item: NavItem }[] = [
   { group: "Управление", permission: "settings.view", item: { href: "/admin/settings", label: "Настройки", icon: "settings" } },
 ];
 
+const hiddenHrefs = new Set(["/admin/ai"]);
+
 export function sectionsFor(actor: StaffActor): NavGroup[] {
   const groups: NavGroup[] = [];
   for (const section of sections) {
+    if (hiddenHrefs.has(section.item.href)) continue;
     if (!can(actor, section.permission)) continue;
     const group = groups.find((entry) => entry.label === section.group);
     if (group) group.items.push(section.item);
@@ -39,7 +43,7 @@ export function sectionPermission(pathname: string): Permission | null {
 }
 
 export function firstSection(actor: StaffActor): string | null {
-  return sections.find((section) => can(actor, section.permission))?.item.href ?? null;
+  return sections.find((section) => !hiddenHrefs.has(section.item.href) && can(actor, section.permission))?.item.href ?? null;
 }
 
 export function adminObjectsFor(actor: StaffActor): AdminObjectSnapshot[] {
@@ -55,6 +59,7 @@ export function adminObjectsFor(actor: StaffActor): AdminObjectSnapshot[] {
       buildings: counts.buildings,
       units: counts.units,
       canDelete: wholeObject(actor) && can(actor, "objects.delete") && !objectHasAssignments(object.id, unitIdsOf(object.id)),
+      residentSeesProjectCameras: projectCamerasOpen(object.id),
     };
   });
 }

@@ -24,14 +24,15 @@ export async function runDevice(device: Device, command: DeviceCommand): Promise
 
 export function gateFor(objectId: string, unitId: string): Device | null {
   const devices = readOps().devices.filter((device) => device.objectId === objectId && device.kind === "GATE");
-  return devices.find((device) => device.unitId === unitId) ?? devices.find((device) => device.unitId === null) ?? null;
+  if (unitId) return devices.find((device) => device.unitId === unitId) ?? null;
+  return devices.find((device) => device.unitId === null) ?? null;
 }
 
 export function accessPoint(objectId: string, unitId: string, pointId: string): Device | null {
   const device = readOps().devices.find((item) => item.id === pointId && item.objectId === objectId);
   if (!device || !isOpener(device.kind)) return null;
-  if (device.unitId !== null && device.unitId !== unitId) return null;
-  return device;
+  if (unitId) return device.unitId === unitId ? device : null;
+  return device.unitId === null ? device : null;
 }
 
 export function rememberReading(deviceId: string, temperatureC: number, humidityPercent: number): void {

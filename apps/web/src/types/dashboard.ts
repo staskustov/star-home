@@ -40,6 +40,7 @@ export type DashboardObject = {
   address: string;
   securityPhone?: string | null;
   canDelete: boolean;
+  residentSeesProjectCameras?: boolean;
   status: { tone: DashboardTone; title: string; detail: string };
   attention: DashboardAttention[];
   pulse: DashboardPulse[];

@@ -167,6 +167,14 @@ export type Gateway = {
   metadata?: Record<string, unknown>;
 };
 
+export type EngineeringSystemRecord = {
+  id: string;
+  companyId: string;
+  objectId: string;
+  name: string;
+  sort: number;
+};
+
 export type DeviceReading = {
   deviceId: string;
   temperatureC: number;
@@ -461,6 +469,7 @@ type OpsFile = {
   invoices: Invoice[];
   devices: Device[];
   gateways: Gateway[];
+  engineeringSystems: EngineeringSystemRecord[];
   removedDeviceIds: string[];
   readings: DeviceReading[];
   alarms: Alarm[];
@@ -488,6 +497,12 @@ type OpsFile = {
   homeLayouts: HomeLayout[];
   homeMetrics: HomeMetricsRow[];
   homeCovers: HomeCoverRow[];
+  objectPrefs: ObjectPref[];
+};
+
+export type ObjectPref = {
+  objectId: string;
+  residentSeesProjectCameras?: boolean;
 };
 
 export type HomeCoverRow = {
@@ -604,6 +619,7 @@ function seed(): OpsFile {
         status: "OPEN",
       },
     ],
+    engineeringSystems: [],
     devices: [
       {
         id: "dev_gate_siyanie",
@@ -642,6 +658,17 @@ function seed(): OpsFile {
         name: "Свет в гостиной",
         adapter: "local",
         roomId: "room_24_living",
+      },
+      {
+        id: "dev_gate_24",
+        companyId: "cmp_star",
+        objectId: "obj_siyanie",
+        unitId: "unit_24",
+        kind: "GATE",
+        name: "Ворота участка",
+        adapter: "local",
+        place: "STREET",
+        roomId: "room_24_street",
       },
       {
         id: "dev_curtain_24",
@@ -795,6 +822,7 @@ function seed(): OpsFile {
     homeLayouts: [],
     homeMetrics: [],
     homeCovers: [],
+    objectPrefs: [],
   };
   for (const device of file.devices) {
     device.metadata = { ...device.metadata, demo: true };
@@ -982,6 +1010,7 @@ function normalize(file: OpsFile): OpsFile {
   file.passes ??= [];
   file.devices ??= [];
   file.gateways ??= [];
+  file.engineeringSystems ??= [];
   file.removedDeviceIds ??= [];
   file.smartEvents ??= [];
   file.smartHistory ??= [];
@@ -1002,6 +1031,7 @@ function normalize(file: OpsFile): OpsFile {
   file.homeLayouts ??= [];
   file.homeMetrics ??= [];
   file.homeCovers ??= [];
+  file.objectPrefs ??= [];
   for (const request of file.requests ?? []) {
     if ((request.status as string) === "NEW") request.status = "CREATED";
   }
@@ -1154,6 +1184,19 @@ export function alarmsForObject(objectId: string): Alarm[] {
   return load().alarms.filter((alarm) => alarm.objectId === objectId);
 }
 
+export function projectCamerasOpen(objectId: string): boolean {
+  return load().objectPrefs.some((row) => row.objectId === objectId && row.residentSeesProjectCameras === true);
+}
+
+export function setProjectCamerasOpen(objectId: string, value: boolean): void {
+  const file = load();
+  file.objectPrefs ??= [];
+  const row = file.objectPrefs.find((item) => item.objectId === objectId);
+  if (row) row.residentSeesProjectCameras = value;
+  else file.objectPrefs.push({ objectId, residentSeesProjectCameras: value });
+  persist(file);
+}
+
 export function noticesForUser(userId: string): Notice[] {
   return load().notices.filter((notice) => notice.userId === userId);
 }
@@ -1232,7 +1275,7 @@ export function homeSignals(unitId: string, objectId: string): {
   request: { title: string; detail: string; authorUserId: string } | null;
   payments: { title: string; amount: number; currency: string }[];
   categories: string[];
-  cameras: { id: string; name: string; state: string; hasFrame: boolean; presence: CameraPresence }[];
+  cameras: { id: string; name: string; state: string; hasFrame: boolean; presence: CameraPresence; scope: "house" | "project" }[];
   devices: {
     id: string;
     name: string;
@@ -1286,8 +1329,9 @@ export function homeSignals(unitId: string, objectId: string): {
       const latest = (file.meterReadings ?? []).filter((item) => item.meterId === meter.id).at(-1);
       return { name: meter.name, value: latest ? latest.value.toString().replace(".", ",") : "—", unit: meter.unit };
     });
+  const projectCameras = file.objectPrefs.some((row) => row.objectId === objectId && row.residentSeesProjectCameras === true);
   const visible = file.devices.filter(
-    (device) => device.objectId === objectId && (device.unitId === unitId || device.unitId === null) && residentSeesDevice(device),
+    (device) => device.objectId === objectId && (device.unitId === unitId || device.unitId === null) && residentSeesDevice(device, { projectCameras }),
   );
   const categories = [...new Set(visible.map((device) => deviceLabel(device.kind)))];
   return {
@@ -1308,7 +1352,8 @@ export function homeSignals(unitId: string, objectId: string): {
       .map((invoice) => ({ title: invoice.title, amount: invoice.amount, currency: invoice.currency })),
     categories,
     cameras: file.devices
-      .filter((device) => device.kind === "CAMERA" && device.objectId === objectId && (device.unitId === unitId || device.unitId === null) && residentSeesDevice(device))
+      .filter((device) => device.kind === "CAMERA" && device.objectId === objectId && (device.unitId === unitId || device.unitId === null) && residentSeesDevice(device, { projectCameras }))
+      .sort((left, right) => Number(Boolean(right.unitId)) - Number(Boolean(left.unitId)))
       .map((device) => {
         const media = file.cameraMedia.find((item) => item.deviceId === device.id);
         const hasFrame = file.cameraFrames.some((frame) => frame.deviceId === device.id);
@@ -1319,6 +1364,7 @@ export function homeSignals(unitId: string, objectId: string): {
           state: cameraPresenceLabel(presence),
           presence,
           hasFrame,
+          scope: device.unitId ? ("house" as const) : ("project" as const),
         };
       }),
     devices: visible.map((device) => {

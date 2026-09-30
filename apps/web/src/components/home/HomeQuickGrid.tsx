@@ -46,16 +46,53 @@ export function HomeQuickGrid({
   chips,
   guestCount = 0,
   securityStatus = "Норма",
+  serviceStatus = "",
   onSelect,
 }: {
   points: AccessPoint[];
   chips: ActionChipTile[];
   guestCount?: number;
   securityStatus?: string;
+  serviceStatus?: string;
   onSelect: (chip: ActionChipTile) => void;
 }) {
   const [index, setIndex] = useState(0);
-  const extras = chips.filter((chip) => chip.action !== "open-gate" && chip.action !== "open-point" && chip.action !== "pay");
+  const extras = chips.filter(
+    (chip) =>
+      chip.action !== "open-gate" &&
+      chip.action !== "open-point" &&
+      chip.action !== "pay" &&
+      chip.action !== "security" &&
+      chip.action !== "guests" &&
+      chip.action !== "service",
+  );
+  const byAction = (action: string) => chips.find((chip) => chip.action === action);
+  const defaults: QuickTile[] = [
+    {
+      id: byAction("security")?.id ?? "security",
+      name: "Охрана",
+      icon: "security",
+      status: securityStatus,
+      tone: securityStatus === "Тревога" ? "danger" : "muted",
+      action: "security",
+    },
+    {
+      id: byAction("guests")?.id ?? "guests",
+      name: "Гости",
+      icon: "guests",
+      status: guestsLabel(guestCount),
+      tone: "muted",
+      action: "guests",
+    },
+    {
+      id: byAction("service")?.id ?? "service",
+      name: "Сервис",
+      icon: "service",
+      status: serviceStatus,
+      tone: "muted",
+      action: "service",
+    },
+  ];
   const tiles: QuickTile[] = [
     ...points.map((point) => {
       const open = point.latch === "OPEN";
@@ -70,23 +107,13 @@ export function HomeQuickGrid({
         latch: point.latch,
       };
     }),
+    ...defaults,
     ...extras.map((chip) => ({
       id: chip.id,
       name: chip.name,
       icon: chipIcon(chip.icon),
-      status:
-        chip.action === "security"
-          ? securityStatus
-          : chip.action === "guests"
-            ? guestsLabel(guestCount)
-            : chip.stale
-              ? "Нет связи"
-              : chip.latch === "OPEN"
-                ? "Открыто"
-                : chip.latch === "CLOSED"
-                  ? "Закрыто"
-                  : "",
-      tone: chip.action === "security" && securityStatus === "Тревога" ? ("danger" as const) : ("muted" as const),
+      status: chip.stale ? "Нет связи" : chip.latch === "OPEN" ? "Открыто" : chip.latch === "CLOSED" ? "Закрыто" : "",
+      tone: "muted" as const,
       action: chip.action,
       deviceId: chip.deviceId,
       latch: chip.latch,
@@ -112,11 +139,10 @@ export function HomeQuickGrid({
         {pages.map((page, pageIndex) => (
           <div key={pageIndex} className="home-quick-page" role="list">
             {page.map((tile) => (
+              <div key={tile.id} role="listitem" className="min-w-0">
               <button
-                key={tile.id}
                 type="button"
-                role="listitem"
-                className="home-quick-tile"
+                className="home-quick-tile w-full"
                 onClick={() =>
                   onSelect({
                     id: tile.id,
@@ -142,6 +168,7 @@ export function HomeQuickGrid({
                 </span>
                 <Icon name="chevron" className="h-4 w-4 shrink-0 text-muted" />
               </button>
+              </div>
             ))}
           </div>
         ))}

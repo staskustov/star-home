@@ -4,6 +4,7 @@ import { appendAudit } from "@/server/audit-store";
 import {
   findDevice,
   findGateway,
+  projectCamerasOpen,
   readOps,
   writeOps,
   type CameraMedia,
@@ -219,7 +220,7 @@ function canViewCamera(session: SessionRef | null, device: Device): boolean {
   if (viewer.value.kind === "staff") {
     return can(viewer.value.actor, "security.camera.view") && reaches(viewer.value.actor, device);
   }
-  return householdCan(viewer.value.place.role, "security.camera.view") && viewerReaches(viewer.value, device) && residentSeesDevice(device);
+  return householdCan(viewer.value.place.role, "security.camera.view") && viewerReaches(viewer.value, device) && residentSeesDevice(device, { projectCameras: projectCamerasOpen(device.objectId) });
 }
 
 export async function requestCameraFrame(

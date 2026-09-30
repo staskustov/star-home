@@ -1,10 +1,11 @@
 import type { SessionRef } from "@/server/actor";
 import { enqueueScenarioOnGateway, inferScenarioRuntime, scenarioExecutes, scenarioRuntime, type ScenarioRuntime } from "@/server/automation";
 import { findObject } from "@/server/catalog-store";
+import { residentSeesDevice } from "@/server/device-kinds";
 import { commandDeviceSmart, smartViewer, viewerReaches } from "@/server/smart-home";
 import { recordAudit } from "@/server/operations";
 import { timeZone } from "@/server/time-zone";
-import { findDevice, newId, readOps, writeOps, type Scenario, type ScenarioCondition, type ScenarioStep, type ScenarioTrigger } from "@/server/ops-store";
+import { findDevice, newId, projectCamerasOpen, readOps, writeOps, type Scenario, type ScenarioCondition, type ScenarioStep, type ScenarioTrigger } from "@/server/ops-store";
 import { can } from "@/server/rbac/decide";
 import { householdCan } from "@/server/rbac/policy";
 import { commandRisk, isSmartCommand } from "@/server/smart-commands";
@@ -33,7 +34,16 @@ function cleanName(value: unknown): string | Failure {
   return name;
 }
 
-function cleanSteps(value: unknown, companyId: string, objectId: string): ScenarioStep[] | Failure {
+function householdOnly(viewer: { kind: "home" } | { kind: "staff" }): boolean {
+  return viewer.kind === "home";
+}
+
+function cleanSteps(
+  value: unknown,
+  companyId: string,
+  objectId: string,
+  viewer: { kind: "home" } | { kind: "staff" },
+): ScenarioStep[] | Failure {
   if (!Array.isArray(value) || value.length === 0) return { ok: false, status: 400, message: "Добавьте шаги сценария" };
   if (value.length > 20) return { ok: false, status: 400, message: "Слишком много шагов" };
   const steps: ScenarioStep[] = [];
@@ -44,6 +54,7 @@ function cleanSteps(value: unknown, companyId: string, objectId: string): Scenar
     if (!isSmartCommand(row.command)) return { ok: false, status: 400, message: "Неизвестная команда" };
     const device = findDevice(row.deviceId);
     if (!device || device.companyId !== companyId || device.objectId !== objectId) return { ok: false, status: 404, message: "Устройство не найдено" };
+    if (householdOnly(viewer) && !residentSeesDevice(device, { projectCameras: projectCamerasOpen(device.objectId) })) return { ok: false, status: 404, message: "Устройство не найдено" };
     steps.push({ deviceId: device.id, command: row.command, value: row.value });
   }
   return steps;
@@ -122,12 +133,12 @@ export function createScenario(
   const catalog = findObject(objectId);
   if (!catalog || catalog.companyId !== companyId) return { ok: false, status: 404, message: "Объект не найден" };
   if (!viewerReaches(viewer.value, { companyId, objectId, unitId: typeof input.unitId === "string" ? input.unitId : null })) return denied();
-  const steps = cleanSteps(input.steps, companyId, objectId);
+  const steps = cleanSteps(input.steps, companyId, objectId, viewer.value);
   if (!Array.isArray(steps)) return steps;
   const trigger = asTrigger(input.trigger);
   const lifeMode = input.lifeMode === "HOME" || input.lifeMode === "WORK" || input.lifeMode === "VACATION" ? input.lifeMode : undefined;
   if (trigger === "LIFE_MODE" && !lifeMode) return { ok: false, status: 400, message: "Выберите режим" };
-  const conditions = cleanConditions(input.conditions, companyId, objectId);
+  const conditions = cleanConditions(input.conditions, companyId, objectId, viewer.value);
   if (!Array.isArray(conditions)) return conditions;
   const schedule = cleanSchedule(trigger, input.scheduleHour, input.scheduleMinute);
   if (!schedule.ok) return schedule;
@@ -207,7 +218,7 @@ export function updateScenario(
   if (input.enabled === true || input.enabled === false) current.enabled = input.enabled;
   if (input.runtime === "gateway" || input.runtime === "cloud") current.runtime = input.runtime;
   if (input.conditions !== undefined) {
-    const conditions = cleanConditions(input.conditions, current.companyId, current.objectId);
+    const conditions = cleanConditions(input.conditions, current.companyId, current.objectId, viewer.value);
     if (!Array.isArray(conditions)) return conditions;
     current.conditions = conditions;
   }
@@ -218,7 +229,7 @@ export function updateScenario(
     current.scheduleMinute = schedule.value.minute;
   }
   if (input.steps !== undefined) {
-    const steps = cleanSteps(input.steps, current.companyId, current.objectId);
+    const steps = cleanSteps(input.steps, current.companyId, current.objectId, viewer.value);
     if (!Array.isArray(steps)) return steps;
     current.steps = steps;
   }
@@ -332,7 +343,12 @@ function asTrigger(value: unknown): ScenarioTrigger {
   return "MANUAL";
 }
 
-function cleanConditions(value: unknown, companyId: string, objectId: string): ScenarioCondition[] | Failure {
+function cleanConditions(
+  value: unknown,
+  companyId: string,
+  objectId: string,
+  viewer: { kind: "home" } | { kind: "staff" },
+): ScenarioCondition[] | Failure {
   if (value === undefined || value === null) return [];
   if (!Array.isArray(value)) return { ok: false, status: 400, message: "Проверьте условия" };
   if (value.length > 8) return { ok: false, status: 400, message: "Слишком много условий" };
@@ -346,6 +362,7 @@ function cleanConditions(value: unknown, companyId: string, objectId: string): S
     }
     const device = findDevice(row.deviceId);
     if (!device || device.companyId !== companyId || device.objectId !== objectId) return { ok: false, status: 404, message: "Устройство не найдено" };
+    if (householdOnly(viewer) && !residentSeesDevice(device, { projectCameras: projectCamerasOpen(device.objectId) })) return { ok: false, status: 404, message: "Устройство не найдено" };
     rows.push({ deviceId: device.id, field: row.field, op: "eq", value: row.value });
   }
   return rows;

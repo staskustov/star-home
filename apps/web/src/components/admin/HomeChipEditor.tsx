@@ -22,6 +22,7 @@ const actionLabels: Record<(typeof homeChipActions)[number], string> = {
   "open-point": "Точка доступа",
   guests: "Гости",
   security: "Охрана",
+  service: "Сервис",
   pay: "Оплатить",
   "lights-off": "Выключить свет",
   "curtains-close": "Закрыть шторы",

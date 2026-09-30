@@ -1,7 +1,7 @@
 import { askFor, confirmFor } from "@/server/ai";
 import type { AuditAction } from "@/server/audit-actions";
 import { clientInfo, noteActor, withRequest } from "@/server/audit-context";
-import { findObject, roomsOf } from "@/server/catalog-store";
+import { findObject, findUnit, roomsOf } from "@/server/catalog-store";
 import type { Membership } from "@/types/domain";
 import type { SessionRef } from "@/server/actor";
 import {
@@ -46,7 +46,7 @@ import { saveHomeCoverFor, coverFor } from "@/server/home-cover";
 import { saveHomeMetricsFor } from "@/server/home-metrics";
 import { saveModeFor, settingsFor, switchModeFor } from "@/server/life-modes";
 import { loginLimited, noteLoginFailure, noteLoginSuccess } from "@/server/login-limit";
-import { homeSignals, markNoticesRead, readOps, unreadNoticeCount } from "@/server/ops-store";
+import { addNotice, homeSignals, markNoticesRead, readOps, unreadNoticeCount } from "@/server/ops-store";
 import { deskFor, deskSections, isDeskSection, residentAccess, residentNotices } from "@/server/ops-view";
 import {
   addPassFor,
@@ -74,7 +74,14 @@ import { rolesBoard, saveRole } from "@/server/roles";
 import { raiseSosFor, securityDeskFor, sendSecurityMessageFor, sendSecurityReplyFor } from "@/server/security-desk";
 import { savePushDevice } from "@/server/push-devices";
 import { checkPassFor, handleAlarmFor, securityAlertsFor, securityCameras, securityPost } from "@/server/security-post";
-import { engineeringBoard, pollDeviceFor, setDeviceWorkFor } from "@/server/engineering";
+import {
+  createEngineeringSystem,
+  engineeringBoard,
+  pollDeviceFor,
+  removeEngineeringSystem,
+  setDeviceWorkFor,
+  updateEngineeringSystem,
+} from "@/server/engineering";
 import { auditBoard, auditExport } from "@/server/audit-view";
 import { adminObjectsFor, sectionsFor } from "@/server/rbac/sections";
 import { record, text } from "@/server/schema";
@@ -222,7 +229,14 @@ const methodPolicy: Record<string, Route> = {
   tree: staff("objects.view", tree),
   unitDetails: staff("objects.view", (actor, input) => unitDetails(actor, text(input.unitId, 1, 80) ?? "")),
   createObject: staff("objects.create", (actor, input) => createObject(actor, { name: input.name, type: input.type, address: input.address }), 201),
-  updateObject: staff("objects.edit", (actor, input) => updateObject(actor, text(input.objectId, 1, 80) ?? "", { name: input.name, address: input.address, securityPhone: input.securityPhone })),
+  updateObject: staff("objects.edit", (actor, input) =>
+    updateObject(actor, text(input.objectId, 1, 80) ?? "", {
+      name: input.name,
+      address: input.address,
+      securityPhone: input.securityPhone,
+      residentSeesProjectCameras: input.residentSeesProjectCameras,
+    }),
+  ),
   removeObject: staff("objects.delete", (actor, input) => removeObject(actor, text(input.objectId, 1, 80) ?? "")),
   createBuilding: staff("objects.structure.edit", (actor, input) => createBuilding(actor, text(input.objectId, 1, 80) ?? "", input.name), 201),
   updateBuilding: staff("objects.structure.edit", (actor, input) => updateBuilding(actor, text(input.buildingId, 1, 80) ?? "", input.name)),
@@ -253,6 +267,7 @@ const methodPolicy: Record<string, Route> = {
         externalId: input.externalId,
         capabilities: input.capabilities,
         channels: input.channels,
+        engineeringSystemId: input.engineeringSystemId,
       }),
     201,
   ),
@@ -321,6 +336,9 @@ const methodPolicy: Record<string, Route> = {
   removeAccessPoint: staff("access.points.manage", (actor, input) => removeAccessPoint(actor, input.objectId, input.pointId)),
   checkPass: staff("access.view", (actor, input) => checkPassFor(actor, input.objectId, input.code)),
   engineering: staff("engineering.view", (actor) => engineeringBoard(actor)),
+  createEngineeringSystem: staff("engineering.edit", (actor, input) => createEngineeringSystem(actor, { objectId: input.objectId, name: input.name }), 201),
+  updateEngineeringSystem: staff("engineering.edit", (actor, input) => updateEngineeringSystem(actor, { systemId: input.systemId, name: input.name })),
+  removeEngineeringSystem: staff("engineering.edit", (actor, input) => removeEngineeringSystem(actor, input.systemId)),
   pollDevice: staff("engineering.command", (actor, input) => pollDeviceFor(actor, input.objectId, input.deviceId)),
   setDeviceWork: staff("engineering.edit", (actor, input) => setDeviceWorkFor(actor, input.objectId, input.deviceId, input.work)),
   setRequestStatus: staff("service.edit", (actor, input) => setRequestStatusFor(actor, input.id, input.status, input.objectId)),
@@ -424,6 +442,9 @@ const guardedMethods: Partial<Record<string, AuditAction>> = {
   closeObjectPoint: "CLOSE_GATE",
   pollDevice: "DEVICE_POLL",
   setDeviceWork: "DEVICE_STATUS",
+  createEngineeringSystem: "ENGINEERING_SYSTEM_CREATE",
+  updateEngineeringSystem: "ENGINEERING_SYSTEM_EDIT",
+  removeEngineeringSystem: "ENGINEERING_SYSTEM_DELETE",
   commandDeviceSmart: "DEVICE_COMMAND",
   probeDevice: "DEVICE_PROBE",
   handOverDevice: "DEVICE_HANDOVER",
@@ -584,6 +605,34 @@ function home(session: SessionRef): Reply {
   }).length;
   const securityOpen = file.alarms.some((alarm) => alarm.objectId === base.object.id && alarm.status === "OPEN");
   const actionChips = layout.actionChips.filter((chip) => chip.action !== "open-gate" && (pays || chip.action !== "pay"));
+  if (signals.controller?.message) {
+    addNotice({
+      companyId: base.object.companyId,
+      userId: session.userId,
+      title: "Контроллер",
+      body: signals.controller.message,
+      severity: "WARNING",
+    });
+  }
+  const unit = findUnit(base.unit.id);
+  const plans = (unit?.plans ?? []).map((plan) => ({
+    floor: plan.floor,
+    image: plan.image,
+    pins: file.devices
+      .filter(
+        (device) =>
+          device.unitId === base.unit.id &&
+          device.planFloor === plan.floor &&
+          typeof device.planX === "number" &&
+          typeof device.planY === "number",
+      )
+      .map((device) => ({
+        id: device.id,
+        name: device.displayName ?? device.name,
+        x: device.planX as number,
+        y: device.planY as number,
+      })),
+  }));
   return ok({
     home: {
       ...base,
@@ -598,14 +647,14 @@ function home(session: SessionRef): Reply {
       paymentHistory: bills ? signals.payments : [],
       categories: signals.categories,
       rooms: (() => {
-        const file = readOps();
+        const current = readOps();
         return roomsOf(base.unit.id).map((room) => {
-          const climate = file.devices.find(
+          const climate = current.devices.find(
             (device) =>
               device.roomId === room.id &&
               (device.kind === "CLIMATE" || typeof device.state?.temperatureC === "number" || typeof device.state?.humidityPercent === "number"),
           );
-          const reading = climate ? file.readings.find((item) => item.deviceId === climate.id) : undefined;
+          const reading = climate ? current.readings.find((item) => item.deviceId === climate.id) : undefined;
           return {
             id: room.id,
             name: room.name,
@@ -616,6 +665,8 @@ function home(session: SessionRef): Reply {
         });
       })(),
       cameras: signals.cameras,
+      plans,
+      serviceCategories: base.serviceCategories,
       devices: (() => {
         const pins = new Set(readOps().favorites.filter((item) => item.userId === session.userId).map((item) => item.deviceId));
         return [...signals.devices]

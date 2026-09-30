@@ -4,12 +4,13 @@ import { useEffect, useState } from "react";
 import { NotificationBell, type NoticeRow } from "@/components/shell/NotificationBell";
 import { ProfileAvatar } from "@/components/shell/ProfileAvatar";
 import { syncAppBadge } from "@/lib/app-badge";
+import type { NavItem } from "@/types/domain";
 
 type Me = { name: string; photo: string | null; notices: NoticeRow[]; unread: number };
 
 const empty: Me = { name: "", photo: null, notices: [], unread: 0 };
 
-export function AccountActions() {
+export function AccountActions({ menuItems }: { menuItems?: NavItem[] }) {
   const [me, setMe] = useState<Me>(empty);
 
   useEffect(() => {
@@ -71,7 +72,7 @@ export function AccountActions() {
           syncAppBadge(0);
         }}
       />
-      <ProfileAvatar name={me.name} photo={me.photo} />
+      <ProfileAvatar name={me.name} photo={me.photo} menuItems={menuItems} />
     </>
   );
 }

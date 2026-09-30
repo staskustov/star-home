@@ -3,7 +3,7 @@ import { findRoom, findUnit, roomsOf, unitIdsOf, unitIdsOfBuilding } from "@/ser
 import { capabilitiesFor } from "@/server/device-capabilities";
 import { channelsOf, deriveLifecycle } from "@/server/device-channels";
 import { publicMedia } from "@/server/camera-media";
-import { deviceCommission, deviceLabel, isOpener } from "@/server/device-kinds";
+import { deviceCommission, deviceLabel, isOpener, residentSeesDevice } from "@/server/device-kinds";
 import { listAudit } from "@/server/audit-store";
 import { auditRow, auditVisible, shortTime } from "@/server/audit-view";
 import { readOps } from "@/server/ops-store";
@@ -30,7 +30,7 @@ export function residentAccess(unitId: string, objectId: string) {
       code: pass.code,
     })),
     points: file.devices
-      .filter((device) => device.objectId === objectId && (device.unitId === unitId || device.unitId === null))
+      .filter((device) => device.objectId === objectId && device.unitId === unitId && residentSeesDevice(device))
       .filter((device) => isOpener(device.kind))
       .map((device) => {
         const latch = (device.state?.latch ?? device.latch) === "OPEN" ? "OPEN" : "CLOSED";
