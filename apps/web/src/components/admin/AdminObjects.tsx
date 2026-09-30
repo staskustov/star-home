@@ -15,7 +15,7 @@ export function AdminObjects() {
         <h1 className="text-[36px] leading-none tracking-[-0.04em] text-ink">Объекты</h1>
         {can("objects.create") ? <AddObjectButton /> : null}
       </div>
-      <div className="mt-8 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      <div className="mt-8 grid gap-3">
         {objects.map((object) => (
           <ObjectCard
             key={object.id}

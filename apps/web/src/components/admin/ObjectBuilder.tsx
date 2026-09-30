@@ -1,15 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAdminPreview } from "@/components/admin/AdminPreview";
 import { DeviceAddWizard } from "@/components/admin/DeviceAddWizard";
+import { EditObjectButton } from "@/components/admin/ObjectManage";
+import { Icon } from "@/components/icons";
 import { Select } from "@/components/ui/Select";
 import { ViewToggle, useViewMode, type ViewMode } from "@/components/ui/ViewToggle";
 import { plural } from "@/lib/format";
 import { objectPresentation } from "@/lib/object-presentation";
 import type { CatalogBuildingNode, CatalogTree, CatalogUnitNode } from "@/types/catalog";
+
+const housePageSize = 16;
 
 type UnitPatch = {
   name: string;
@@ -21,17 +25,18 @@ type UnitPatch = {
 export function ObjectBuilder({ tree }: { tree: CatalogTree }) {
   const router = useRouter();
   const presentation = objectPresentation[tree.object.type];
-  const [name, setName] = useState(tree.object.name);
-  const [address, setAddress] = useState(tree.object.address);
-  const [securityPhone, setSecurityPhone] = useState(tree.object.securityPhone ?? "");
   const [unitName, setUnitName] = useState("");
   const [buildingName, setBuildingName] = useState("");
+  const [addingUnit, setAddingUnit] = useState(false);
+  const [addingBuilding, setAddingBuilding] = useState(false);
   const [unitNames, setUnitNames] = useState<Record<string, string>>({});
   const [query, setQuery] = useState("");
   const [openBuildingId, setOpenBuildingId] = useState<string | null>(tree.buildings?.[0]?.id ?? null);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useViewMode("houses");
+  const desktop = useDesktopLayout();
+  const houseView: ViewMode = desktop ? view : "blocks";
   const unitLabel = presentation.unitAction;
   const buildingLabel = presentation.buildingAction ?? "корпус";
 
@@ -52,11 +57,6 @@ export function ObjectBuilder({ tree }: { tree: CatalogTree }) {
     return true;
   }
 
-  async function saveObject(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    await send(`/api/catalog/objects/${tree.object.id}`, "PATCH", { name, address, securityPhone });
-  }
-
   async function addUnit(event: React.FormEvent<HTMLFormElement>, buildingId?: string) {
     event.preventDefault();
     const title = buildingId ? (unitNames[buildingId] ?? "") : unitName;
@@ -64,15 +64,22 @@ export function ObjectBuilder({ tree }: { tree: CatalogTree }) {
       name: title,
       buildingId,
     });
-    if (!saved) return;
+    if (!saved) return false;
     if (buildingId) setUnitNames((current) => ({ ...current, [buildingId]: "" }));
-    else setUnitName("");
+    else {
+      setUnitName("");
+      setAddingUnit(false);
+    }
+    return true;
   }
 
   async function addBuilding(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const saved = await send(`/api/catalog/objects/${tree.object.id}/buildings`, "POST", { name: buildingName });
-    if (saved) setBuildingName("");
+    if (saved) {
+      setBuildingName("");
+      setAddingBuilding(false);
+    }
   }
 
   async function saveUnit(unitId: string, patch: UnitPatch) {
@@ -89,70 +96,92 @@ export function ObjectBuilder({ tree }: { tree: CatalogTree }) {
   }
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div>
       <Link href="/admin/objects" className="text-sm text-muted">
         Объекты
       </Link>
-      <h1 className="mt-3 text-[36px] leading-none tracking-[-0.04em] text-ink">{tree.object.name}</h1>
-      <p className="mt-3 text-[15px] text-muted">{presentation.label}</p>
+      <div className="mt-3 flex items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-[36px] leading-none tracking-[-0.04em] text-ink">{tree.object.name}</h1>
+          <p className="mt-3 text-[15px] text-muted">
+            {presentation.label}
+            {tree.object.address ? ` · ${tree.object.address}` : ""}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {tree.can.edit ? (
+            <EditObjectButton
+              object={{
+                id: tree.object.id,
+                name: tree.object.name,
+                address: tree.object.address,
+                securityPhone: tree.object.securityPhone,
+              }}
+              iconOnly
+            />
+          ) : null}
+          {tree.can.structure && tree.units ? (
+            <button
+              type="button"
+              className="btn btn-primary btn-icon"
+              aria-label={`Добавить ${unitLabel}`}
+              onClick={() => setAddingUnit(true)}
+            >
+              <Icon name="plus" />
+            </button>
+          ) : null}
+          {tree.can.buildings && tree.buildings ? (
+            <button
+              type="button"
+              className="btn btn-primary btn-icon"
+              aria-label={`Добавить ${buildingLabel}`}
+              onClick={() => setAddingBuilding(true)}
+            >
+              <Icon name="plus" />
+            </button>
+          ) : null}
+        </div>
+      </div>
 
-      {tree.can.edit ? (
-        <form onSubmit={saveObject} className="mt-8 panel p-5">
-          <label className="block">
-            <span className="text-sm text-muted">Название</span>
-            <input
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              className="control mt-2"
-            />
-          </label>
-          <label className="mt-4 block">
-            <span className="text-sm text-muted">Адрес</span>
-            <input
-              value={address}
-              onChange={(event) => setAddress(event.target.value)}
-              className="control mt-2"
-            />
-          </label>
-          <label className="mt-4 block">
-            <span className="text-sm text-muted">Телефон охраны</span>
-            <input
-              value={securityPhone}
-              onChange={(event) => setSecurityPhone(event.target.value)}
-              className="control mt-2"
-              type="tel"
-              inputMode="tel"
-              placeholder="+7…"
-            />
-          </label>
-          <button type="submit" className="mt-5 btn btn-primary">
-            Сохранить
-          </button>
-        </form>
-      ) : tree.object.address ? (
-        <p className="mt-2 text-[15px] text-muted">{tree.object.address}</p>
+      {addingUnit ? (
+        <NameDialog
+          title={`Новый ${unitLabel}`}
+          submitLabel={`Добавить ${unitLabel}`}
+          value={unitName}
+          onChange={setUnitName}
+          onSubmit={(event) => addUnit(event)}
+          onClose={() => {
+            setAddingUnit(false);
+            setUnitName("");
+          }}
+        />
+      ) : null}
+      {addingBuilding ? (
+        <NameDialog
+          title={`Новый ${buildingLabel}`}
+          submitLabel={`Добавить ${buildingLabel}`}
+          value={buildingName}
+          onChange={setBuildingName}
+          onSubmit={addBuilding}
+          onClose={() => {
+            setAddingBuilding(false);
+            setBuildingName("");
+          }}
+        />
       ) : null}
 
       <section className="mt-8">
-        <h2 className="text-[24px] tracking-[-0.03em] text-ink">{presentation.structureHint}</h2>
-        <div className="mt-3">
-          <ViewToggle value={view} onChange={setView} />
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <h2 className="text-[24px] tracking-[-0.03em] text-ink">{presentation.structureHint}</h2>
+          {desktop ? <ViewToggle value={view} onChange={setView} /> : null}
         </div>
         {tree.units ? (
           <div className="mt-4">
-            {tree.can.structure ? (
-              <UnitForm
-                label={`Добавить ${unitLabel}`}
-                value={unitName}
-                onChange={setUnitName}
-                onSubmit={(event) => addUnit(event)}
-              />
-            ) : null}
             <UnitFilter count={tree.units.length} query={query} onQuery={setQuery} />
             <UnitList
               units={visibleUnits(tree.units, query)}
               objectId={tree.object.id}
-              view={view}
+              view={houseView}
               editable={tree.can.structure}
               pendingDelete={pendingDelete}
               onAsk={setPendingDelete}
@@ -160,9 +189,6 @@ export function ObjectBuilder({ tree }: { tree: CatalogTree }) {
               onBlocked={() => setError("Эта единица уже закреплена за человеком.")}
               onRemove={(id) => remove(`/api/catalog/units/${id}`)}
             />
-            {!query.trim() && tree.units.length > 20 ? (
-              <p className="mt-3 text-sm text-muted">Показаны первые 20. Введите номер, чтобы найти остальные.</p>
-            ) : null}
           </div>
         ) : (
           <div className="mt-4 space-y-4">
@@ -179,7 +205,7 @@ export function ObjectBuilder({ tree }: { tree: CatalogTree }) {
                 unitName={unitNames[building.id] ?? ""}
                 onUnitName={(value) => setUnitNames((current) => ({ ...current, [building.id]: value }))}
                 onAddUnit={(event) => addUnit(event, building.id)}
-                view={view}
+                view={houseView}
                 pendingDelete={pendingDelete}
                 onAsk={setPendingDelete}
                 onSaveUnit={saveUnit}
@@ -191,21 +217,6 @@ export function ObjectBuilder({ tree }: { tree: CatalogTree }) {
                 buildingLabel={buildingLabel}
               />
             ))}
-            {tree.can.buildings ? (
-              <form onSubmit={addBuilding} className="panel p-5">
-                <label className="block">
-                  <span className="text-sm text-muted">Название</span>
-                  <input
-                    value={buildingName}
-                    onChange={(event) => setBuildingName(event.target.value)}
-                    className="control mt-2"
-                  />
-                </label>
-                <button type="submit" className="mt-4 btn btn-primary">
-                  Добавить {buildingLabel}
-                </button>
-              </form>
-            ) : null}
           </div>
         )}
       </section>
@@ -239,11 +250,21 @@ export function ObjectBuilder({ tree }: { tree: CatalogTree }) {
   );
 }
 
+function useDesktopLayout() {
+  const [desktop, setDesktop] = useState(false);
+  useEffect(() => {
+    const media = window.matchMedia("(min-width: 768px)");
+    const apply = () => setDesktop(media.matches);
+    apply();
+    media.addEventListener("change", apply);
+    return () => media.removeEventListener("change", apply);
+  }, []);
+  return desktop;
+}
+
 function visibleUnits(units: CatalogUnitNode[], query: string): CatalogUnitNode[] {
   const needle = query.trim().toLowerCase();
-  const matched = needle ? units.filter((unit) => unit.name.toLowerCase().includes(needle)) : units;
-  if (needle || matched.length <= 20) return matched;
-  return matched.slice(0, 20);
+  return needle ? units.filter((unit) => unit.name.toLowerCase().includes(needle)) : units;
 }
 
 function UnitFilter({
@@ -255,44 +276,62 @@ function UnitFilter({
   query: string;
   onQuery: (value: string) => void;
 }) {
-  if (count <= 20) return null;
   return (
     <label className="mt-4 block">
-      <span className="text-sm text-muted">Найти среди {count}</span>
+      <span className="text-sm text-muted">Поиск{count ? ` среди ${count}` : ""}</span>
       <input
         value={query}
         onChange={(event) => onQuery(event.target.value)}
         className="control mt-2"
+        placeholder="Название или номер"
       />
     </label>
   );
 }
 
-function UnitForm({
-  label,
+function NameDialog({
+  title,
+  submitLabel,
   value,
   onChange,
   onSubmit,
+  onClose,
 }: {
-  label: string;
+  title: string;
+  submitLabel: string;
   value: string;
   onChange: (value: string) => void;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+  onClose: () => void;
 }) {
   return (
-    <form onSubmit={onSubmit} className="panel p-5">
-      <label className="block">
-        <span className="text-sm text-muted">Название</span>
-        <input
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          className="control mt-2"
-        />
-      </label>
-      <button type="submit" className="mt-4 btn btn-primary">
-        {label}
-      </button>
-    </form>
+    <div className="fixed inset-0 z-40 flex items-end justify-center bg-ink/40 backdrop-blur-sm sm:items-center" onMouseDown={onClose}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="name-dialog-title"
+        className="panel fade-in w-full max-w-md rounded-t-[28px] p-6 sm:rounded-[28px]"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <h2 id="name-dialog-title" className="text-[24px] tracking-[-0.03em] text-ink">
+            {title}
+          </h2>
+          <button type="button" onClick={onClose} aria-label="Закрыть" className="btn btn-secondary btn-icon">
+            <Icon name="close" />
+          </button>
+        </div>
+        <form onSubmit={onSubmit} className="mt-6">
+          <label className="block">
+            <span className="text-sm text-muted">Название</span>
+            <input value={value} onChange={(event) => onChange(event.target.value)} className="control mt-2" autoFocus />
+          </label>
+          <button type="submit" className="mt-6 btn btn-primary btn-block">
+            {submitLabel}
+          </button>
+        </form>
+      </div>
+    </div>
   );
 }
 
@@ -329,43 +368,62 @@ function UnitList({
   onBlocked: () => void;
   onRemove: (id: string) => void;
 }) {
+  const [limit, setLimit] = useState(housePageSize);
+  const sentinelRef = useRef<HTMLLIElement>(null);
+
+  useEffect(() => {
+    setLimit(housePageSize);
+  }, [units]);
+
+  useEffect(() => {
+    const node = sentinelRef.current;
+    if (!node || limit >= units.length) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setLimit((current) => Math.min(units.length, current + housePageSize));
+        }
+      },
+      { rootMargin: "280px" },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [limit, units.length]);
+
   if (units.length === 0) return <p className="mt-4 text-sm text-muted">Пока пусто.</p>;
+  const shown = units.slice(0, limit);
+  const rows = shown.map((unit) => (
+    <UnitRow
+      key={unit.id}
+      objectId={objectId}
+      unit={unit}
+      view={view}
+      editable={editable}
+      pendingDelete={pendingDelete}
+      onAsk={onAsk}
+      onSave={onSave}
+      onBlocked={onBlocked}
+      onRemove={onRemove}
+    />
+  ));
+  const more =
+    limit < units.length ? (
+      <li ref={sentinelRef} className="px-5 py-4 text-sm text-muted">
+        Ещё {units.length - limit}…
+      </li>
+    ) : null;
   if (view === "blocks") {
     return (
-      <ul className="mt-4 grid gap-3 sm:grid-cols-2">
-        {units.map((unit) => (
-          <UnitRow
-            key={unit.id}
-            objectId={objectId}
-            unit={unit}
-            view={view}
-            editable={editable}
-            pendingDelete={pendingDelete}
-            onAsk={onAsk}
-            onSave={onSave}
-            onBlocked={onBlocked}
-            onRemove={onRemove}
-          />
-        ))}
+      <ul className="mt-4 grid gap-3">
+        {rows}
+        {more}
       </ul>
     );
   }
   return (
     <ul className="mt-4 divide-y divide-line panel">
-      {units.map((unit) => (
-        <UnitRow
-          key={unit.id}
-          objectId={objectId}
-          unit={unit}
-          view={view}
-          editable={editable}
-          pendingDelete={pendingDelete}
-          onAsk={onAsk}
-          onSave={onSave}
-          onBlocked={onBlocked}
-          onRemove={onRemove}
-        />
-      ))}
+      {rows}
+      {more}
     </ul>
   );
 }
@@ -760,7 +818,7 @@ function BuildingBlock({
   onToggle: () => void;
   unitName: string;
   onUnitName: (value: string) => void;
-  onAddUnit: (event: React.FormEvent<HTMLFormElement>) => void;
+  onAddUnit: (event: React.FormEvent<HTMLFormElement>) => void | Promise<boolean | void>;
   view: ViewMode;
   pendingDelete: string | null;
   onAsk: (id: string | null) => void;
@@ -772,6 +830,7 @@ function BuildingBlock({
 }) {
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState(false);
+  const [adding, setAdding] = useState(false);
   const [name, setName] = useState(building.name);
   const blocked = building.units.some((unit) => !unit.canDelete);
 
@@ -779,6 +838,11 @@ function BuildingBlock({
     event.preventDefault();
     const saved = await onSaveBuilding(building.id, name);
     if (saved) setEditing(false);
+  }
+
+  async function add(event: React.FormEvent<HTMLFormElement>) {
+    const saved = await onAddUnit(event);
+    if (saved !== false) setAdding(false);
   }
 
   return (
@@ -813,13 +877,24 @@ function BuildingBlock({
           {editable && !editing ? (
             <button
               type="button"
-              className="btn btn-secondary btn-compact"
+              className="btn btn-secondary btn-icon"
+              aria-label="Редактировать"
               onClick={() => {
                 setName(building.name);
                 setEditing(true);
               }}
             >
-              Изменить
+              <Icon name="edit" />
+            </button>
+          ) : null}
+          {editable ? (
+            <button
+              type="button"
+              className="btn btn-primary btn-icon"
+              aria-label={`Добавить ${unitLabel}`}
+              onClick={() => setAdding(true)}
+            >
+              <Icon name="plus" />
             </button>
           ) : null}
           <button type="button" onClick={onToggle} className="btn btn-secondary btn-compact">
@@ -827,9 +902,18 @@ function BuildingBlock({
           </button>
         </div>
       </div>
+      {adding ? (
+        <NameDialog
+          title={`Новый ${unitLabel}`}
+          submitLabel={`Добавить ${unitLabel}`}
+          value={unitName}
+          onChange={onUnitName}
+          onSubmit={add}
+          onClose={() => setAdding(false)}
+        />
+      ) : null}
       {open ? (
         <div className="mt-4">
-          {editable ? <UnitForm label={`Добавить ${unitLabel}`} value={unitName} onChange={onUnitName} onSubmit={onAddUnit} /> : null}
           <UnitFilter count={building.units.length} query={query} onQuery={setQuery} />
           <UnitList
             units={visibleUnits(building.units, query)}
@@ -842,9 +926,6 @@ function BuildingBlock({
             onBlocked={onBlockedUnit}
             onRemove={onRemoveUnit}
           />
-          {!query.trim() && building.units.length > 20 ? (
-            <p className="mt-3 text-sm text-muted">Показаны первые 20. Введите номер, чтобы найти остальные.</p>
-          ) : null}
         </div>
       ) : null}
       {removable ? (

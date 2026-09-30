@@ -25,7 +25,9 @@ export type IconName =
   | "wind"
   | "radiation"
   | "co2"
-  | "organics";
+  | "organics"
+  | "edit"
+  | "plus";
 
 const paths: Record<IconName, ReactNode> = {
   home: (
@@ -286,6 +288,17 @@ const paths: Record<IconName, ReactNode> = {
       <path d="M12 20V9" />
       <path d="M12 9c0-4 4.2-6 7-6-1 4.2-4 6.4-7 6.4" />
       <path d="M12 11c0-3.4-3.8-5.4-6.5-5.4 1 3.6 3.5 5.4 6.5 5.4" />
+    </>
+  ),
+  edit: (
+    <>
+      <path d="M4 20h4.2L19 9.2 14.8 5 4 15.8V20Z" />
+      <path d="M13.2 6.6 17.4 10.8" />
+    </>
+  ),
+  plus: (
+    <>
+      <path d="M12 5v14M5 12h14" />
     </>
   ),
 };

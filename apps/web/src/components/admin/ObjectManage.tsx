@@ -8,9 +8,11 @@ import { useAdminPreview } from "@/components/admin/AdminPreview";
 export function EditObjectButton({
   object,
   compact = false,
+  iconOnly = false,
 }: {
   object: { id: string; name: string; address: string; securityPhone?: string | null };
   compact?: boolean;
+  iconOnly?: boolean;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -48,7 +50,8 @@ export function EditObjectButton({
     <>
       <button
         type="button"
-        className={`btn btn-secondary ${compact ? "btn-compact" : ""}`}
+        className={iconOnly ? "btn btn-secondary btn-icon" : `btn btn-secondary ${compact ? "btn-compact" : ""}`}
+        aria-label={iconOnly ? "Редактировать" : undefined}
         onClick={() => {
           setName(object.name);
           setAddress(object.address);
@@ -57,7 +60,7 @@ export function EditObjectButton({
           setOpen(true);
         }}
       >
-        Изменить
+        {iconOnly ? <Icon name="edit" /> : "Изменить"}
       </button>
       {open ? (
         <div className="fixed inset-0 z-40 flex items-end justify-center bg-ink/40 backdrop-blur-sm sm:items-center" onMouseDown={close}>

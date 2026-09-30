@@ -30,7 +30,7 @@ export function ObjectCard({
       </button>
       {manage ? (
         <div className="mt-5 flex flex-wrap items-center gap-2">
-          {can("objects.edit") ? <EditObjectButton object={object} compact /> : null}
+          {can("objects.edit") ? <EditObjectButton object={object} compact iconOnly /> : null}
           {can("objects.structure.edit") ? (
             <Link href={`/admin/objects/${object.id}`} className="btn btn-secondary btn-compact">
               Структура
