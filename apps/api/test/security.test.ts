@@ -224,6 +224,7 @@ describe("another company", () => {
       ["revokeGateway", { gatewayId: "gw_rival" }],
       ["smartHomeCommandLog", { objectId: rival.objectId }],
       ["setDeviceFavorite", { deviceId: "dev_rival", favorite: true }],
+      ["setDeviceIconColor", { deviceId: "dev_rival", iconColor: "#c45c4a" }],
       ["smartHomeEvents", { objectId: rival.objectId }],
       ["createAccessPoint", { objectId: rival.objectId, name: "Захват", api: "" }],
       ["updateAccessPoint", { objectId: rival.objectId, pointId: "dev_gate_rival", name: "Захват" }],

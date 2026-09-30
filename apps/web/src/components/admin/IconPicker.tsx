@@ -2,11 +2,11 @@
 
 import { useMemo, useState } from "react";
 import { DeviceTileIcon, GoogleIcon } from "@/components/GoogleIcon";
+import { IconSwatches } from "@/components/IconSwatches";
 import {
   deviceIconColorLabel,
   deviceIconColorOf,
   deviceIconOf,
-  deviceIconSwatches,
   materialSymbolNames,
   searchMaterialSymbols,
 } from "@/lib/google-icons";
@@ -48,28 +48,8 @@ export function IconPicker({
         <span className="text-[13px] text-muted">{open ? "Скрыть" : "Выбрать"}</span>
       </button>
       {onColorChange ? (
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            title="Цвет темы"
-            aria-label="Цвет темы"
-            disabled={disabled}
-            className={`h-8 w-8 rounded-full border ${hex ? "border-line" : "border-ink ring-2 ring-accent/40"}`}
-            style={{ background: "var(--accent)" }}
-            onClick={() => onColorChange(null)}
-          />
-          {deviceIconSwatches.map((swatch) => (
-            <button
-              key={swatch.hex}
-              type="button"
-              title={swatch.label}
-              aria-label={swatch.label}
-              disabled={disabled}
-              className={`h-8 w-8 rounded-full ${hex === swatch.hex ? "ring-2 ring-ink ring-offset-2 ring-offset-[var(--surface)]" : "border border-line"}`}
-              style={{ background: swatch.hex }}
-              onClick={() => onColorChange(swatch.hex)}
-            />
-          ))}
+        <div className="mt-3">
+          <IconSwatches color={hex} onChange={onColorChange} disabled={disabled} />
         </div>
       ) : null}
       {open ? (

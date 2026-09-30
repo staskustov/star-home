@@ -155,6 +155,7 @@ export async function requireSmartDevice(deviceId: string): Promise<{
     channels?: { capability?: string; displayName: string; unit: string; value: number | boolean | string | null }[];
     state: Record<string, unknown>;
     canCommand: boolean;
+    canRecolor?: boolean;
     commands: import("@/server/smart-commands").SmartCommandName[];
     lastKnown?: boolean;
     favorite?: boolean;

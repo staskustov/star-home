@@ -33,6 +33,7 @@ import { householdCan } from "@/server/rbac/policy";
 import { capabilitiesTouchedByState, channelsOf, deriveLifecycle, publicChannelsOf, type DeviceLifecycle, type PublicChannel } from "@/server/device-channels";
 import { commandRisk, deviceCan, isSmartCommand, type SmartCommandName } from "@/server/smart-commands";
 import { planPinOf, type PlanPin } from "@/lib/plan-pin";
+import { cleanDeviceIconColor } from "@/lib/google-icons";
 
 type Failure = { ok: false; status: number; message: string };
 type Success<T> = { ok: true; value: T };
@@ -62,6 +63,10 @@ export function smartViewer(session: SessionRef | null): Result<Viewer> {
 
 function viewerCan(viewer: Viewer, permission: Permission): boolean {
   return viewer.kind === "staff" ? can(viewer.actor, permission) : householdCan(viewer.place.role, permission);
+}
+
+function viewerRecolors(viewer: Viewer): boolean {
+  return viewerCan(viewer, viewer.kind === "staff" ? "devices.edit" : "devices.command");
 }
 
 function viewerCompany(viewer: Viewer): string {
@@ -162,6 +167,7 @@ export type SmartDeviceCard = {
   status: DeviceLifecycle;
   state: Device["state"];
   canCommand: boolean;
+  canRecolor: boolean;
   commands: SmartCommandName[];
   technical?: {
     adapter: string;
@@ -206,6 +212,7 @@ function asCard(device: Device, viewer: Viewer): SmartDeviceCard {
     status: device.status ?? deriveLifecycle(host),
     state: knownState(device.state),
     canCommand: canPreviewCommand(viewer, device),
+    canRecolor: viewerRecolors(viewer),
     commands: commandsFor(device),
     planFloor: device.planFloor ?? null,
     planX: device.planX ?? null,
@@ -509,6 +516,34 @@ export function setDeviceFavorite(session: SessionRef | null, input: { deviceId?
   if (favorite) file.favorites.unshift({ userId: home.place.userId, deviceId: found.value.id, at: new Date().toISOString() });
   writeOps(file);
   return { ok: true, value: { id: found.value.id, favorite } };
+}
+
+export function setDeviceIconColor(session: SessionRef | null, input: { deviceId?: unknown; iconColor?: unknown }): Result<{ id: string; iconColor: string | null }> {
+  const viewer = smartViewer(session);
+  if (!viewer.ok) return viewer;
+  if (!viewerRecolors(viewer.value)) return denied();
+  const found = findScopedDevice(viewer.value, input.deviceId);
+  if (!found.ok) return found;
+  const file = readOps();
+  const current = file.devices.find((item) => item.id === found.value.id);
+  if (!current) return { ok: false, status: 404, message: "Устройство не найдено" };
+  const before = current.iconColor ?? null;
+  const next = cleanDeviceIconColor(input.iconColor);
+  if (before === next) return { ok: true, value: { id: current.id, iconColor: next } };
+  current.iconColor = next;
+  writeOps(file);
+  recordAudit({
+    actorUserId: viewerUser(viewer.value),
+    companyId: current.companyId,
+    objectId: current.objectId,
+    unitId: current.unitId,
+    action: "DEVICE_EDIT",
+    targetType: "device",
+    targetId: current.id,
+    target: current.name,
+    changes: [{ field: "Цвет иконки", from: before ?? "", to: next ?? "" }],
+  });
+  return { ok: true, value: { id: current.id, iconColor: next } };
 }
 
 export function smartHomeHistory(

@@ -1086,6 +1086,29 @@ describe("smart home commands", () => {
     assert.equal((await rpc("setDeviceFavorite", { deviceId: "dev_light_24", favorite: true }, objectAdmin)).status, 403);
   });
 
+  it("lets the resident and the admin recolor a device icon", async () => {
+    const colorOf = async (who: typeof resident) =>
+      ((await rpc("smartHomeDevice", { deviceId: "dev_light_24" }, who)).body as { device: { iconColor: string | null; canRecolor: boolean } }).device;
+    assert.equal((await colorOf(resident)).canRecolor, true);
+    const painted = await rpc("setDeviceIconColor", { deviceId: "dev_light_24", iconColor: "#C45C4A" }, resident);
+    assert.equal(painted.status, 200, JSON.stringify(painted.body));
+    assert.equal((await colorOf(resident)).iconColor, "#c45c4a");
+    assert.equal((await colorOf(objectAdmin)).iconColor, "#c45c4a");
+    assert.equal((await rpc("setDeviceIconColor", { deviceId: "dev_light_24", iconColor: "url(x)" }, objectAdmin)).status, 200);
+    assert.equal((await colorOf(resident)).iconColor, null);
+    const people = await import("../../web/src/server/people-store");
+    const visitor = people.createPerson({ login: "paint.guest", name: "Гость", passwordHash: "x" });
+    const guest = people.createResidentMembership({
+      userId: visitor.id,
+      companyId: "cmp_star",
+      objectId: "obj_siyanie",
+      unitId: "unit_24",
+      role: "GUEST",
+      expiresAt: "2999-01-01T00:00:00",
+    });
+    assert.equal((await rpc("setDeviceIconColor", { deviceId: "dev_light_24", iconColor: "#c45c4a" }, { userId: visitor.id, membershipId: guest.id })).status, 403);
+  });
+
   it("shows energy only from real watts and keeps rooms from the catalog", async () => {
     const before = ((await rpc("home", null, resident)).body as { home: { facts?: { energy: { watts?: number } | null } } }).home.facts;
     assert.equal(before?.energy ?? null, null);

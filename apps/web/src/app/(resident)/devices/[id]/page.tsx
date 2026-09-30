@@ -3,6 +3,7 @@ import { ChannelReadings } from "@/components/home/ChannelReadings";
 import { DeviceCommand } from "@/components/home/DeviceCommand";
 import { FavoriteButton } from "@/components/home/FavoriteButton";
 import { HistoryPanel } from "@/components/home/HistoryPanel";
+import { IconColorPicker } from "@/components/home/IconColorPicker";
 import { Icon } from "@/components/icons";
 import { DeviceTileIcon } from "@/components/GoogleIcon";
 import { LiveRefresh } from "@/components/pwa/LiveRefresh";
@@ -63,6 +64,7 @@ export default async function DevicePage({ params }: { params: Promise<{ id: str
         )}
         {!(device.channels?.length || Object.keys(state).length) ? <p className="mt-4 text-[15px] text-muted">Показаний нет.</p> : null}
         {device.stale && device.lastKnown ? <p className="mt-3 text-[13px] text-muted">Цифры на момент последней связи, не текущие.</p> : null}
+        {device.canRecolor ? <IconColorPicker deviceId={device.id} color={device.iconColor} /> : null}
         <FavoriteButton deviceId={device.id} favorite={device.favorite} />
       </div>
 
