@@ -1063,53 +1063,74 @@ select.control,
   color: var(--ink);
 }
 
+.plan-compact {
+  --pin-scale: 0.5;
+}
+
+@media (max-width: 639px) {
+  .floor-plan {
+    --pin-scale: 0.5;
+  }
+}
+
 .plan-climate {
   display: flex;
   align-items: stretch;
-  gap: 4px;
-  padding: 5px;
-  border-radius: 18px;
+  gap: calc(4px * var(--pin-scale, 1));
+  padding: calc(5px * var(--pin-scale, 1));
+  border-radius: calc(18px * var(--pin-scale, 1));
   border: 1px solid rgba(255, 255, 255, 0.7);
   background: rgba(255, 251, 245, 0.92);
-  box-shadow: 0 10px 28px rgba(28, 22, 16, 0.16);
+  box-shadow: 0 calc(10px * var(--pin-scale, 1)) calc(28px * var(--pin-scale, 1)) rgba(28, 22, 16, 0.16);
   backdrop-filter: blur(12px);
 }
 
 .plan-metric {
   display: flex;
-  min-width: 44px;
+  min-width: calc(44px * var(--pin-scale, 1));
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
-  padding: 6px 8px;
-  border-radius: 13px;
+  gap: calc(2px * var(--pin-scale, 1));
+  padding: calc(6px * var(--pin-scale, 1)) calc(8px * var(--pin-scale, 1));
+  border-radius: calc(13px * var(--pin-scale, 1));
   background: transparent;
   cursor: pointer;
   transition: min-width 160ms ease, padding 160ms ease, background 160ms ease;
 }
 
 .plan-metric.is-open {
-  min-width: 92px;
-  padding: 10px 12px;
+  min-width: calc(92px * var(--pin-scale, 1));
+  padding: calc(10px * var(--pin-scale, 1)) calc(12px * var(--pin-scale, 1));
   background: color-mix(in srgb, currentColor 10%, #fff);
 }
 
+.plan-metric-icon {
+  height: calc(16px * var(--pin-scale, 1));
+  width: calc(16px * var(--pin-scale, 1));
+}
+
+.plan-metric.is-open .plan-metric-icon {
+  height: calc(28px * var(--pin-scale, 1));
+  width: calc(28px * var(--pin-scale, 1));
+}
+
 .plan-metric-value {
-  font-size: 12px;
+  font-size: max(8px, calc(12px * var(--pin-scale, 1)));
   font-weight: 560;
   letter-spacing: -0.03em;
   line-height: 1.1;
+  white-space: nowrap;
   color: currentColor;
 }
 
 .plan-metric.is-open .plan-metric-value {
-  font-size: 22px;
+  font-size: max(13px, calc(22px * var(--pin-scale, 1)));
   letter-spacing: -0.04em;
 }
 
 .plan-metric-label {
-  font-size: 10px;
+  font-size: max(8px, calc(10px * var(--pin-scale, 1)));
   font-weight: 500;
   letter-spacing: 0.01em;
   color: var(--muted);
@@ -1117,36 +1138,44 @@ select.control,
 
 .plan-light {
   display: grid;
-  height: 40px;
-  width: 40px;
+  height: calc(40px * var(--pin-scale, 1));
+  width: calc(40px * var(--pin-scale, 1));
   place-items: center;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.72);
   background: rgba(255, 251, 245, 0.92);
   color: #8a7a66;
   cursor: pointer;
-  box-shadow: 0 8px 20px rgba(28, 22, 16, 0.16);
+  box-shadow: 0 calc(8px * var(--pin-scale, 1)) calc(20px * var(--pin-scale, 1)) rgba(28, 22, 16, 0.16);
   transition: color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+
+.plan-light .g-icon {
+  font-size: calc(22px * var(--pin-scale, 1));
 }
 
 .plan-light.is-on {
   color: #f0b429;
   background: rgba(255, 244, 214, 0.96);
   box-shadow:
-    0 0 0 5px rgba(240, 180, 41, 0.22),
-    0 10px 24px rgba(240, 170, 40, 0.38);
+    0 0 0 calc(5px * var(--pin-scale, 1)) rgba(240, 180, 41, 0.22),
+    0 calc(10px * var(--pin-scale, 1)) calc(24px * var(--pin-scale, 1)) rgba(240, 170, 40, 0.38);
 }
 
 .plan-dot {
   display: grid;
-  height: 32px;
-  width: 32px;
+  height: calc(32px * var(--pin-scale, 1));
+  width: calc(32px * var(--pin-scale, 1));
   place-items: center;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.72);
   background: rgba(255, 251, 245, 0.92);
   color: var(--ink);
-  box-shadow: 0 8px 20px rgba(28, 22, 16, 0.14);
+  box-shadow: 0 calc(8px * var(--pin-scale, 1)) calc(20px * var(--pin-scale, 1)) rgba(28, 22, 16, 0.14);
+}
+
+.plan-dot .g-icon {
+  font-size: calc(16px * var(--pin-scale, 1));
 }
 }
 
@@ -1297,8 +1326,8 @@ select.control,
 }
 
 .home-plan {
-  width: 100%;
-  max-width: 100%;
+  width: auto;
+  max-width: none;
   height: 9.5rem;
   background: var(--surface-muted);
 }

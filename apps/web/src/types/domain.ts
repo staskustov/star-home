@@ -168,7 +168,7 @@ export type ResidentHome = {
   paymentHistory: { title: string; amount: number; currency: string }[];
   categories: string[];
   rooms: { id?: string; name: string; deviceCount?: number; temperatureC?: number | null; humidityPercent?: number | null }[];
-  plans?: { floor: number; image: string; pins: { id: string; name: string; x: number; y: number }[] }[];
+  plans?: { floor: number; image: string; pins: import("@/lib/plan-pin").PlanPin[] }[];
   cameras: { id?: string; name: string; state: string; hasFrame?: boolean; scope?: "house" | "project" }[];
   devices: {
     id?: string;

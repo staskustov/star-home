@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { PlanThumbnail } from "@/components/home/FloorPlan";
 import { MetricChip, metricLook, type MetricStyle } from "@/components/home/MetricChip";
+import type { PlanPin } from "@/lib/plan-pin";
 import { Icon } from "@/components/icons";
 import { formatHumidity, formatTemperature } from "@/lib/format";
 import Link from "next/link";
@@ -14,7 +16,7 @@ function devicesLabel(count: number) {
   return `${count} устройств`;
 }
 
-type Plan = { floor: number; image: string; pins: { id: string; name: string; x: number; y: number }[] };
+type Plan = { floor: number; image: string; pins: PlanPin[] };
 
 export function HomeHero({
   unitName,
@@ -74,18 +76,7 @@ export function HomeHero({
             {slide.plans.length ? (
               <div className="mt-3 flex gap-2 overflow-x-auto">
                 {slide.plans.map((plan) => (
-                  <div key={plan.floor} className="home-plan relative shrink-0 overflow-hidden rounded-2xl">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={plan.image} alt={`Планировка ${plan.floor} этажа`} className="h-full w-full object-cover" />
-                    {plan.pins.map((pin) => (
-                      <span
-                        key={pin.id}
-                        title={pin.name}
-                        className="absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent ring-2 ring-white"
-                        style={{ left: `${pin.x}%`, top: `${pin.y}%` }}
-                      />
-                    ))}
-                  </div>
+                  <PlanThumbnail key={plan.floor} image={plan.image} alt={`Планировка ${plan.floor} этажа`} pins={plan.pins} />
                 ))}
               </div>
             ) : null}

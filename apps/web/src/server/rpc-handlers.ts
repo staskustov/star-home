@@ -588,7 +588,7 @@ function switched(session: SessionRef, input: Input): Reply {
   return ok({ membershipId: membership.id, redirectTo: destinationFor(session.userId, membership.id) });
 }
 
-function home(session: SessionRef): Reply {
+async function home(session: SessionRef): Promise<Reply> {
   const user = findUserById(session.userId);
   const membership = session.membershipId ? findMembership(session.userId, session.membershipId) : undefined;
   if (!user || !membership || expired(membership.expiresAt) || !householdCan(membership.role, "home.view")) {
@@ -620,25 +620,10 @@ function home(session: SessionRef): Reply {
       severity: "WARNING",
     });
   }
-  const unit = findUnit(base.unit.id);
-  const plans = (unit?.plans ?? []).map((plan) => ({
-    floor: plan.floor,
-    image: plan.image,
-    pins: file.devices
-      .filter(
-        (device) =>
-          device.unitId === base.unit.id &&
-          device.planFloor === plan.floor &&
-          typeof device.planX === "number" &&
-          typeof device.planY === "number",
-      )
-      .map((device) => ({
-        id: device.id,
-        name: device.displayName ?? device.name,
-        x: device.planX as number,
-        y: device.planY as number,
-      })),
-  }));
+  const planView = (await import("./smart-home")).floorPlanFor(session, base.unit.id);
+  const plans = planView.ok
+    ? planView.value.floors
+    : (findUnit(base.unit.id)?.plans ?? []).map((plan) => ({ floor: plan.floor, image: plan.image, pins: [] }));
   return ok({
     home: {
       ...base,
@@ -785,8 +770,8 @@ function desk(actor: StaffActor, input: Input): Result {
   return { ok: true, value: deskFor(actor, input.section) };
 }
 
-function access(session: SessionRef): Reply {
-  const view = home(session);
+async function access(session: SessionRef): Promise<Reply> {
+  const view = await home(session);
   const body = view.body as { redirect?: string; home?: { unit: { id: string; name: string }; object: { id: string; name: string } } };
   if (!body.home || !session.membershipId) return view;
   const membership = findMembership(session.userId, session.membershipId);
@@ -797,8 +782,8 @@ function access(session: SessionRef): Reply {
   });
 }
 
-function requests(session: SessionRef): Reply {
-  const view = home(session);
+async function requests(session: SessionRef): Promise<Reply> {
+  const view = await home(session);
   const body = view.body as { home?: { unit: { id: string }; serviceCategories: string[] } };
   if (!body.home) return view;
   const membership = session.membershipId ? findMembership(session.userId, session.membershipId) : undefined;

@@ -19,10 +19,34 @@ export type FloorPlanPlacing = {
   name?: string;
 };
 
+type Moving = { pin: PlanPin; floor: number; startX: number; startY: number; moved: boolean };
+
+const dragThresholdPx = 5;
+
 function pinShift(x: number, y: number) {
   const ox = x > 78 ? "-100%" : x < 18 ? "0" : "-50%";
   const oy = y > 82 ? "-100%" : y < 10 ? "0" : "-8px";
   return `translate(${ox}, ${oy})`;
+}
+
+function pointIn(box: DOMRect, clientX: number, clientY: number) {
+  const x = ((clientX - box.left) / box.width) * 100;
+  const y = ((clientY - box.top) / box.height) * 100;
+  return { x: Math.min(100, Math.max(0, x)), y: Math.min(100, Math.max(0, y)) };
+}
+
+export function PlanThumbnail({ image, alt, pins }: { image: string; alt: string; pins: PlanPin[] }) {
+  return (
+    <div className="home-plan plan-compact relative shrink-0 overflow-hidden rounded-2xl">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={image} alt={alt} className="block h-full w-auto max-w-none" />
+      {pins.map((pin) => (
+        <div key={pin.deviceId} className="absolute z-[1]" style={{ left: `${pin.x}%`, top: `${pin.y}%`, transform: pinShift(pin.x, pin.y) }}>
+          <PlanMark pin={pin} on={pin.on === true} openKey={null} canCommand={false} readOnly onOpenMetric={() => undefined} onToggle={() => undefined} />
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export function FloorPlan({
@@ -43,7 +67,18 @@ export function FloorPlan({
   const [openMetric, setOpenMetric] = useState<{ deviceId: string; key: string } | null>(null);
   const [power, setPower] = useState<Record<string, boolean>>({});
   const [ghost, setGhost] = useState<{ floor: number; x: number; y: number } | null>(null);
+  const [moving, setMoving] = useState<Moving | null>(null);
+  const [moved, setMoved] = useState<Record<string, { x: number; y: number }>>({});
   const dragging = useRef(false);
+  const movingRef = useRef<Moving | null>(null);
+  const swallowClick = useRef(false);
+  const canMove = editable && !placing;
+
+  const [seenFloors, setSeenFloors] = useState(floors);
+  if (seenFloors !== floors) {
+    setSeenFloors(floors);
+    setMoved({});
+  }
 
   if (!floors.length) {
     return <p className="panel mt-4 px-5 py-5 text-[15px] text-muted">Планировка для этого дома ещё не загружена.</p>;
@@ -63,6 +98,57 @@ export function FloorPlan({
       onPlaced?.();
       router.refresh();
     }
+    return result.ok;
+  }
+
+  function startMove(event: PointerEvent<HTMLDivElement>, pin: PlanPin, floor: number) {
+    if (!canMove || event.button > 0) return;
+    const next = { pin, floor, startX: event.clientX, startY: event.clientY, moved: false };
+    movingRef.current = next;
+    setMoving(next);
+  }
+
+  function dragMove(event: PointerEvent<HTMLDivElement>) {
+    const current = movingRef.current;
+    if (!current) return;
+    if (!current.moved && Math.hypot(event.clientX - current.startX, event.clientY - current.startY) < dragThresholdPx) return;
+    const plan = event.currentTarget.parentElement;
+    if (!plan) return;
+    if (!current.moved) {
+      try {
+        event.currentTarget.setPointerCapture(event.pointerId);
+      } catch {
+        /* capture is optional */
+      }
+    }
+    current.moved = true;
+    setGhost({ floor: current.floor, ...pointIn(plan.getBoundingClientRect(), event.clientX, event.clientY) });
+  }
+
+  async function endMove(event: PointerEvent<HTMLDivElement>) {
+    const current = movingRef.current;
+    movingRef.current = null;
+    setMoving(null);
+    setGhost(null);
+    const plan = event.currentTarget.parentElement;
+    if (!current?.moved || !plan) return;
+    swallowClick.current = true;
+    const next = pointIn(plan.getBoundingClientRect(), event.clientX, event.clientY);
+    setMoved((map) => ({ ...map, [current.pin.deviceId]: next }));
+    const saved = await place(current.pin.deviceId, current.floor, next.x, next.y);
+    if (!saved) {
+      setMoved((map) => {
+        const rest = { ...map };
+        delete rest[current.pin.deviceId];
+        return rest;
+      });
+    }
+  }
+
+  function cancelMove() {
+    movingRef.current = null;
+    setMoving(null);
+    setGhost(null);
   }
 
   async function toggleLight(pin: PlanPin) {
@@ -85,10 +171,7 @@ export function FloorPlan({
   }
 
   function pointFromEvent(event: PointerEvent<HTMLDivElement>) {
-    const box = event.currentTarget.getBoundingClientRect();
-    const x = ((event.clientX - box.left) / box.width) * 100;
-    const y = ((event.clientY - box.top) / box.height) * 100;
-    return { x: Math.min(100, Math.max(0, x)), y: Math.min(100, Math.max(0, y)) };
+    return pointIn(event.currentTarget.getBoundingClientRect(), event.clientX, event.clientY);
   }
 
   function startPlace(event: PointerEvent<HTMLDivElement>, floor: number) {
@@ -127,7 +210,7 @@ export function FloorPlan({
               {dropHere ? <span className="text-[13px] text-muted">Нажмите и перетащите</span> : null}
             </figcaption>
             <div
-              className={`relative select-none ${dropHere ? "cursor-grab active:cursor-grabbing" : ""}`}
+              className={`floor-plan relative select-none ${dropHere ? "cursor-grab active:cursor-grabbing" : ""}`}
               style={{ touchAction: dropHere ? "none" : undefined }}
               onPointerDown={(event) => startPlace(event, plan.floor)}
               onPointerMove={(event) => movePlace(event, plan.floor)}
@@ -139,11 +222,24 @@ export function FloorPlan({
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={plan.image} alt={`План ${plan.floor} этажа`} className="block w-full" draggable={false} />
-              {plan.pins.map((pin) => (
+              {plan.pins.map((pin) => {
+                const at = moved[pin.deviceId] ?? pin;
+                const lifted = moving?.pin.deviceId === pin.deviceId && ghost !== null;
+                return (
                 <div
                   key={pin.deviceId}
-                  className={`absolute z-[1] ${placing ? "pointer-events-none" : ""}`}
-                  style={{ left: `${pin.x}%`, top: `${pin.y}%`, transform: pinShift(pin.x, pin.y) }}
+                  className={`absolute z-[1] ${placing ? "pointer-events-none" : ""} ${canMove ? "cursor-grab active:cursor-grabbing" : ""} ${lifted ? "opacity-30" : ""}`}
+                  style={{ left: `${at.x}%`, top: `${at.y}%`, transform: pinShift(at.x, at.y), touchAction: canMove ? "none" : undefined }}
+                  onPointerDownCapture={(event) => startMove(event, pin, plan.floor)}
+                  onPointerMove={dragMove}
+                  onPointerUp={(event) => void endMove(event)}
+                  onPointerCancel={cancelMove}
+                  onClickCapture={(event) => {
+                    if (!swallowClick.current) return;
+                    swallowClick.current = false;
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }}
                 >
                   <PlanMark
                     pin={pin}
@@ -156,7 +252,21 @@ export function FloorPlan({
                     onToggle={() => void toggleLight(pin)}
                   />
                 </div>
-              ))}
+                );
+              })}
+              {ghost && ghost.floor === plan.floor && moving ? (
+                <div className="pointer-events-none absolute z-[2]" style={{ left: `${ghost.x}%`, top: `${ghost.y}%`, transform: pinShift(ghost.x, ghost.y) }}>
+                  <PlanMark
+                    pin={moving.pin}
+                    on={power[moving.pin.deviceId] ?? moving.pin.on === true}
+                    openKey={null}
+                    canCommand={false}
+                    ghost
+                    onOpenMetric={() => undefined}
+                    onToggle={() => undefined}
+                  />
+                </div>
+              ) : null}
               {ghost && ghost.floor === plan.floor && placing ? (
                 <div className="pointer-events-none absolute z-[2]" style={{ left: `${ghost.x}%`, top: `${ghost.y}%`, transform: pinShift(ghost.x, ghost.y) }}>
                   <PlanMark
@@ -186,6 +296,7 @@ export function FloorPlan({
         );
       })}
       {editable && placing ? <p className="text-[13px] text-muted">Отпустите кнопку мыши, чтобы поставить устройство.</p> : null}
+      {canMove && floors.some((plan) => plan.pins.length) ? <p className="text-[13px] text-muted">Перетащите иконку на плане, чтобы передвинуть устройство.</p> : null}
       {notice ? <p className="text-[13px] text-muted">{notice}</p> : null}
     </div>
   );
@@ -197,6 +308,7 @@ function PlanMark({
   openKey,
   canCommand,
   ghost = false,
+  readOnly = false,
   onOpenMetric,
   onToggle,
 }: {
@@ -205,37 +317,50 @@ function PlanMark({
   openKey: string | null;
   canCommand: boolean;
   ghost?: boolean;
+  readOnly?: boolean;
   onOpenMetric: (key: string) => void;
   onToggle: () => void;
 }) {
   const tint = deviceIconColorOf(pin.iconColor);
   if (isLightingKind(pin.kind)) {
+    const className = `plan-light ${on ? "is-on" : ""} ${ghost ? "opacity-80" : ""}`;
+    const style = tint
+      ? {
+          color: tint,
+          ...(on
+            ? {
+                background: `color-mix(in srgb, ${tint} 28%, rgba(255, 251, 245, 0.96))`,
+                boxShadow: `0 0 0 calc(5px * var(--pin-scale, 1)) color-mix(in srgb, ${tint} 22%, transparent), 0 10px 24px color-mix(in srgb, ${tint} 38%, transparent)`,
+              }
+            : {}),
+        }
+      : undefined;
+    const body = (
+      <>
+        <GoogleIcon name={pin.icon} kind={pin.kind} filled={on} color={tint} />
+        <span className="sr-only">{pin.name}</span>
+      </>
+    );
+    if (readOnly) {
+      return (
+        <span title={pin.name} className={className} style={style}>
+          {body}
+        </span>
+      );
+    }
     return (
       <button
         type="button"
         title={on ? `${pin.name} · включен` : `${pin.name} · выключен`}
-        className={`plan-light ${on ? "is-on" : ""} ${ghost ? "opacity-80" : ""}`}
-        style={
-          tint
-            ? {
-                color: tint,
-                ...(on
-                  ? {
-                      background: `color-mix(in srgb, ${tint} 28%, rgba(255, 251, 245, 0.96))`,
-                      boxShadow: `0 0 0 5px color-mix(in srgb, ${tint} 22%, transparent), 0 10px 24px color-mix(in srgb, ${tint} 38%, transparent)`,
-                    }
-                  : {}),
-              }
-            : undefined
-        }
+        className={className}
+        style={style}
         onPointerDown={(event) => event.stopPropagation()}
         onClick={(event) => {
           event.stopPropagation();
           if (!ghost && canCommand) onToggle();
         }}
       >
-        <GoogleIcon name={pin.icon} kind={pin.kind} filled={on} size={22} color={tint} />
-        <span className="sr-only">{pin.name}</span>
+        {body}
       </button>
     );
   }
@@ -244,7 +369,7 @@ function PlanMark({
     return (
       <div className={`plan-climate ${ghost ? "opacity-80" : ""}`} onPointerDown={(event) => event.stopPropagation()}>
         {pin.metrics.map((metric) => (
-          <ClimateMetric key={metric.key} metric={metric} open={openKey === metric.key} onOpen={() => onOpenMetric(metric.key)} />
+          <ClimateMetric key={metric.key} metric={metric} open={openKey === metric.key} readOnly={readOnly} onOpen={() => onOpenMetric(metric.key)} />
         ))}
       </div>
     );
@@ -265,18 +390,30 @@ function PlanMark({
       style={tint ? { color: tint } : undefined}
       onPointerDown={(event) => event.stopPropagation()}
     >
-      <GoogleIcon name={pin.icon} kind={pin.kind} size={16} color={tint} />
+      <GoogleIcon name={pin.icon} kind={pin.kind} color={tint} />
       <span className="sr-only">{pin.name}</span>
     </span>
   );
 }
 
-function ClimateMetric({ metric, open, onOpen }: { metric: PlanMetric; open: boolean; onOpen: () => void }) {
-  return (
-    <button type="button" className={`plan-metric ${open ? "is-open" : ""}`} style={{ color: metric.color }} onClick={onOpen} title={metric.label}>
-      <Icon name={metric.icon as IconName} className={open ? "h-7 w-7" : "h-4 w-4"} />
+function ClimateMetric({ metric, open, readOnly, onOpen }: { metric: PlanMetric; open: boolean; readOnly: boolean; onOpen: () => void }) {
+  const body = (
+    <>
+      <Icon name={metric.icon as IconName} className="plan-metric-icon" />
       <span className="plan-metric-value">{metric.value}</span>
       {open ? <span className="plan-metric-label">{metric.label}</span> : null}
+    </>
+  );
+  if (readOnly) {
+    return (
+      <span className="plan-metric" style={{ color: metric.color }} title={metric.label}>
+        {body}
+      </span>
+    );
+  }
+  return (
+    <button type="button" className={`plan-metric ${open ? "is-open" : ""}`} style={{ color: metric.color }} onClick={onOpen} title={metric.label}>
+      {body}
     </button>
   );
 }
