@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Icon } from "@/components/icons";
@@ -18,10 +18,27 @@ export function ProfileAvatar({
   const pathname = usePathname();
   const initial = name.trim().slice(0, 1) || "·";
   const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setOpen(false);
   }, [pathname]);
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointer(event: MouseEvent) {
+      if (!root.current?.contains(event.target as Node)) setOpen(false);
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
 
   const face = photo ? (
     // eslint-disable-next-line @next/next/no-img-element
@@ -39,41 +56,83 @@ export function ProfileAvatar({
   }
 
   return (
-    <div className="relative">
-      <button type="button" className="avatar overflow-hidden md:hidden" aria-label="Меню жителя" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
+    <div className="relative" ref={root}>
+      <button
+        type="button"
+        className="avatar overflow-hidden md:hidden"
+        aria-label="Меню жителя"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
         {face}
       </button>
-      <Link href="/profile" aria-label="Настройки" className="avatar hidden overflow-hidden md:flex">
+      <button
+        type="button"
+        className="avatar hidden overflow-hidden md:flex"
+        aria-label="Меню профиля"
+        aria-expanded={open}
+        aria-haspopup="menu"
+        onClick={() => setOpen((current) => !current)}
+      >
         {face}
-      </Link>
+      </button>
+
       {open ? (
-        <div className="fixed inset-0 z-30 md:hidden">
-          <button type="button" className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" aria-label="Закрыть меню" onClick={() => setOpen(false)} />
-          <div id="resident-menu" className="sheet fade-in">
-            <ul>
-              {menuItems.map((item) => (
-                <li key={item.href}>
-                  <Link
-                    href={item.href}
-                    aria-current={pathname === item.href ? "page" : undefined}
-                    className={`sheet-link ${pathname === item.href ? "is-active" : ""}`}
-                    onClick={() => setOpen(false)}
-                  >
-                    <span className="tile-icon">
-                      <Icon name={item.icon} className="h-[18px] w-[18px]" />
-                    </span>
-                    {item.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-            <form action="/api/auth/logout" method="post" className="mt-3 border-t border-line/60 px-1 pt-4">
-              <button type="submit" className="btn btn-secondary btn-block">
+        <>
+          <div className="fixed inset-0 z-30 md:hidden">
+            <button type="button" className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" aria-label="Закрыть меню" onClick={() => setOpen(false)} />
+            <div id="resident-menu" className="sheet fade-in">
+              <ul>
+                {menuItems.map((item) => (
+                  <li key={item.href}>
+                    <Link
+                      href={item.href}
+                      aria-current={pathname === item.href ? "page" : undefined}
+                      className={`sheet-link ${pathname === item.href ? "is-active" : ""}`}
+                      onClick={() => setOpen(false)}
+                    >
+                      <span className="tile-icon">
+                        <Icon name={item.icon} className="h-[18px] w-[18px]" />
+                      </span>
+                      {item.label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+              <form action="/api/auth/logout" method="post" className="mt-3 border-t border-line/60 px-1 pt-4">
+                <button type="submit" className="btn btn-secondary btn-block">
+                  Выйти
+                </button>
+              </form>
+            </div>
+          </div>
+
+          <div
+            role="menu"
+            className="panel absolute right-0 top-[calc(100%+8px)] z-40 hidden w-56 overflow-hidden py-1 md:block"
+          >
+            {menuItems.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                role="menuitem"
+                aria-current={pathname === item.href ? "page" : undefined}
+                className={`sheet-link ${pathname === item.href ? "is-active" : ""}`}
+                onClick={() => setOpen(false)}
+              >
+                <span className="tile-icon">
+                  <Icon name={item.icon} className="h-[18px] w-[18px]" />
+                </span>
+                {item.label}
+              </Link>
+            ))}
+            <form action="/api/auth/logout" method="post" className="mt-1 border-t border-line/60 px-1 py-2">
+              <button type="submit" role="menuitem" className="btn btn-secondary btn-block">
                 Выйти
               </button>
             </form>
           </div>
-        </div>
+        </>
       ) : null}
     </div>
   );

@@ -186,7 +186,7 @@ export function HomeQuickGrid({
           ))}
         </div>
       ) : null}
-      <div className="home-quick-desk" role="list">
+      <div className={`home-quick-desk ${tiles.length <= 5 ? "home-quick-desk-fit" : ""}`} role="list">
         {tiles.map((tile) => (
           <div key={tile.id} role="listitem" className="home-quick-desk-item">
             <QuickTileButton tile={tile} onSelect={onSelect} />

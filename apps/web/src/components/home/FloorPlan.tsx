@@ -108,6 +108,7 @@ export function FloorPlan({
   canCommand = false,
   cameras = [],
   placing = null,
+  switcher = false,
   onPlaced,
 }: {
   floors: Floor[];
@@ -115,6 +116,7 @@ export function FloorPlan({
   canCommand?: boolean;
   cameras?: HomeCamera[];
   placing?: FloorPlanPlacing | null;
+  switcher?: boolean;
   onPlaced?: () => void;
 }) {
   const router = useRouter();
@@ -125,6 +127,7 @@ export function FloorPlan({
   const [ghost, setGhost] = useState<{ floor: number; x: number; y: number } | null>(null);
   const [moving, setMoving] = useState<Moving | null>(null);
   const [moved, setMoved] = useState<Record<string, { x: number; y: number }>>({});
+  const [floorIndex, setFloorIndex] = useState(0);
   const dragging = useRef(false);
   const movingRef = useRef<Moving | null>(null);
   const swallowClick = useRef(false);
@@ -135,11 +138,15 @@ export function FloorPlan({
   if (seenFloors !== floors) {
     setSeenFloors(floors);
     setMoved({});
+    setFloorIndex(0);
   }
 
   if (!floors.length) {
     return <p className="panel mt-4 px-5 py-5 text-[15px] text-muted">Планировка для этого дома ещё не загружена.</p>;
   }
+
+  const activeIndex = Math.min(floorIndex, floors.length - 1);
+  const visible = switcher ? [floors[activeIndex]!] : floors;
 
   async function place(deviceId: string, floor: number, x: number, y: number) {
     setNotice(null);
@@ -262,15 +269,37 @@ export function FloorPlan({
   }
 
   return (
-    <div className="mt-4 space-y-4">
-      {floors.map((plan) => {
+    <div className={switcher ? "space-y-3" : "mt-4 space-y-4"}>
+      {switcher && floors.length > 1 ? (
+        <div className="chip-row w-full justify-center md:w-full" role="tablist" aria-label="Этаж плана">
+          {floors.map((plan, index) => {
+            const selected = index === activeIndex;
+            return (
+              <button
+                key={plan.floor}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                aria-checked={selected}
+                className="segment-item"
+                onClick={() => setFloorIndex(index)}
+              >
+                {plan.floor} этаж
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+      {visible.map((plan) => {
         const dropHere = Boolean(placing && placing.floor === plan.floor);
         return (
           <figure key={plan.floor} className={`panel overflow-hidden ${dropHere ? "ring-2 ring-accent/70" : ""}`}>
-            <figcaption className="flex items-center justify-between gap-3 px-5 py-3 text-[15px] text-ink">
-              <span>{plan.floor} этаж</span>
-              {dropHere ? <span className="text-[13px] text-muted">Нажмите и перетащите</span> : null}
-            </figcaption>
+            {switcher ? null : (
+              <figcaption className="flex items-center justify-between gap-3 px-5 py-3 text-[15px] text-ink">
+                <span>{plan.floor} этаж</span>
+                {dropHere ? <span className="text-[13px] text-muted">Нажмите и перетащите</span> : null}
+              </figcaption>
+            )}
             <div
               className={`floor-plan relative select-none ${dropHere ? "cursor-grab active:cursor-grabbing" : ""}`}
               style={{ touchAction: dropHere ? "none" : undefined }}

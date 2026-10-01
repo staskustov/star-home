@@ -16,9 +16,17 @@ export function ResidentSidebar({ items }: { items: NavItem[] }) {
       }`}
     >
       <div className={`flex w-full items-center ${expanded ? "justify-between gap-2" : "flex-col gap-3"}`}>
-        <p className="flex min-w-0 items-center gap-2 text-[13px] font-medium tracking-[0.24em] text-ink">
+        <p className={`flex min-w-0 items-center gap-2 text-[13px] font-medium tracking-[0.24em] text-ink ${expanded ? "" : "flex-col gap-1.5"}`}>
           <StarMark className="h-4 w-4 shrink-0 text-accent" />
-          {expanded ? <span className="truncate">STAR HOME</span> : <span className="sr-only">STAR HOME</span>}
+          {expanded ? (
+            <span className="truncate">STAR HOME</span>
+          ) : (
+            <span className="text-center text-[9px] font-medium leading-[1.15] tracking-[0.14em]">
+              STAR
+              <br />
+              HOME
+            </span>
+          )}
         </p>
         <button
           type="button"
@@ -27,10 +35,10 @@ export function ResidentSidebar({ items }: { items: NavItem[] }) {
           aria-label={expanded ? "Свернуть меню" : "Развернуть меню"}
           onClick={toggle}
         >
-          <Icon name="chevron" className={`h-4 w-4 transition-transform duration-200 ${expanded ? "rotate-90" : "-rotate-90"}`} />
+          <Icon name="chevron" className={`h-4 w-4 transition-transform duration-200 ${expanded ? "rotate-180" : ""}`} />
         </button>
       </div>
-      <div className={`mt-8 min-h-0 w-full flex-1 overflow-y-auto ${expanded ? "" : "px-0"}`}>
+      <div className="mt-8 min-h-0 w-full flex-1 overflow-y-auto">
         <Sidebar items={items} labels={expanded ? "always" : "never"} />
       </div>
     </aside>

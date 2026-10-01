@@ -1563,7 +1563,7 @@ select.control,
 
   .home-desk-center .chip-row,
   .home-desk-center .chip-row-even {
-    width: auto;
+    width: 100%;
     max-width: 100%;
     justify-content: center;
   }
@@ -1590,6 +1590,17 @@ select.control,
     max-width: 22rem;
   }
 
+  .camera-film-fit {
+    overflow-x: hidden;
+  }
+
+  .camera-film-fit .panel {
+    flex: 1 1 0;
+    width: auto;
+    min-width: 0;
+    max-width: none;
+  }
+
   .home-quick-film {
     overflow-x: auto;
   }
@@ -1613,6 +1624,16 @@ select.control,
   .home-quick-desk-item {
     flex: 0 0 13.5rem;
     width: 13.5rem;
+  }
+
+  .home-quick-desk-fit {
+    overflow-x: hidden;
+  }
+
+  .home-quick-desk-fit .home-quick-desk-item {
+    flex: 1 1 0;
+    width: auto;
+    min-width: 0;
   }
 
   .home-quick-page {

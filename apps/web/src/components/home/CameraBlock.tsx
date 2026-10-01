@@ -7,13 +7,14 @@ import { CameraViewer, orderCameras, type HomeCamera } from "@/components/home/C
 export function CameraBlock({ cameras }: { cameras: HomeCamera[] }) {
   const ordered = orderCameras(cameras);
   const [viewer, setViewer] = useState<number | null>(null);
+  const stretch = ordered.length > 0 && ordered.length <= 4;
 
   if (ordered.length === 0) return null;
 
   return (
     <>
       <section aria-label="Камеры" className="w-full">
-        <div className="film camera-film">
+        <div className={`film camera-film ${stretch ? "camera-film-fit" : ""}`}>
           {ordered.map((item, index) => (
             <button
               key={item.id ?? item.name}
@@ -29,7 +30,7 @@ export function CameraBlock({ cameras }: { cameras: HomeCamera[] }) {
                 <span className="tile-icon">
                   <Icon name="camera" className="h-[18px] w-[18px]" />
                 </span>
-                <span className="min-w-0 flex-1 md:flex-none">
+                <span className="min-w-0 flex-1">
                   <span className="block truncate text-[17px] tracking-[-0.02em] text-ink">{item.name}</span>
                   <span className="mt-0.5 block text-[13px] text-muted">
                     {item.scope === "project" ? "Проект" : "Объект"}
