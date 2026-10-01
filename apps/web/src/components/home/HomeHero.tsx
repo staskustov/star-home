@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { PlanThumbnail } from "@/components/home/FloorPlan";
 import { MetricChip, metricLook, type MetricStyle } from "@/components/home/MetricChip";
+import type { HomeCamera } from "@/components/home/CameraViewer";
 import type { PlanPin } from "@/lib/plan-pin";
 import { Icon } from "@/components/icons";
 import { formatHumidity, formatTemperature } from "@/lib/format";
@@ -25,6 +26,8 @@ export function HomeHero({
   temperatureC,
   humidityPercent,
   metrics,
+  canCommand = false,
+  cameras = [],
 }: {
   unitName: string;
   rooms: { id?: string; name: string; deviceCount?: number; temperatureC?: number | null; humidityPercent?: number | null }[];
@@ -32,6 +35,8 @@ export function HomeHero({
   temperatureC: number | null;
   humidityPercent: number | null;
   metrics?: MetricStyle[];
+  canCommand?: boolean;
+  cameras?: HomeCamera[];
 }) {
   const [index, setIndex] = useState(0);
   const slides = [
@@ -65,18 +70,25 @@ export function HomeHero({
     <section aria-label="Помещения">
       <div className="film" onScroll={onScroll}>
         {slides.map((slide, position) => (
-          <Link key={`${slide.name}-${position}`} href={slide.href} className="panel w-full shrink-0 snap-center overflow-hidden px-4 py-3">
-            <div className="flex items-start justify-between gap-3">
+          <div key={`${slide.name}-${position}`} className="panel w-full shrink-0 snap-center overflow-hidden px-4 py-3">
+            <Link href={slide.href} className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <h2 className="truncate text-[18px] leading-tight tracking-[-0.03em] text-ink">{position === 0 ? `Объект · ${slide.name}` : slide.name}</h2>
                 <p className="mt-1 text-[13px] text-muted">{devicesLabel(slide.deviceCount)}</p>
               </div>
               <Icon name="chevron" className="h-4 w-4 shrink-0 text-muted" />
-            </div>
+            </Link>
             {slide.plans.length ? (
-              <div className="mt-3 flex gap-2 overflow-x-auto">
+              <div className="home-plans mt-3 flex gap-2 overflow-x-auto">
                 {slide.plans.map((plan) => (
-                  <PlanThumbnail key={plan.floor} image={plan.image} alt={`Планировка ${plan.floor} этажа`} pins={plan.pins} />
+                  <PlanThumbnail
+                    key={plan.floor}
+                    image={plan.image}
+                    alt={`Планировка ${plan.floor} этажа`}
+                    pins={plan.pins}
+                    canCommand={canCommand}
+                    cameras={cameras}
+                  />
                 ))}
               </div>
             ) : null}
@@ -90,7 +102,7 @@ export function HomeHero({
                 ) : null}
               </p>
             ) : null}
-          </Link>
+          </div>
         ))}
       </div>
       {slides.length > 1 ? (

@@ -2,11 +2,12 @@
 
 import { useRef, useState, type PointerEvent } from "react";
 import { useRouter } from "next/navigation";
+import { CameraViewer, orderCameras, type HomeCamera } from "@/components/home/CameraViewer";
 import { Icon, type IconName } from "@/components/icons";
 import { GoogleIcon } from "@/components/GoogleIcon";
 import { commandMessage, runCommand } from "@/lib/command";
 import { deviceIconColorOf } from "@/lib/google-icons";
-import { isClimateKind, isLightingKind, type PlanMetric, type PlanPin } from "@/lib/plan-pin";
+import { isCameraKind, isClimateKind, isLightingKind, type PlanMetric, type PlanPin } from "@/lib/plan-pin";
 
 type Floor = { floor: number; image: string; pins: PlanPin[] };
 
@@ -35,17 +36,69 @@ function pointIn(box: DOMRect, clientX: number, clientY: number) {
   return { x: Math.min(100, Math.max(0, x)), y: Math.min(100, Math.max(0, y)) };
 }
 
-export function PlanThumbnail({ image, alt, pins }: { image: string; alt: string; pins: PlanPin[] }) {
+export function PlanThumbnail({
+  image,
+  alt,
+  pins,
+  canCommand = false,
+  cameras = [],
+}: {
+  image: string;
+  alt: string;
+  pins: PlanPin[];
+  canCommand?: boolean;
+  cameras?: HomeCamera[];
+}) {
+  const [power, setPower] = useState<Record<string, boolean>>({});
+  const [cameraIndex, setCameraIndex] = useState<number | null>(null);
+  const ordered = orderCameras(cameras);
+
+  async function toggleLight(pin: PlanPin) {
+    if (!canCommand || !pin.canToggle) return;
+    const current = power[pin.deviceId] ?? pin.on === true;
+    const next = !current;
+    setPower((map) => ({ ...map, [pin.deviceId]: next }));
+    const result = await runCommand(() =>
+      fetch(`/api/smart-home/devices/${pin.deviceId}/command`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ command: "setPower", value: next }),
+      }),
+    );
+    if (!result.ok || result.payload?.confirmed !== true) {
+      setPower((map) => ({ ...map, [pin.deviceId]: current }));
+    }
+  }
+
+  function openCamera(deviceId: string) {
+    const index = ordered.findIndex((item) => item.id === deviceId);
+    if (index >= 0) setCameraIndex(index);
+  }
+
   return (
-    <div className="home-plan plan-compact relative shrink-0 overflow-hidden rounded-2xl">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={image} alt={alt} className="block h-full w-auto max-w-none" />
-      {pins.map((pin) => (
-        <div key={pin.deviceId} className="absolute z-[1]" style={{ left: `${pin.x}%`, top: `${pin.y}%`, transform: pinShift(pin.x, pin.y) }}>
-          <PlanMark pin={pin} on={pin.on === true} openKey={null} canCommand={false} readOnly onOpenMetric={() => undefined} onToggle={() => undefined} />
-        </div>
-      ))}
-    </div>
+    <>
+      <div className="home-plan plan-compact relative w-full shrink-0 overflow-hidden rounded-2xl sm:w-auto">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={image} alt={alt} className="block h-auto w-full max-w-none sm:h-full sm:w-auto" />
+        {pins.map((pin) => (
+          <div key={pin.deviceId} className="absolute z-[1]" style={{ left: `${pin.x}%`, top: `${pin.y}%`, transform: pinShift(pin.x, pin.y) }}>
+            <PlanMark
+              pin={pin}
+              on={power[pin.deviceId] ?? pin.on === true}
+              openKey={null}
+              canCommand={canCommand}
+              readOnly={isClimateKind(pin.kind)}
+              onOpenMetric={() => undefined}
+              onToggle={() => void toggleLight(pin)}
+              onCamera={() => openCamera(pin.deviceId)}
+            />
+          </div>
+        ))}
+      </div>
+      {cameraIndex !== null ? (
+        <CameraViewer cameras={ordered} index={cameraIndex} onClose={() => setCameraIndex(null)} onSelect={setCameraIndex} />
+      ) : null}
+    </>
   );
 }
 
@@ -53,12 +106,14 @@ export function FloorPlan({
   floors,
   editable = false,
   canCommand = false,
+  cameras = [],
   placing = null,
   onPlaced,
 }: {
   floors: Floor[];
   editable?: boolean;
   canCommand?: boolean;
+  cameras?: HomeCamera[];
   placing?: FloorPlanPlacing | null;
   onPlaced?: () => void;
 }) {
@@ -66,6 +121,7 @@ export function FloorPlan({
   const [notice, setNotice] = useState<string | null>(null);
   const [openMetric, setOpenMetric] = useState<{ deviceId: string; key: string } | null>(null);
   const [power, setPower] = useState<Record<string, boolean>>({});
+  const [cameraIndex, setCameraIndex] = useState<number | null>(null);
   const [ghost, setGhost] = useState<{ floor: number; x: number; y: number } | null>(null);
   const [moving, setMoving] = useState<Moving | null>(null);
   const [moved, setMoved] = useState<Record<string, { x: number; y: number }>>({});
@@ -73,6 +129,7 @@ export function FloorPlan({
   const movingRef = useRef<Moving | null>(null);
   const swallowClick = useRef(false);
   const canMove = editable && !placing;
+  const orderedCameras = orderCameras(cameras);
 
   const [seenFloors, setSeenFloors] = useState(floors);
   if (seenFloors !== floors) {
@@ -170,6 +227,11 @@ export function FloorPlan({
     }
   }
 
+  function openCamera(deviceId: string) {
+    const index = orderedCameras.findIndex((item) => item.id === deviceId);
+    if (index >= 0) setCameraIndex(index);
+  }
+
   function pointFromEvent(event: PointerEvent<HTMLDivElement>) {
     return pointIn(event.currentTarget.getBoundingClientRect(), event.clientX, event.clientY);
   }
@@ -250,6 +312,7 @@ export function FloorPlan({
                       setOpenMetric((current) => (current?.deviceId === pin.deviceId && current.key === key ? null : { deviceId: pin.deviceId, key }))
                     }
                     onToggle={() => void toggleLight(pin)}
+                    onCamera={() => openCamera(pin.deviceId)}
                   />
                 </div>
                 );
@@ -298,6 +361,9 @@ export function FloorPlan({
       {editable && placing ? <p className="text-[13px] text-muted">Отпустите кнопку мыши, чтобы поставить устройство.</p> : null}
       {canMove && floors.some((plan) => plan.pins.length) ? <p className="text-[13px] text-muted">Перетащите иконку на плане, чтобы передвинуть устройство.</p> : null}
       {notice ? <p className="text-[13px] text-muted">{notice}</p> : null}
+      {cameraIndex !== null ? (
+        <CameraViewer cameras={orderedCameras} index={cameraIndex} onClose={() => setCameraIndex(null)} onSelect={setCameraIndex} />
+      ) : null}
     </div>
   );
 }
@@ -311,6 +377,7 @@ function PlanMark({
   readOnly = false,
   onOpenMetric,
   onToggle,
+  onCamera,
 }: {
   pin: PlanPin;
   on: boolean;
@@ -320,6 +387,7 @@ function PlanMark({
   readOnly?: boolean;
   onOpenMetric: (key: string) => void;
   onToggle: () => void;
+  onCamera?: () => void;
 }) {
   const tint = deviceIconColorOf(pin.iconColor);
   if (isLightingKind(pin.kind)) {
@@ -380,6 +448,25 @@ function PlanMark({
       <div className="plan-climate opacity-80">
         <span className="px-2 py-1 text-[12px] text-ink">{pin.name}</span>
       </div>
+    );
+  }
+
+  if (isCameraKind(pin.kind) && !ghost) {
+    return (
+      <button
+        type="button"
+        title={pin.name}
+        className="plan-dot plan-camera"
+        style={tint ? { color: tint } : undefined}
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.stopPropagation();
+          onCamera?.();
+        }}
+      >
+        <GoogleIcon name={pin.icon} kind={pin.kind} color={tint} />
+        <span className="sr-only">{pin.name}</span>
+      </button>
     );
   }
 

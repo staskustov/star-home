@@ -67,6 +67,10 @@ export function isClimateKind(kind: string) {
   return kind === "CLIMATE" || kind === "Климат" || kind === "WEATHER";
 }
 
+export function isCameraKind(kind: string) {
+  return kind === "CAMERA" || kind === "Камера";
+}
+
 function formatMetric(value: number, precision: number, suffix: string) {
   const formatted = new Intl.NumberFormat("ru-RU", {
     minimumFractionDigits: precision,

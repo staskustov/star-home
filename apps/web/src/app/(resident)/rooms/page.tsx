@@ -93,7 +93,7 @@ export default async function RoomsPage() {
       )}
 
       <h2 className="mt-8 text-[19px] tracking-[-0.02em] text-ink">План</h2>
-      <FloorPlan floors={floors} canCommand={home.canCommand === true} />
+      <FloorPlan floors={floors} canCommand={home.canCommand === true} cameras={home.cameras} />
     </section>
   );
 }
