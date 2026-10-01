@@ -989,6 +989,30 @@ select.control,
   display: none;
 }
 
+.plan-arrow {
+  position: absolute;
+  top: 50%;
+  z-index: 3;
+  display: none;
+  height: 2.25rem;
+  width: 2.25rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid var(--panel-line);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  color: var(--ink);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+  transform: translateY(-50%);
+  backdrop-filter: blur(8px);
+}
+
+@media (min-width: 768px) {
+  .plan-arrow {
+    display: flex;
+  }
+}
+
 .dock-link {
   display: flex;
   min-height: 62px;

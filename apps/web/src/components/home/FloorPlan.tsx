@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type PointerEvent } from "react";
+import { useRef, useState, type PointerEvent, type UIEvent } from "react";
 import { useRouter } from "next/navigation";
 import { CameraViewer, orderCameras, type HomeCamera } from "@/components/home/CameraViewer";
 import { Icon, type IconName } from "@/components/icons";
@@ -128,6 +128,7 @@ export function FloorPlan({
   const [moving, setMoving] = useState<Moving | null>(null);
   const [moved, setMoved] = useState<Record<string, { x: number; y: number }>>({});
   const [floorIndex, setFloorIndex] = useState(0);
+  const trackRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
   const movingRef = useRef<Moving | null>(null);
   const swallowClick = useRef(false);
@@ -145,9 +146,7 @@ export function FloorPlan({
     return <p className="panel mt-4 px-5 py-5 text-[15px] text-muted">Планировка для этого дома ещё не загружена.</p>;
   }
 
-  const activeIndex = Math.min(floorIndex, floors.length - 1);
-  const visible = switcher ? [floors[activeIndex]!] : floors;
-
+  const activeIndex = Math.min(Math.max(floorIndex, 0), floors.length - 1);
   async function place(deviceId: string, floor: number, x: number, y: number) {
     setNotice(null);
     const result = await runCommand(() =>
@@ -268,32 +267,28 @@ export function FloorPlan({
     void place(placing.deviceId, floor, next.x, next.y);
   }
 
-  return (
-    <div className={switcher ? "space-y-3" : "mt-4 space-y-4"}>
-      {switcher && floors.length > 1 ? (
-        <div className="chip-row w-full justify-center md:w-full" role="tablist" aria-label="Этаж плана">
-          {floors.map((plan, index) => {
-            const selected = index === activeIndex;
-            return (
-              <button
-                key={plan.floor}
-                type="button"
-                role="tab"
-                aria-selected={selected}
-                aria-checked={selected}
-                className="segment-item"
-                onClick={() => setFloorIndex(index)}
-              >
-                {plan.floor} этаж
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
-      {visible.map((plan) => {
+  function onTrackScroll(event: UIEvent<HTMLDivElement>) {
+    const target = event.currentTarget;
+    const next = Math.round(target.scrollLeft / (target.clientWidth + 12));
+    if (next !== floorIndex) setFloorIndex(next);
+  }
+
+  function goToFloor(index: number) {
+    const target = Math.min(floors.length - 1, Math.max(0, index));
+    setFloorIndex(target);
+    const track = trackRef.current;
+    track?.scrollTo({ left: target * (track.clientWidth + 12), behavior: "smooth" });
+  }
+
+  const slider = switcher && floors.length > 1;
+
+  const figures = floors.map((plan) => {
         const dropHere = Boolean(placing && placing.floor === plan.floor);
         return (
-          <figure key={plan.floor} className={`panel overflow-hidden ${dropHere ? "ring-2 ring-accent/70" : ""}`}>
+          <figure
+            key={plan.floor}
+            className={`panel overflow-hidden ${slider ? "w-full shrink-0 snap-center" : ""} ${dropHere ? "ring-2 ring-accent/70" : ""}`}
+          >
             {switcher ? null : (
               <figcaption className="flex items-center justify-between gap-3 px-5 py-3 text-[15px] text-ink">
                 <span>{plan.floor} этаж</span>
@@ -386,7 +381,39 @@ export function FloorPlan({
             </div>
           </figure>
         );
-      })}
+  });
+
+  return (
+    <div className={switcher ? "space-y-2" : "mt-4 space-y-4"}>
+      {slider ? (
+        <div className="relative" role="group" aria-roledescription="слайдер" aria-label={`План, ${floors[activeIndex]!.floor} этаж`}>
+          <div ref={trackRef} className="film" onScroll={onTrackScroll}>
+            {figures}
+          </div>
+          {activeIndex > 0 ? (
+            <button type="button" className="plan-arrow left-2" aria-label="Предыдущий этаж" onClick={() => goToFloor(activeIndex - 1)}>
+              <Icon name="chevron" className="h-4 w-4 rotate-180" />
+            </button>
+          ) : null}
+          {activeIndex < floors.length - 1 ? (
+            <button type="button" className="plan-arrow right-2" aria-label="Следующий этаж" onClick={() => goToFloor(activeIndex + 1)}>
+              <Icon name="chevron" className="h-4 w-4" />
+            </button>
+          ) : null}
+        </div>
+      ) : (
+        figures
+      )}
+      {slider ? (
+        <div className="flex justify-center gap-1.5" aria-hidden>
+          {floors.map((plan, index) => (
+            <span
+              key={plan.floor}
+              className={`h-1.5 rounded-full transition-all duration-200 ${index === activeIndex ? "w-5 bg-ink" : "w-1.5 bg-muted/50"}`}
+            />
+          ))}
+        </div>
+      ) : null}
       {editable && placing ? <p className="text-[13px] text-muted">Отпустите кнопку мыши, чтобы поставить устройство.</p> : null}
       {canMove && floors.some((plan) => plan.pins.length) ? <p className="text-[13px] text-muted">Перетащите иконку на плане, чтобы передвинуть устройство.</p> : null}
       {notice ? <p className="text-[13px] text-muted">{notice}</p> : null}

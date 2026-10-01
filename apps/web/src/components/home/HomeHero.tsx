@@ -59,25 +59,22 @@ export function HomeHero({
   return (
     <section aria-label="Помещения" className="w-full space-y-3">
       <div className="home-object space-y-3">
-      <div className="panel home-object-head overflow-hidden px-4 py-3">
-        <Link href="/rooms" className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h2 className="truncate text-[18px] leading-tight tracking-[-0.03em] text-ink">Объект · {unitName}</h2>
-            <p className="mt-1 text-[13px] text-muted">{devicesLabel(deviceCount)}</p>
-          </div>
-          <Icon name="chevron" className="h-4 w-4 shrink-0 text-muted" />
-        </Link>
-        {temperatureC !== null || humidityPercent !== null ? (
-          <p className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[15px]">
-            {temperatureC !== null ? (
-              <MetricChip compact icon={temp.icon} color={temp.color} label={temp.label} value={formatTemperature(temperatureC)} />
-            ) : null}
-            {humidityPercent !== null ? (
-              <MetricChip compact icon={humidity.icon} color={humidity.color} label={humidity.label} value={formatHumidity(humidityPercent)} />
-            ) : null}
-          </p>
-        ) : null}
-      </div>
+      <Link
+        href="/rooms"
+        aria-label={`Помещения · ${unitName}`}
+        className="panel home-object-head flex items-center justify-between gap-3 overflow-hidden px-4 py-2.5"
+      >
+        <span className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-[15px]">
+          <span className="text-[13px] text-muted">{devicesLabel(deviceCount)}</span>
+          {temperatureC !== null ? (
+            <MetricChip compact icon={temp.icon} color={temp.color} label={temp.label} value={formatTemperature(temperatureC)} />
+          ) : null}
+          {humidityPercent !== null ? (
+            <MetricChip compact icon={humidity.icon} color={humidity.color} label={humidity.label} value={formatHumidity(humidityPercent)} />
+          ) : null}
+        </span>
+        <Icon name="chevron" className="h-4 w-4 shrink-0 text-muted" />
+      </Link>
 
       {plans.length ? <FloorPlan floors={plans} canCommand={canCommand} cameras={cameras} switcher /> : null}
       </div>
