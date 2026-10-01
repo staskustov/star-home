@@ -40,14 +40,14 @@ export function ProfileAvatar({
 
   return (
     <div className="relative">
-      <button type="button" className="avatar overflow-hidden lg:hidden" aria-label="Меню жителя" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
+      <button type="button" className="avatar overflow-hidden md:hidden" aria-label="Меню жителя" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
         {face}
       </button>
-      <Link href="/profile" aria-label="Настройки" className="avatar hidden overflow-hidden lg:flex">
+      <Link href="/profile" aria-label="Настройки" className="avatar hidden overflow-hidden md:flex">
         {face}
       </Link>
       {open ? (
-        <div className="fixed inset-0 z-30 lg:hidden">
+        <div className="fixed inset-0 z-30 md:hidden">
           <button type="button" className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" aria-label="Закрыть меню" onClick={() => setOpen(false)} />
           <div id="resident-menu" className="sheet fade-in">
             <ul>

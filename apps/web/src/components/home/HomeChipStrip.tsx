@@ -46,27 +46,29 @@ export function HomeChipStrip({
   const even = chips.length === 4;
 
   return (
-    <div role="list" aria-label={label} className={even ? "chip-row chip-row-even" : "chip-row"}>
-      {chips.map((chip) => {
-        const selected = chip.id === activeId;
-        return (
-          <button
-            key={chip.id}
-            type="button"
-            role="listitem"
-            aria-pressed={selected}
-            aria-checked={selected}
-            onClick={() => {
-              setPickedId(chip.id);
-              onSelect(chip);
-            }}
-            className="segment-item"
-          >
-            <Icon name={chipIcon(chip.icon)} className="h-5 w-5" />
-            {chip.name}
-          </button>
-        );
-      })}
+    <div className="home-desk-center w-full">
+      <div role="list" aria-label={label} className={even ? "chip-row chip-row-even" : "chip-row"}>
+        {chips.map((chip) => {
+          const selected = chip.id === activeId;
+          return (
+            <button
+              key={chip.id}
+              type="button"
+              role="listitem"
+              aria-pressed={selected}
+              aria-checked={selected}
+              onClick={() => {
+                setPickedId(chip.id);
+                onSelect(chip);
+              }}
+              className="segment-item"
+            >
+              <Icon name={chipIcon(chip.icon)} className="h-5 w-5" />
+              {chip.name}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

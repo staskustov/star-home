@@ -67,11 +67,11 @@ export function HomeHero({
   }
 
   return (
-    <section aria-label="Помещения">
+    <section aria-label="Помещения" className="home-rooms-desk w-full">
       <div className="film" onScroll={onScroll}>
         {slides.map((slide, position) => (
           <div key={`${slide.name}-${position}`} className="panel w-full shrink-0 snap-center overflow-hidden px-4 py-3">
-            <Link href={slide.href} className="flex items-start justify-between gap-3">
+            <Link href={slide.href} className="flex shrink-0 items-start justify-between gap-3">
               <div className="min-w-0">
                 <h2 className="truncate text-[18px] leading-tight tracking-[-0.03em] text-ink">{position === 0 ? `Объект · ${slide.name}` : slide.name}</h2>
                 <p className="mt-1 text-[13px] text-muted">{devicesLabel(slide.deviceCount)}</p>
@@ -79,7 +79,7 @@ export function HomeHero({
               <Icon name="chevron" className="h-4 w-4 shrink-0 text-muted" />
             </Link>
             {slide.plans.length ? (
-              <div className="home-plans mt-3 flex min-w-0 gap-2 overflow-x-auto sm:overflow-x-auto">
+              <div className="home-plans mt-3 flex min-h-0 min-w-0 flex-1 gap-2 overflow-x-auto sm:overflow-x-auto">
                 {slide.plans.map((plan) => (
                   <PlanThumbnail
                     key={plan.floor}
@@ -93,7 +93,7 @@ export function HomeHero({
               </div>
             ) : null}
             {slide.temperatureC !== null || slide.humidityPercent !== null ? (
-              <p className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[15px]">
+              <p className="mt-2 flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 text-[15px]">
                 {slide.temperatureC !== null ? (
                   <MetricChip compact icon={temp.icon} color={temp.color} label={temp.label} value={formatTemperature(slide.temperatureC)} />
                 ) : null}

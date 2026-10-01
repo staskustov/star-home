@@ -41,6 +41,39 @@ function pagesOf(items: QuickTile[]) {
   return pages;
 }
 
+function QuickTileButton({ tile, onSelect }: { tile: QuickTile; onSelect: (chip: ActionChipTile) => void }) {
+  return (
+    <button
+      type="button"
+      className="home-quick-tile w-full"
+      onClick={() =>
+        onSelect({
+          id: tile.id,
+          name: tile.name,
+          icon: tile.icon,
+          kind: "ACTION",
+          action: tile.action,
+          deviceId: tile.deviceId,
+          latch: tile.latch,
+        })
+      }
+    >
+      <span className="tile-icon">
+        <Icon name={tile.icon} className="h-[18px] w-[18px]" />
+      </span>
+      <span className="min-w-0 flex-1 text-left">
+        <span className="block truncate text-[16px] leading-tight text-ink">{tile.name}</span>
+        {tile.status ? (
+          <span className={`mt-0.5 block text-[13px] ${tile.tone === "danger" ? "text-danger" : tile.tone === "success" ? "text-success" : "text-muted"}`}>
+            {tile.status}
+          </span>
+        ) : null}
+      </span>
+      <Icon name="chevron" className="h-4 w-4 shrink-0 text-muted" />
+    </button>
+  );
+}
+
 export function HomeQuickGrid({
   points,
   chips,
@@ -134,52 +167,32 @@ export function HomeQuickGrid({
   }
 
   return (
-    <section aria-label="Быстрые кнопки" className="min-w-0">
-      <div className="home-quick-film" onScroll={onScroll}>
+    <section aria-label="Быстрые кнопки" className="min-w-0 w-full">
+      <div className="home-quick-film home-quick-mobile" onScroll={onScroll}>
         {pages.map((page, pageIndex) => (
           <div key={pageIndex} className="home-quick-page" role="list">
             {page.map((tile) => (
               <div key={tile.id} role="listitem" className="min-w-0">
-              <button
-                type="button"
-                className="home-quick-tile w-full"
-                onClick={() =>
-                  onSelect({
-                    id: tile.id,
-                    name: tile.name,
-                    icon: tile.icon,
-                    kind: "ACTION",
-                    action: tile.action,
-                    deviceId: tile.deviceId,
-                    latch: tile.latch,
-                  })
-                }
-              >
-                <span className="tile-icon">
-                  <Icon name={tile.icon} className="h-[18px] w-[18px]" />
-                </span>
-                <span className="min-w-0 flex-1 text-left">
-                  <span className="block truncate text-[16px] leading-tight text-ink">{tile.name}</span>
-                  {tile.status ? (
-                    <span className={`mt-0.5 block text-[13px] ${tile.tone === "danger" ? "text-danger" : tile.tone === "success" ? "text-success" : "text-muted"}`}>
-                      {tile.status}
-                    </span>
-                  ) : null}
-                </span>
-                <Icon name="chevron" className="h-4 w-4 shrink-0 text-muted" />
-              </button>
+                <QuickTileButton tile={tile} onSelect={onSelect} />
               </div>
             ))}
           </div>
         ))}
       </div>
       {pages.length > 1 ? (
-        <div className="mt-2 flex justify-center gap-1.5" aria-hidden>
+        <div className="home-quick-dots mt-2 flex justify-center gap-1.5" aria-hidden>
           {pages.map((_, pageIndex) => (
             <span key={pageIndex} className={`h-1.5 rounded-full transition-all duration-200 ${pageIndex === index ? "w-5 bg-ink" : "w-1.5 bg-muted/50"}`} />
           ))}
         </div>
       ) : null}
+      <div className="home-quick-desk" role="list">
+        {tiles.map((tile) => (
+          <div key={tile.id} role="listitem" className="home-quick-desk-item">
+            <QuickTileButton tile={tile} onSelect={onSelect} />
+          </div>
+        ))}
+      </div>
     </section>
   );
 }

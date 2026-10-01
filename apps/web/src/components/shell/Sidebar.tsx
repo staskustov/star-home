@@ -16,12 +16,17 @@ export function Sidebar({
   navLabel = "Разделы",
 }: {
   items: NavItem[];
-  labels?: "always" | "from-lg";
+  labels?: "always" | "from-lg" | "never";
   navLabel?: string;
 }) {
   const pathname = usePathname();
-  const labelClass = labels === "from-lg" ? "sr-only lg:not-sr-only" : "";
-  const linkClass = labels === "from-lg" ? "justify-center px-0 lg:justify-start lg:px-3" : "";
+  const labelClass = labels === "never" ? "sr-only" : labels === "from-lg" ? "sr-only lg:not-sr-only" : "";
+  const linkClass =
+    labels === "never"
+      ? "justify-center px-0"
+      : labels === "from-lg"
+        ? "justify-center px-0 lg:justify-start lg:px-3"
+        : "";
 
   return (
     <nav aria-label={navLabel}>
@@ -33,6 +38,7 @@ export function Sidebar({
               <Link
                 href={item.href}
                 aria-current={active ? "page" : undefined}
+                title={labels === "never" ? item.label : undefined}
                 className={`flex items-center gap-3 rounded-2xl px-3 py-2.5 text-[15px] font-medium tracking-[-0.01em] transition-colors duration-200 ${
                   active ? "bg-accent/15 text-ink" : "text-muted hover:bg-surface-muted/50 hover:text-ink"
                 } ${linkClass}`}

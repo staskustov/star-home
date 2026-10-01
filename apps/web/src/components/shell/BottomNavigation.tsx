@@ -10,7 +10,7 @@ export function BottomNavigation({ items, dock }: { items: NavItem[]; dock: stri
   const main = items.filter((item) => dock.includes(item.href));
 
   return (
-    <nav aria-label="Разделы" className="dock lg:hidden">
+    <nav aria-label="Разделы" className="dock md:hidden">
       <ul className="mx-auto grid max-w-[680px]" style={{ gridTemplateColumns: `repeat(${main.length}, minmax(0, 1fr))` }}>
         {main.map((item) => {
           const active = pathname === item.href || (item.href !== "/home" && pathname.startsWith(`${item.href}/`));

@@ -12,8 +12,8 @@ export function CameraBlock({ cameras }: { cameras: HomeCamera[] }) {
 
   return (
     <>
-      <section aria-label="Камеры">
-        <div className="film">
+      <section aria-label="Камеры" className="w-full">
+        <div className="film camera-film">
           {ordered.map((item, index) => (
             <button
               key={item.id ?? item.name}
@@ -21,13 +21,15 @@ export function CameraBlock({ cameras }: { cameras: HomeCamera[] }) {
               aria-haspopup="dialog"
               aria-expanded={viewer === index}
               onClick={() => setViewer(index)}
-              className={`panel shrink-0 snap-center overflow-hidden px-4 py-3 text-left ${ordered.length === 1 ? "w-full" : "w-[78%]"}`}
+              className={`panel shrink-0 snap-center overflow-hidden px-4 py-3 text-left camera-tile ${
+                ordered.length === 1 ? "w-full md:w-auto" : "w-[78%] md:w-auto"
+              }`}
             >
               <span className="flex items-center gap-3">
                 <span className="tile-icon">
                   <Icon name="camera" className="h-[18px] w-[18px]" />
                 </span>
-                <span className="min-w-0 flex-1">
+                <span className="min-w-0 flex-1 md:flex-none">
                   <span className="block truncate text-[17px] tracking-[-0.02em] text-ink">{item.name}</span>
                   <span className="mt-0.5 block text-[13px] text-muted">
                     {item.scope === "project" ? "Проект" : "Объект"}
