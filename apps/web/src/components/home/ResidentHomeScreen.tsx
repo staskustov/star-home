@@ -9,9 +9,11 @@ import { CameraBlock } from "@/components/home/CameraBlock";
 import type { ActionChipTile } from "@/components/home/HomeActionStrip";
 import { HomeChipStrip, type HomeChipTile } from "@/components/home/HomeChipStrip";
 import { HomeCover } from "@/components/home/HomeCover";
+import { HomeHeaderGreeting } from "@/components/home/HomeHeaderGreeting";
 import { HomeHero } from "@/components/home/HomeHero";
 import { HomeQuickGrid } from "@/components/home/HomeQuickGrid";
 import { ServiceDialog } from "@/components/home/ServiceDialog";
+import { WeatherStrip } from "@/components/home/WeatherStrip";
 import { Icon } from "@/components/icons";
 import { LiveRefresh } from "@/components/pwa/LiveRefresh";
 import { StatusToast } from "@/components/ui/StatusToast";
@@ -203,7 +205,11 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
         weather={data.weather}
         indoor={data.climate}
       />
+      <HomeHeaderGreeting place={`${data.object.name} · ${data.unit.name}`} greeting={greeting} />
       <div className="home-body">
+        <div className="home-weather-panel panel px-4 py-3">
+          <WeatherStrip weather={data.weather} indoor={data.climate} ticker />
+        </div>
         {data.balance ? (
           <Link href="/payments" className="panel flex items-center gap-3 px-4 py-3">
             <span className="tile-icon">

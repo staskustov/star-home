@@ -29,11 +29,12 @@ function ResidentChromeInner({
     >
       <div className="hidden md:block">{sidebar}</div>
       <div className="min-w-0">
-        <header className="resident-header sticky top-0 z-20 flex items-center justify-between gap-3 overflow-visible border-b border-line/60 bg-bg px-5 py-3 md:justify-end md:px-8">
+        <header className="resident-header sticky top-0 z-20 flex items-center justify-between gap-3 overflow-visible border-b border-line/60 bg-bg px-5 py-3 md:px-8">
           <p className="flex min-w-0 items-center gap-2 text-[15px] font-medium tracking-[-0.02em] text-ink md:hidden">
             <StarLogo className="h-[18px] w-[18px] shrink-0" />
             STAR HOME
           </p>
+          <div id="resident-header-slot" className="hidden min-w-0 flex-1 md:block" />
           <TopBarActions menuItems={menuItems} />
         </header>
         <div

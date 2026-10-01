@@ -58,7 +58,8 @@ export function HomeHero({
 
   return (
     <section aria-label="Помещения" className="w-full space-y-3">
-      <div className="panel overflow-hidden px-4 py-3">
+      <div className="home-object space-y-3">
+      <div className="panel home-object-head overflow-hidden px-4 py-3">
         <Link href="/rooms" className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h2 className="truncate text-[18px] leading-tight tracking-[-0.03em] text-ink">Объект · {unitName}</h2>
@@ -79,6 +80,7 @@ export function HomeHero({
       </div>
 
       {plans.length ? <FloorPlan floors={plans} canCommand={canCommand} cameras={cameras} switcher /> : null}
+      </div>
 
       {slides.length ? (
         <>
