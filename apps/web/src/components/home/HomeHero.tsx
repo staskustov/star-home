@@ -79,7 +79,7 @@ export function HomeHero({
               <Icon name="chevron" className="h-4 w-4 shrink-0 text-muted" />
             </Link>
             {slide.plans.length ? (
-              <div className="home-plans mt-3 flex gap-2 overflow-x-auto">
+              <div className="home-plans mt-3 flex min-w-0 gap-2 overflow-x-auto sm:overflow-x-auto">
                 {slide.plans.map((plan) => (
                   <PlanThumbnail
                     key={plan.floor}

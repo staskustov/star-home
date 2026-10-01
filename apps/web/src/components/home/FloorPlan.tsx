@@ -77,9 +77,9 @@ export function PlanThumbnail({
 
   return (
     <>
-      <div className="home-plan plan-compact relative w-full shrink-0 overflow-hidden rounded-2xl sm:w-auto">
+      <div className="home-plan plan-compact relative w-full min-w-0 shrink-0 overflow-hidden rounded-2xl sm:w-auto">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={image} alt={alt} className="block h-auto w-full max-w-none sm:h-full sm:w-auto" />
+        <img src={image} alt={alt} className="block h-auto w-full sm:h-full sm:w-auto" />
         {pins.map((pin) => (
           <div key={pin.deviceId} className="absolute z-[1]" style={{ left: `${pin.x}%`, top: `${pin.y}%`, transform: pinShift(pin.x, pin.y) }}>
             <PlanMark
