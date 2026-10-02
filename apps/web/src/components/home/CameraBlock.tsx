@@ -3,6 +3,7 @@
 import { useState, type UIEvent } from "react";
 import { Icon } from "@/components/icons";
 import { CameraViewer, orderCameras, type HomeCamera } from "@/components/home/CameraViewer";
+import { HomeSection } from "@/components/home/HomeSection";
 
 export function CameraBlock({ cameras }: { cameras: HomeCamera[] }) {
   const ordered = orderCameras(cameras);
@@ -18,7 +19,7 @@ export function CameraBlock({ cameras }: { cameras: HomeCamera[] }) {
   }
 
   return (
-    <>
+    <HomeSection title="Камеры" linkLabel="Все камеры" onAction={() => setViewer(0)} className="home-cams">
       <div className="cam-grid" onScroll={onScroll}>
         {ordered.map((item, position) => (
           <button
@@ -63,6 +64,6 @@ export function CameraBlock({ cameras }: { cameras: HomeCamera[] }) {
       {viewer !== null ? (
         <CameraViewer cameras={ordered} index={viewer} onClose={() => setViewer(null)} onSelect={setViewer} />
       ) : null}
-    </>
+    </HomeSection>
   );
 }

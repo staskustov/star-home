@@ -1694,13 +1694,40 @@ select.control,
 
 /* Quick actions */
 
-.quick-grid {
+.quick-pages {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.quick-pages::-webkit-scrollbar {
+  display: none;
+}
+
+.quick-page {
+  display: contents;
+}
+
+.quick-cell {
+  flex: 0 0 calc((100% - 16px) / 3);
+  min-width: 0;
+  scroll-snap-align: start;
+}
+
+.quick-dots {
+  display: none;
+}
+
+.quick-all {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
   gap: 8px;
 }
 
-.quick-grid .home-quick-tile {
+.quick-pages .home-quick-tile {
   min-height: 6rem;
   height: 100%;
   flex-direction: column;
@@ -1708,6 +1735,166 @@ select.control,
   justify-content: space-between;
   gap: 8px;
   padding: 10px;
+}
+
+.quick-all .quick-chevron {
+  display: block;
+}
+
+/* Home status */
+
+.home-status {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: 20px;
+  border: 1px solid var(--panel-line);
+  background: var(--surface);
+  box-shadow:
+    0 1px 1px rgba(26, 26, 26, 0.04),
+    0 12px 32px rgba(63, 61, 57, 0.05);
+}
+
+.home-status-icon {
+  display: grid;
+  height: 2.5rem;
+  width: 2.5rem;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--status-tone);
+  color: #fff;
+}
+
+.home-status-mark {
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.home-status-text {
+  display: block;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.home-status-title {
+  display: block;
+  color: var(--status-tone);
+  font-size: 16px;
+  font-weight: 560;
+  letter-spacing: -0.02em;
+}
+
+.home-status-detail {
+  display: block;
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-status-chevron {
+  height: 16px;
+  width: 16px;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.home-status-ok {
+  --status-tone: #3f8f5a;
+}
+
+.home-status-warning {
+  --status-tone: #c27a12;
+}
+
+.home-status-danger {
+  --status-tone: #c2412d;
+}
+
+/* Dialog */
+
+.home-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: color-mix(in srgb, #000 45%, transparent);
+  backdrop-filter: blur(4px);
+}
+
+.home-dialog-panel {
+  display: flex;
+  width: 100%;
+  max-height: 85dvh;
+  flex-direction: column;
+  border-radius: 24px 24px 0 0;
+  background: var(--bg);
+  padding: 14px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+  box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.2);
+}
+
+.home-dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.home-dialog-title {
+  margin: 0;
+  color: var(--ink);
+  font-size: 18px;
+  font-weight: 560;
+  letter-spacing: -0.02em;
+}
+
+.home-dialog-body {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+}
+
+.home-dialog-full .home-dialog-panel {
+  height: 100dvh;
+  max-height: none;
+  border-radius: 0;
+  padding-top: calc(14px + env(safe-area-inset-top, 0px));
+}
+
+.home-dialog-full .home-dialog-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.plan-full {
+  width: 100%;
+  max-width: 72rem;
+  margin: auto;
+}
+
+.plan-expand {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 3;
+  display: grid;
+  height: 2.25rem;
+  width: 2.25rem;
+  place-items: center;
+  border-radius: 999px;
+  border: 1px solid var(--panel-line);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  color: var(--ink);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+  backdrop-filter: blur(8px);
 }
 
 .quick-text {
@@ -2049,11 +2236,33 @@ select.control,
     margin-bottom: 0;
   }
 
-  .quick-grid {
-    grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  .quick-pages {
+    gap: 0;
   }
 
-  .quick-grid .home-quick-tile {
+  .quick-page {
+    display: grid;
+    flex: 0 0 100%;
+    min-width: 0;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-content: start;
+    gap: 8px;
+    scroll-snap-align: start;
+  }
+
+  .quick-cell {
+    flex: none;
+  }
+
+  .quick-dots {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+    margin-top: 10px;
+  }
+
+  .quick-pages .home-quick-tile,
+  .quick-all .home-quick-tile {
     min-height: 4.25rem;
     flex-direction: row;
     align-items: center;
@@ -2068,10 +2277,35 @@ select.control,
     display: block;
   }
 
+  .home-dialog {
+    align-items: center;
+    padding: 24px;
+  }
+
+  .home-dialog-panel {
+    max-width: 44rem;
+    max-height: 80dvh;
+    border-radius: 24px;
+    padding: 18px 20px 20px;
+  }
+
+  .home-dialog-full {
+    padding: 0;
+  }
+
+  .home-dialog-full .home-dialog-panel {
+    max-width: none;
+    padding: 18px 32px 24px;
+  }
+
   .cam-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     overflow: visible;
+  }
+
+  .cam-grid .cam-tile:nth-child(n + 3) {
+    display: none;
   }
 
   .cam-dots {
@@ -2095,20 +2329,42 @@ select.control,
   .home-split {
     display: grid;
     grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
-    align-items: start;
+    align-items: stretch;
     gap: 16px;
   }
 
   .home-split-main {
     order: 0;
+    display: flex;
+    flex-direction: column;
   }
 
-  .home-split-side .quick-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .home-plan-body {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    justify-content: center;
   }
 
-  .home-split-side .cam-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .home-split-side .home-cams {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+  }
+
+  .home-split-side .home-cams .cam-grid {
+    flex: 1 1 auto;
+    grid-auto-rows: 1fr;
+  }
+
+  .home-split-side .cam-tile {
+    min-height: 0;
+  }
+
+  .home-split-side .cam-well {
+    flex: 1 1 auto;
+    min-height: 6rem;
+    aspect-ratio: auto;
   }
 }
 

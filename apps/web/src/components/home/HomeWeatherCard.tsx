@@ -2,15 +2,6 @@ import { Icon } from "@/components/icons";
 import { asMetricIcon } from "@/components/home/MetricChip";
 import { outdoorMetrics, type OutdoorWeather } from "@/components/home/WeatherStrip";
 
-const radiationNormUSv = 0.3;
-
-function captionFor(weather?: OutdoorWeather | null) {
-  if (weather?.radiationUSv !== null && weather?.radiationUSv !== undefined && weather.radiationUSv <= radiationNormUSv) {
-    return "Радиационный фон в норме";
-  }
-  return "Уличные датчики";
-}
-
 export function HomeWeatherCard({
   weather,
   indoor,
@@ -40,10 +31,11 @@ export function HomeWeatherCard({
             </span>
           </span>
         ) : null}
-        <p className="weather-card-caption">
-          {captionFor(weather)}
-          {sourceTag ? <span className="weather-card-tag">{sourceTag}</span> : null}
-        </p>
+        {sourceTag ? (
+          <p className="weather-card-caption">
+            <span className="weather-card-tag">{sourceTag}</span>
+          </p>
+        ) : null}
       </div>
       {metrics.length ? (
         <ul className="weather-card-metrics">

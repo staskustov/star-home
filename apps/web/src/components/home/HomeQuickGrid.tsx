@@ -1,9 +1,14 @@
 "use client";
 
+import { useState, type UIEvent } from "react";
+import { HomeDialog } from "@/components/home/HomeDialog";
+import { HomeSection } from "@/components/home/HomeSection";
 import { Icon, type IconName } from "@/components/icons";
 import { homeChipIcons } from "@/lib/home-chips";
 import type { AccessPoint } from "@/components/access/AccessPointsList";
 import type { ActionChipTile } from "@/components/home/HomeActionStrip";
+
+const tilesPerPage = 4;
 
 type QuickTile = {
   id: string;
@@ -82,6 +87,8 @@ export function HomeQuickGrid({
   serviceStatus?: string;
   onSelect: (chip: ActionChipTile) => void;
 }) {
+  const [page, setPage] = useState(0);
+  const [allOpen, setAllOpen] = useState(false);
   const extras = chips.filter(
     (chip) =>
       chip.action !== "open-gate" &&
@@ -146,13 +153,52 @@ export function HomeQuickGrid({
   ];
   if (!tiles.length) return null;
 
+  const pages: QuickTile[][] = [];
+  for (let start = 0; start < tiles.length; start += tilesPerPage) pages.push(tiles.slice(start, start + tilesPerPage));
+  const activePage = Math.min(page, pages.length - 1);
+
+  function onScroll(event: UIEvent<HTMLDivElement>) {
+    const target = event.currentTarget;
+    const next = Math.round(target.scrollLeft / Math.max(target.clientWidth, 1));
+    if (next !== page) setPage(next);
+  }
+
+  function pick(chip: ActionChipTile) {
+    setAllOpen(false);
+    onSelect(chip);
+  }
+
   return (
-    <div className="quick-grid" role="list" aria-label="Быстрые действия">
-      {tiles.map((tile) => (
-        <div key={tile.id} role="listitem" className="min-w-0">
-          <QuickTileButton tile={tile} onSelect={onSelect} />
+    <HomeSection title="Быстрые действия" linkLabel="Все действия" onAction={() => setAllOpen(true)} className="home-quick">
+      <div className="quick-pages" role="list" aria-label="Быстрые действия" onScroll={onScroll}>
+        {pages.map((items, index) => (
+          <div key={index} className="quick-page">
+            {items.map((tile) => (
+              <div key={tile.id} role="listitem" className="quick-cell">
+                <QuickTileButton tile={tile} onSelect={onSelect} />
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+      {pages.length > 1 ? (
+        <div className="quick-dots" aria-hidden>
+          {pages.map((_, index) => (
+            <span key={index} className={`h-1.5 rounded-full transition-all duration-200 ${index === activePage ? "w-5 bg-ink" : "w-1.5 bg-muted/50"}`} />
+          ))}
         </div>
-      ))}
-    </div>
+      ) : null}
+      {allOpen ? (
+        <HomeDialog title="Все действия" onClose={() => setAllOpen(false)}>
+          <div className="quick-all" role="list">
+            {tiles.map((tile) => (
+              <div key={tile.id} role="listitem" className="min-w-0">
+                <QuickTileButton tile={tile} onSelect={pick} />
+              </div>
+            ))}
+          </div>
+        </HomeDialog>
+      ) : null}
+    </HomeSection>
   );
 }

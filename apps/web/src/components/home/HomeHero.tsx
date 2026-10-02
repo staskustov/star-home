@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { FloorPlan } from "@/components/home/FloorPlan";
+import { HomeDialog } from "@/components/home/HomeDialog";
 import { HomeSection } from "@/components/home/HomeSection";
 import { MetricChip, metricLook, type MetricStyle } from "@/components/home/MetricChip";
 import type { HomeCamera } from "@/components/home/CameraViewer";
@@ -41,6 +43,7 @@ export function HomeHero({
   cameras?: HomeCamera[];
   className?: string;
 }) {
+  const [full, setFull] = useState(false);
   const deviceCount = rooms.reduce((sum, room) => sum + (room.deviceCount ?? 0), 0);
   const temp = metricLook(metrics, "temperature");
   const humidity = metricLook(metrics, "humidity");
@@ -64,10 +67,19 @@ export function HomeHero({
       }
     >
       {plans.length ? (
-        <FloorPlan floors={plans} canCommand={canCommand} cameras={cameras} switcher />
+        <div className="home-plan-body">
+          <FloorPlan floors={plans} canCommand={canCommand} cameras={cameras} switcher onExpand={() => setFull(true)} />
+        </div>
       ) : (
         <p className="text-[15px] text-muted">Планировка для этого дома ещё не загружена.</p>
       )}
+      {full ? (
+        <HomeDialog title={`План · ${unitName}`} full onClose={() => setFull(false)}>
+          <div className="plan-full">
+            <FloorPlan floors={plans} canCommand={canCommand} cameras={cameras} switcher />
+          </div>
+        </HomeDialog>
+      ) : null}
     </HomeSection>
   );
 }

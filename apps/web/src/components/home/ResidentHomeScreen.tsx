@@ -12,6 +12,7 @@ import { HomeHeaderGreeting } from "@/components/home/HomeHeaderGreeting";
 import { HomeHero, HomeRooms } from "@/components/home/HomeHero";
 import { HomeQuickGrid } from "@/components/home/HomeQuickGrid";
 import { HomeSection } from "@/components/home/HomeSection";
+import { HomeStatusCard, homeIssues } from "@/components/home/HomeStatusCard";
 import { HomeWeatherCard } from "@/components/home/HomeWeatherCard";
 import { ServiceDialog } from "@/components/home/ServiceDialog";
 import { Icon } from "@/components/icons";
@@ -225,6 +226,15 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
           <HomeChipStrip chips={visibleScenarioChips(data)} label="Сценарии" activeMode={current.mode} createHref="/scenarios" onSelect={onChip} />
         </HomeSection>
 
+        <HomeStatusCard
+          issues={homeIssues({
+            securityStatus: data.securityStatus,
+            devices: data.devices,
+            cameras: data.cameras,
+            accessPoints: points,
+          })}
+        />
+
         <div className="home-split">
           <HomeHero
             className="home-split-main"
@@ -238,21 +248,15 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
             cameras={data.cameras}
           />
           <div className="home-split-side">
-            <HomeSection title="Быстрые действия">
-              <HomeQuickGrid
-                points={points}
-                chips={actionChips}
-                guestCount={data.guestCount ?? 0}
-                securityStatus={data.securityStatus ?? "Норма"}
-                serviceStatus={data.todayRequest ? data.todayRequest.title : "Нет заявок"}
-                onSelect={onChip}
-              />
-            </HomeSection>
-            {data.cameras.length ? (
-              <HomeSection title="Камеры">
-                <CameraBlock cameras={data.cameras} />
-              </HomeSection>
-            ) : null}
+            <HomeQuickGrid
+              points={points}
+              chips={actionChips}
+              guestCount={data.guestCount ?? 0}
+              securityStatus={data.securityStatus ?? "Норма"}
+              serviceStatus={data.todayRequest ? data.todayRequest.title : "Нет заявок"}
+              onSelect={onChip}
+            />
+            <CameraBlock cameras={data.cameras} />
           </div>
         </div>
 

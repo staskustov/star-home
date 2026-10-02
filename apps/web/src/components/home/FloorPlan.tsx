@@ -110,6 +110,7 @@ export function FloorPlan({
   placing = null,
   switcher = false,
   onPlaced,
+  onExpand,
 }: {
   floors: Floor[];
   editable?: boolean;
@@ -118,6 +119,7 @@ export function FloorPlan({
   placing?: FloorPlanPlacing | null;
   switcher?: boolean;
   onPlaced?: () => void;
+  onExpand?: () => void;
 }) {
   const router = useRouter();
   const [notice, setNotice] = useState<string | null>(null);
@@ -281,6 +283,14 @@ export function FloorPlan({
   }
 
   const slider = switcher && floors.length > 1;
+  const expandable = Boolean(onExpand) && !editable && !placing;
+  const expandButton = expandable ? (
+    <button type="button" className="plan-expand" aria-label="План на весь экран" onClick={onExpand}>
+      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
+      </svg>
+    </button>
+  ) : null;
 
   const figures = floors.map((plan) => {
         const dropHere = Boolean(placing && placing.floor === plan.floor);
@@ -296,8 +306,9 @@ export function FloorPlan({
               </figcaption>
             )}
             <div
-              className={`floor-plan relative select-none ${dropHere ? "cursor-grab active:cursor-grabbing" : ""}`}
+              className={`floor-plan relative select-none ${dropHere ? "cursor-grab active:cursor-grabbing" : ""} ${expandable ? "cursor-zoom-in" : ""}`}
               style={{ touchAction: dropHere ? "none" : undefined }}
+              onClick={expandable ? onExpand : undefined}
               onPointerDown={(event) => startPlace(event, plan.floor)}
               onPointerMove={(event) => movePlace(event, plan.floor)}
               onPointerUp={(event) => endPlace(event, plan.floor)}
@@ -326,6 +337,7 @@ export function FloorPlan({
                     event.preventDefault();
                     event.stopPropagation();
                   }}
+                  onClick={(event) => event.stopPropagation()}
                 >
                   <PlanMark
                     pin={pin}
@@ -390,6 +402,7 @@ export function FloorPlan({
           <div ref={trackRef} className="film" onScroll={onTrackScroll}>
             {figures}
           </div>
+          {expandButton}
           {activeIndex > 0 ? (
             <button type="button" className="plan-arrow left-2" aria-label="Предыдущий этаж" onClick={() => goToFloor(activeIndex - 1)}>
               <Icon name="chevron" className="h-4 w-4 rotate-180" />
@@ -400,6 +413,11 @@ export function FloorPlan({
               <Icon name="chevron" className="h-4 w-4" />
             </button>
           ) : null}
+        </div>
+      ) : expandable ? (
+        <div className="relative">
+          {figures}
+          {expandButton}
         </div>
       ) : (
         figures
