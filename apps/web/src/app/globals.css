@@ -1405,7 +1405,7 @@ select.control,
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 14px;
+  gap: 7px;
 }
 
 .home-section {
@@ -1808,7 +1808,7 @@ select.control,
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 14px;
+  gap: 7px;
 }
 
 .home-status-ok {
@@ -2074,7 +2074,7 @@ select.control,
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 14px;
+  gap: 7px;
 }
 
 .home-split-main {
@@ -2092,7 +2092,7 @@ select.control,
 
 @media (min-width: 768px) {
   .home-body {
-    gap: 16px;
+    gap: 8px;
   }
 
   .home-greeting {
@@ -2378,7 +2378,7 @@ select.control,
     display: grid;
     grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
     align-items: stretch;
-    gap: 16px;
+    gap: 8px;
   }
 
   .home-weather,
