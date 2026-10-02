@@ -212,13 +212,18 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
             {greeting}
           </h1>
         </div>
-        <HomeWeatherCard weather={data.weather} indoor={data.climate} aside={<HomeStatusCard notices={notices} />} />
+        <div className="home-top">
+          <HomeSection title="На улице" className="home-weather">
+            <HomeWeatherCard weather={data.weather} indoor={data.climate} />
+          </HomeSection>
+          <HomeSection title="Оповещения" href="/events" linkLabel="Все события" className="home-alerts">
+            <HomeStatusCard notices={notices} />
+          </HomeSection>
+        </div>
 
         <HomeSection title="Сценарии" href="/scenarios" linkLabel="Все сценарии" className="home-scenes">
           <HomeChipStrip chips={visibleScenarioChips(data)} label="Сценарии" activeMode={current.mode} createHref="/scenarios" onSelect={onChip} />
         </HomeSection>
-
-        <HomeStatusCard notices={notices} className="home-status-mobile" />
 
         <div className="home-split">
           <HomeHero

@@ -1007,7 +1007,7 @@ select.control,
   backdrop-filter: blur(8px);
 }
 
-@media (min-width: 768px) {
+@media (min-width: 768px) and (hover: hover) and (pointer: fine) {
   .plan-arrow {
     display: flex;
   }
@@ -1804,8 +1804,11 @@ select.control,
   color: var(--muted);
 }
 
-.weather-card-aside {
-  display: none;
+.home-top {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 14px;
 }
 
 .home-status-ok {
@@ -1888,22 +1891,6 @@ select.control,
   margin: auto;
 }
 
-.plan-expand {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  z-index: 3;
-  display: grid;
-  height: 2.25rem;
-  width: 2.25rem;
-  place-items: center;
-  border-radius: 999px;
-  border: 1px solid var(--panel-line);
-  background: color-mix(in srgb, var(--surface) 88%, transparent);
-  color: var(--ink);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
-  backdrop-filter: blur(8px);
-}
 
 .quick-text {
   display: block;
@@ -2165,23 +2152,26 @@ select.control,
     display: none;
   }
 
-  .home-status-mobile {
+  .home-weather .weather-card {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .home-weather .weather-card-photo {
     display: none;
   }
 
-  .weather-card-aside {
-    display: flex;
-    flex: 0 0 34%;
-    min-width: 0;
-    margin: 8px;
+  .home-weather .weather-card-metrics {
+    padding: 0;
   }
 
-  .weather-card-aside + .weather-card-photo {
-    display: none;
+  .home-weather .weather-card-metric:first-child {
+    padding-left: 0;
   }
 
-  .weather-card-aside .home-status {
-    width: 100%;
+  .home-alerts .home-status {
     border: 0;
     border-radius: 18px;
     background: var(--surface-muted);
@@ -2357,11 +2347,27 @@ select.control,
 }
 
 @media (min-width: 1100px) {
-  .home-split {
+  .home-split,
+  .home-top {
     display: grid;
     grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
     align-items: stretch;
     gap: 16px;
+  }
+
+  .home-weather,
+  .home-alerts {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .home-weather .weather-card,
+  .home-alerts .home-status {
+    flex: 1 1 auto;
+  }
+
+  .home-weather .weather-card-metrics {
+    height: 100%;
   }
 
   .home-split-main {

@@ -51,8 +51,8 @@ export function HomeHero({
   return (
     <HomeSection
       title="Дом"
-      href="/rooms"
-      linkLabel="Помещения"
+      linkLabel="На весь экран"
+      onAction={plans.length ? () => setFull(true) : undefined}
       className={`home-plan-card ${className}`}
       aside={
         <span className="home-section-meta" aria-label={unitName}>

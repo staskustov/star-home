@@ -5,19 +5,16 @@ import { outdoorMetrics, type OutdoorWeather } from "@/components/home/WeatherSt
 export function HomeWeatherCard({
   weather,
   indoor,
-  aside,
 }: {
   weather?: OutdoorWeather | null;
   indoor?: { temperatureC: number; humidityPercent: number } | null;
-  aside?: React.ReactNode;
 }) {
   const metrics = outdoorMetrics(weather, indoor);
   const temperature = metrics.find((item) => item.key === "temperature" || item.key === "temp");
   const sourceTag = weather?.source === "MOCK" ? "симулятор" : weather?.source === "DEMO" ? "демо" : null;
 
   return (
-    <section aria-label="Уличные показатели" className="weather-card">
-      {aside ? <div className="weather-card-aside">{aside}</div> : null}
+    <div className="weather-card">
       <div className="weather-card-photo">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/images/sky-day.jpg" alt="" className="weather-card-day" />
@@ -57,6 +54,6 @@ export function HomeWeatherCard({
       ) : (
         <p className="weather-card-empty">Нет данных с уличных датчиков.</p>
       )}
-    </section>
+    </div>
   );
 }
