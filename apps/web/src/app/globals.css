@@ -1804,8 +1804,16 @@ select.control,
   color: var(--muted);
 }
 
+.weather-card-aside {
+  display: none;
+}
+
 .home-status-ok {
   --status-tone: #3f8f5a;
+}
+
+.home-status-info {
+  --status-tone: #2f6fb3;
 }
 
 .home-status-warning {
@@ -2155,6 +2163,29 @@ select.control,
 
   .weather-card-temp {
     display: none;
+  }
+
+  .home-status-mobile {
+    display: none;
+  }
+
+  .weather-card-aside {
+    display: flex;
+    flex: 0 0 34%;
+    min-width: 0;
+    margin: 8px;
+  }
+
+  .weather-card-aside + .weather-card-photo {
+    display: none;
+  }
+
+  .weather-card-aside .home-status {
+    width: 100%;
+    border: 0;
+    border-radius: 18px;
+    background: var(--surface-muted);
+    box-shadow: none;
   }
 
   .weather-card-caption {

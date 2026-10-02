@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { GuestPassDialog } from "@/components/access/GuestPassDialog";
 import { CameraBlock } from "@/components/home/CameraBlock";
@@ -12,14 +11,12 @@ import { HomeHeaderGreeting } from "@/components/home/HomeHeaderGreeting";
 import { HomeHero, HomeRooms } from "@/components/home/HomeHero";
 import { HomeQuickGrid } from "@/components/home/HomeQuickGrid";
 import { HomeSection } from "@/components/home/HomeSection";
-import { HomeStatusCard, homeIssues } from "@/components/home/HomeStatusCard";
+import { HomeStatusCard, homeNotices } from "@/components/home/HomeStatusCard";
 import { HomeWeatherCard } from "@/components/home/HomeWeatherCard";
 import { ServiceDialog } from "@/components/home/ServiceDialog";
-import { Icon } from "@/components/icons";
 import { LiveRefresh } from "@/components/pwa/LiveRefresh";
 import { StatusToast } from "@/components/ui/StatusToast";
 import { commandMessage, runCommand, unconfirmed } from "@/lib/command";
-import { formatMoney } from "@/lib/format";
 import { greetingForHour } from "@/lib/greeting";
 import type { LifeMode, ResidentHome } from "@/types/domain";
 
@@ -79,6 +76,13 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
   const current = data.lifeModes.find((item) => item.mode === mode) ?? data.lifeModes[0];
   const greeting = greetingForHour(new Date().getHours(), data.residentName);
   const place = `${data.object.name} · ${data.unit.name}`;
+  const notices = homeNotices({
+    securityStatus: data.securityStatus,
+    devices: data.devices,
+    cameras: data.cameras,
+    accessPoints: points,
+    balance: data.balance,
+  });
 
   useEffect(() => {
     const snapshot = {
@@ -208,32 +212,13 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
             {greeting}
           </h1>
         </div>
-        <HomeWeatherCard weather={data.weather} indoor={data.climate} />
-        {data.balance ? (
-          <Link href="/payments" className="panel flex items-center gap-3 px-4 py-3">
-            <span className="tile-icon">
-              <Icon name="payments" className="h-[18px] w-[18px]" />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block text-[16px] text-ink">Коммунальные платежи</span>
-              <span className="mt-0.5 block text-[13px] text-muted">К оплате {formatMoney(data.balance.amount, data.balance.currency)}</span>
-            </span>
-            <Icon name="chevron" className="h-4 w-4 shrink-0 text-muted" />
-          </Link>
-        ) : null}
+        <HomeWeatherCard weather={data.weather} indoor={data.climate} aside={<HomeStatusCard notices={notices} />} />
 
         <HomeSection title="Сценарии" href="/scenarios" linkLabel="Все сценарии" className="home-scenes">
           <HomeChipStrip chips={visibleScenarioChips(data)} label="Сценарии" activeMode={current.mode} createHref="/scenarios" onSelect={onChip} />
         </HomeSection>
 
-        <HomeStatusCard
-          issues={homeIssues({
-            securityStatus: data.securityStatus,
-            devices: data.devices,
-            cameras: data.cameras,
-            accessPoints: points,
-          })}
-        />
+        <HomeStatusCard notices={notices} className="home-status-mobile" />
 
         <div className="home-split">
           <HomeHero
