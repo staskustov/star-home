@@ -2173,9 +2173,35 @@ select.control,
 
   .home-alerts .home-status {
     border: 0;
-    border-radius: 18px;
+    border-radius: 16px;
     background: var(--surface-muted);
     box-shadow: none;
+    gap: 12px;
+    padding: 9px 14px;
+  }
+
+  .home-weather,
+  .home-alerts {
+    padding: 0.6rem 1.25rem 0.75rem;
+  }
+
+  .home-weather .home-section-head,
+  .home-alerts .home-section-head {
+    margin-bottom: 8px;
+  }
+
+  .home-alerts .home-status-icon {
+    height: 2.1rem;
+    width: 2.1rem;
+  }
+
+  .home-weather .weather-card-metric-icon svg {
+    height: 24px;
+    width: 24px;
+  }
+
+  .home-weather .weather-card-metric-value {
+    font-size: 19px;
   }
 
   .weather-card-caption {
