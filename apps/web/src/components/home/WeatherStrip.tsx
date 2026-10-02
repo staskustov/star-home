@@ -16,7 +16,7 @@ function num(value: number | null | undefined, suffix: string) {
   return `${String(value).replace(".", ",")}${suffix}`;
 }
 
-function outdoorMetrics(weather?: OutdoorWeather | null, indoor?: { temperatureC: number; humidityPercent: number } | null) {
+export function outdoorMetrics(weather?: OutdoorWeather | null, indoor?: { temperatureC: number; humidityPercent: number } | null) {
   if (weather?.metrics?.length) return weather.metrics;
   return [
     { key: "temperature", icon: "thermo", color: "#c2410c", label: "Температура", value: num(weather?.temperatureC ?? indoor?.temperatureC ?? null, "°") },

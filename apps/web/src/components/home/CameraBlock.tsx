@@ -1,48 +1,65 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type UIEvent } from "react";
 import { Icon } from "@/components/icons";
 import { CameraViewer, orderCameras, type HomeCamera } from "@/components/home/CameraViewer";
 
 export function CameraBlock({ cameras }: { cameras: HomeCamera[] }) {
   const ordered = orderCameras(cameras);
   const [viewer, setViewer] = useState<number | null>(null);
-  const stretch = ordered.length > 0 && ordered.length <= 4;
+  const [index, setIndex] = useState(0);
 
   if (ordered.length === 0) return null;
 
+  function onScroll(event: UIEvent<HTMLDivElement>) {
+    const target = event.currentTarget;
+    const width = target.firstElementChild?.getBoundingClientRect().width ?? target.clientWidth;
+    setIndex(Math.round(target.scrollLeft / (width + 10)));
+  }
+
   return (
     <>
-      <section aria-label="Камеры" className="w-full">
-        <div className={`film camera-film ${stretch ? "camera-film-fit" : ""}`}>
-          {ordered.map((item, index) => (
-            <button
-              key={item.id ?? item.name}
-              type="button"
-              aria-haspopup="dialog"
-              aria-expanded={viewer === index}
-              onClick={() => setViewer(index)}
-              className={`panel shrink-0 snap-center overflow-hidden px-4 py-3 text-left camera-tile ${
-                ordered.length === 1 ? "w-full md:w-auto" : "w-[78%] md:w-auto"
-              }`}
-            >
-              <span className="flex items-center gap-3">
-                <span className="tile-icon">
-                  <Icon name="camera" className="h-[18px] w-[18px]" />
+      <div className="cam-grid" onScroll={onScroll}>
+        {ordered.map((item, position) => (
+          <button
+            key={item.id ?? item.name}
+            type="button"
+            aria-haspopup="dialog"
+            aria-expanded={viewer === position}
+            onClick={() => setViewer(position)}
+            className="cam-tile"
+          >
+            <span className="cam-well">
+              {item.id && item.hasFrame ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={`/api/smart-home/cameras/${item.id}/frame?t=last`} alt="" loading="lazy" />
+              ) : (
+                <Icon name="camera" className="h-6 w-6" />
+              )}
+            </span>
+            <span className="cam-meta">
+              <span className="min-w-0">
+                <span className="cam-name">{item.name}</span>
+                <span className="cam-state">
+                  {item.scope === "project" ? "Проект" : "Объект"}
+                  {item.state ? ` · ${item.state}` : ""}
                 </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[17px] tracking-[-0.02em] text-ink">{item.name}</span>
-                  <span className="mt-0.5 block text-[13px] text-muted">
-                    {item.scope === "project" ? "Проект" : "Объект"}
-                    {item.state ? ` · ${item.state}` : ""}
-                  </span>
-                </span>
-                <Icon name="chevron" className="h-4 w-4 shrink-0 rotate-90 text-muted" />
               </span>
-            </button>
+              <Icon name="chevron" className="cam-chevron" />
+            </span>
+          </button>
+        ))}
+      </div>
+      {ordered.length > 2 ? (
+        <div className="cam-dots flex justify-center gap-1.5" aria-hidden>
+          {ordered.map((item, position) => (
+            <span
+              key={item.id ?? item.name}
+              className={`h-1.5 rounded-full transition-all duration-200 ${position === index ? "w-5 bg-ink" : "w-1.5 bg-muted/50"}`}
+            />
           ))}
         </div>
-      </section>
+      ) : null}
       {viewer !== null ? (
         <CameraViewer cameras={ordered} index={viewer} onClose={() => setViewer(null)} onSelect={setViewer} />
       ) : null}

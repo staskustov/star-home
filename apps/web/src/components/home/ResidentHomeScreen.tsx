@@ -8,12 +8,12 @@ import { GuestPassDialog } from "@/components/access/GuestPassDialog";
 import { CameraBlock } from "@/components/home/CameraBlock";
 import type { ActionChipTile } from "@/components/home/HomeActionStrip";
 import { HomeChipStrip, type HomeChipTile } from "@/components/home/HomeChipStrip";
-import { HomeCover } from "@/components/home/HomeCover";
 import { HomeHeaderGreeting } from "@/components/home/HomeHeaderGreeting";
-import { HomeHero } from "@/components/home/HomeHero";
+import { HomeHero, HomeRooms } from "@/components/home/HomeHero";
 import { HomeQuickGrid } from "@/components/home/HomeQuickGrid";
+import { HomeSection } from "@/components/home/HomeSection";
+import { HomeWeatherCard } from "@/components/home/HomeWeatherCard";
 import { ServiceDialog } from "@/components/home/ServiceDialog";
-import { WeatherStrip } from "@/components/home/WeatherStrip";
 import { Icon } from "@/components/icons";
 import { LiveRefresh } from "@/components/pwa/LiveRefresh";
 import { StatusToast } from "@/components/ui/StatusToast";
@@ -77,6 +77,7 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
   }, [data]);
   const current = data.lifeModes.find((item) => item.mode === mode) ?? data.lifeModes[0];
   const greeting = greetingForHour(new Date().getHours(), data.residentName);
+  const place = `${data.object.name} · ${data.unit.name}`;
 
   useEffect(() => {
     const snapshot = {
@@ -198,18 +199,15 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
   return (
     <div className="home-stack">
       <LiveRefresh />
-      <HomeCover
-        sky
-        place={`${data.object.name} · ${data.unit.name}`}
-        greeting={greeting}
-        weather={data.weather}
-        indoor={data.climate}
-      />
-      <HomeHeaderGreeting place={`${data.object.name} · ${data.unit.name}`} greeting={greeting} />
+      <HomeHeaderGreeting place={place} greeting={greeting} />
       <div className="home-body">
-        <div className="home-weather-panel panel px-4 py-3">
-          <WeatherStrip weather={data.weather} indoor={data.climate} ticker />
+        <div className="home-greeting">
+          <p className="truncate text-[13px] tracking-[-0.01em] text-muted">{place}</p>
+          <h1 suppressHydrationWarning className="mt-0.5 text-[22px] leading-tight tracking-[-0.03em] text-ink">
+            {greeting}
+          </h1>
         </div>
+        <HomeWeatherCard weather={data.weather} indoor={data.climate} />
         {data.balance ? (
           <Link href="/payments" className="panel flex items-center gap-3 px-4 py-3">
             <span className="tile-icon">
@@ -223,28 +221,42 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
           </Link>
         ) : null}
 
-        <HomeChipStrip chips={visibleScenarioChips(data)} label="Сценарии" activeMode={current.mode} onSelect={onChip} />
+        <HomeSection title="Сценарии" href="/scenarios" linkLabel="Все сценарии" className="home-scenes">
+          <HomeChipStrip chips={visibleScenarioChips(data)} label="Сценарии" activeMode={current.mode} createHref="/scenarios" onSelect={onChip} />
+        </HomeSection>
 
-        <CameraBlock cameras={data.cameras} />
-        <HomeQuickGrid
-          points={points}
-          chips={actionChips}
-          guestCount={data.guestCount ?? 0}
-          securityStatus={data.securityStatus ?? "Норма"}
-          serviceStatus={data.todayRequest ? data.todayRequest.title : "Нет заявок"}
-          onSelect={onChip}
-        />
+        <div className="home-split">
+          <HomeHero
+            className="home-split-main"
+            unitName={data.unit.name}
+            rooms={data.rooms}
+            plans={data.plans ?? []}
+            temperatureC={data.climate?.temperatureC ?? null}
+            humidityPercent={data.climate?.humidityPercent ?? null}
+            metrics={data.weather?.metrics}
+            canCommand={data.canCommand === true}
+            cameras={data.cameras}
+          />
+          <div className="home-split-side">
+            <HomeSection title="Быстрые действия">
+              <HomeQuickGrid
+                points={points}
+                chips={actionChips}
+                guestCount={data.guestCount ?? 0}
+                securityStatus={data.securityStatus ?? "Норма"}
+                serviceStatus={data.todayRequest ? data.todayRequest.title : "Нет заявок"}
+                onSelect={onChip}
+              />
+            </HomeSection>
+            {data.cameras.length ? (
+              <HomeSection title="Камеры">
+                <CameraBlock cameras={data.cameras} />
+              </HomeSection>
+            ) : null}
+          </div>
+        </div>
 
-        <HomeHero
-          unitName={data.unit.name}
-          rooms={data.rooms}
-          plans={data.plans ?? []}
-          temperatureC={data.climate?.temperatureC ?? null}
-          humidityPercent={data.climate?.humidityPercent ?? null}
-          metrics={data.weather?.metrics}
-          canCommand={data.canCommand === true}
-          cameras={data.cameras}
-        />
+        <HomeRooms rooms={data.rooms} metrics={data.weather?.metrics} />
 
         {notice ? (
           <p role="status" className="fade-in text-[15px] text-muted">

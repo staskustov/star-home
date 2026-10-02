@@ -1,13 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import Link from "next/link";
 import { FloorPlan } from "@/components/home/FloorPlan";
+import { HomeSection } from "@/components/home/HomeSection";
 import { MetricChip, metricLook, type MetricStyle } from "@/components/home/MetricChip";
 import type { HomeCamera } from "@/components/home/CameraViewer";
 import type { PlanPin } from "@/lib/plan-pin";
 import { Icon } from "@/components/icons";
 import { formatHumidity, formatTemperature } from "@/lib/format";
-import Link from "next/link";
 
 function devicesLabel(count: number) {
   const mod10 = count % 10;
@@ -18,6 +18,7 @@ function devicesLabel(count: number) {
 }
 
 type Plan = { floor: number; image: string; pins: PlanPin[] };
+type Room = { id?: string; name: string; deviceCount?: number; temperatureC?: number | null; humidityPercent?: number | null };
 
 export function HomeHero({
   unitName,
@@ -28,98 +29,74 @@ export function HomeHero({
   metrics,
   canCommand = false,
   cameras = [],
+  className = "",
 }: {
   unitName: string;
-  rooms: { id?: string; name: string; deviceCount?: number; temperatureC?: number | null; humidityPercent?: number | null }[];
+  rooms: Room[];
   plans?: Plan[];
   temperatureC: number | null;
   humidityPercent: number | null;
   metrics?: MetricStyle[];
   canCommand?: boolean;
   cameras?: HomeCamera[];
+  className?: string;
 }) {
-  const [index, setIndex] = useState(0);
   const deviceCount = rooms.reduce((sum, room) => sum + (room.deviceCount ?? 0), 0);
-  const slides = rooms.map((room) => ({
-    name: room.name,
-    href: room.id ? `/rooms/${room.id}` : "/rooms",
-    deviceCount: room.deviceCount ?? 0,
-    temperatureC: room.temperatureC ?? null,
-    humidityPercent: room.humidityPercent ?? null,
-  }));
   const temp = metricLook(metrics, "temperature");
   const humidity = metricLook(metrics, "humidity");
 
-  function onScroll(event: React.UIEvent<HTMLDivElement>) {
-    const target = event.currentTarget;
-    const width = target.firstElementChild?.getBoundingClientRect().width ?? target.clientWidth;
-    setIndex(Math.round(target.scrollLeft / (width + 12)));
-  }
-
   return (
-    <section aria-label="Помещения" className="w-full space-y-3">
-      <div className="home-object space-y-3">
-      <Link
-        href="/rooms"
-        aria-label={`Помещения · ${unitName}`}
-        className="panel home-object-head flex items-center justify-between gap-3 overflow-hidden px-4 py-2.5"
-      >
-        <span className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-[15px]">
-          <span className="text-[13px] text-muted">{devicesLabel(deviceCount)}</span>
+    <HomeSection
+      title="Дом"
+      href="/rooms"
+      linkLabel="Помещения"
+      className={`home-plan-card ${className}`}
+      aside={
+        <span className="home-section-meta" aria-label={unitName}>
+          <span>{devicesLabel(deviceCount)}</span>
           {temperatureC !== null ? (
-            <MetricChip compact icon={temp.icon} color={temp.color} label={temp.label} value={formatTemperature(temperatureC)} />
+            <MetricChip compact icon={temp.icon} color={temp.color} value={formatTemperature(temperatureC)} />
           ) : null}
           {humidityPercent !== null ? (
-            <MetricChip compact icon={humidity.icon} color={humidity.color} label={humidity.label} value={formatHumidity(humidityPercent)} />
+            <MetricChip compact icon={humidity.icon} color={humidity.color} value={formatHumidity(humidityPercent)} />
           ) : null}
         </span>
-        <Icon name="chevron" className="h-4 w-4 shrink-0 text-muted" />
-      </Link>
+      }
+    >
+      {plans.length ? (
+        <FloorPlan floors={plans} canCommand={canCommand} cameras={cameras} switcher />
+      ) : (
+        <p className="text-[15px] text-muted">Планировка для этого дома ещё не загружена.</p>
+      )}
+    </HomeSection>
+  );
+}
 
-      {plans.length ? <FloorPlan floors={plans} canCommand={canCommand} cameras={cameras} switcher /> : null}
+export function HomeRooms({ rooms, metrics }: { rooms: Room[]; metrics?: MetricStyle[] }) {
+  if (!rooms.length) return null;
+  const temp = metricLook(metrics, "temperature");
+
+  return (
+    <HomeSection title="Помещения" href="/rooms" className="home-rooms">
+      <div className={`room-row ${rooms.length <= 5 ? "room-row-fit" : ""}`}>
+        {rooms.map((room) => (
+          <Link key={(room.id ?? "") + room.name} href={room.id ? `/rooms/${room.id}` : "/rooms"} className="room-tile">
+            <span className="tile-icon">
+              <Icon name="house" className="h-[18px] w-[18px]" />
+            </span>
+            <span className="room-text">
+              <span className="room-name">{room.name}</span>
+              <span className="room-sub">
+                {devicesLabel(room.deviceCount ?? 0)}
+                {room.temperatureC !== null && room.temperatureC !== undefined ? (
+                  <span style={{ color: temp.color }}> · {formatTemperature(room.temperatureC)}</span>
+                ) : null}
+              </span>
+            </span>
+            <Icon name="chevron" className="room-chevron" />
+          </Link>
+        ))}
       </div>
-
-      {slides.length ? (
-        <>
-          <div className="film" onScroll={onScroll}>
-            {slides.map((slide) => (
-              <Link
-                key={slide.href + slide.name}
-                href={slide.href}
-                className="panel w-[78%] shrink-0 snap-center overflow-hidden px-4 py-3 sm:w-[min(100%,20rem)]"
-              >
-                <span className="flex items-start justify-between gap-3">
-                  <span className="min-w-0">
-                    <span className="block truncate text-[18px] leading-tight tracking-[-0.03em] text-ink">{slide.name}</span>
-                    <span className="mt-1 block text-[13px] text-muted">{devicesLabel(slide.deviceCount)}</span>
-                    {slide.temperatureC !== null || slide.humidityPercent !== null ? (
-                      <span className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[15px]">
-                        {slide.temperatureC !== null ? (
-                          <MetricChip compact icon={temp.icon} color={temp.color} label={temp.label} value={formatTemperature(slide.temperatureC)} />
-                        ) : null}
-                        {slide.humidityPercent !== null ? (
-                          <MetricChip compact icon={humidity.icon} color={humidity.color} label={humidity.label} value={formatHumidity(slide.humidityPercent)} />
-                        ) : null}
-                      </span>
-                    ) : null}
-                  </span>
-                  <Icon name="chevron" className="h-4 w-4 shrink-0 text-muted" />
-                </span>
-              </Link>
-            ))}
-          </div>
-          {slides.length > 1 ? (
-            <div className="flex justify-center gap-1.5" aria-hidden>
-              {slides.map((slide, position) => (
-                <span
-                  key={`${slide.name}-${position}`}
-                  className={`h-1.5 rounded-full transition-all duration-200 ${position === index ? "w-5 bg-ink" : "w-1.5 bg-muted/50"}`}
-                />
-              ))}
-            </div>
-          ) : null}
-        </>
-      ) : null}
-    </section>
+    </HomeSection>
   );
 }

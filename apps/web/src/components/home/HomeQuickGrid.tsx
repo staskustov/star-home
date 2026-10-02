@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { Icon, type IconName } from "@/components/icons";
 import { homeChipIcons } from "@/lib/home-chips";
 import type { AccessPoint } from "@/components/access/AccessPointsList";
@@ -35,12 +34,6 @@ function guestsLabel(count: number) {
   return `${count} активных`;
 }
 
-function pagesOf(items: QuickTile[]) {
-  const pages: QuickTile[][] = [];
-  for (let index = 0; index < items.length; index += 4) pages.push(items.slice(index, index + 4));
-  return pages;
-}
-
 function QuickTileButton({ tile, onSelect }: { tile: QuickTile; onSelect: (chip: ActionChipTile) => void }) {
   return (
     <button
@@ -61,15 +54,15 @@ function QuickTileButton({ tile, onSelect }: { tile: QuickTile; onSelect: (chip:
       <span className="tile-icon">
         <Icon name={tile.icon} className="h-[18px] w-[18px]" />
       </span>
-      <span className="min-w-0 flex-1 text-left">
-        <span className="block truncate text-[16px] leading-tight text-ink">{tile.name}</span>
+      <span className="quick-text">
+        <span className="quick-name">{tile.name}</span>
         {tile.status ? (
-          <span className={`mt-0.5 block text-[13px] ${tile.tone === "danger" ? "text-danger" : tile.tone === "success" ? "text-success" : "text-muted"}`}>
+          <span className={`quick-status ${tile.tone === "danger" ? "text-danger" : tile.tone === "success" ? "text-success" : "text-muted"}`}>
             {tile.status}
           </span>
         ) : null}
       </span>
-      <Icon name="chevron" className="h-4 w-4 shrink-0 text-muted" />
+      <Icon name="chevron" className="quick-chevron" />
     </button>
   );
 }
@@ -89,7 +82,6 @@ export function HomeQuickGrid({
   serviceStatus?: string;
   onSelect: (chip: ActionChipTile) => void;
 }) {
-  const [index, setIndex] = useState(0);
   const extras = chips.filter(
     (chip) =>
       chip.action !== "open-gate" &&
@@ -152,47 +144,15 @@ export function HomeQuickGrid({
       latch: chip.latch,
     })),
   ];
-  const pages = pagesOf(tiles);
-
-  useEffect(() => {
-    setIndex(0);
-  }, [tiles.length]);
-
   if (!tiles.length) return null;
 
-  function onScroll(event: React.UIEvent<HTMLDivElement>) {
-    const target = event.currentTarget;
-    const width = target.clientWidth;
-    setIndex(Math.round(target.scrollLeft / Math.max(width, 1)));
-  }
-
   return (
-    <section aria-label="Быстрые кнопки" className="min-w-0 w-full">
-      <div className="home-quick-film home-quick-mobile" onScroll={onScroll}>
-        {pages.map((page, pageIndex) => (
-          <div key={pageIndex} className="home-quick-page" role="list">
-            {page.map((tile) => (
-              <div key={tile.id} role="listitem" className="min-w-0">
-                <QuickTileButton tile={tile} onSelect={onSelect} />
-              </div>
-            ))}
-          </div>
-        ))}
-      </div>
-      {pages.length > 1 ? (
-        <div className="home-quick-dots mt-2 flex justify-center gap-1.5" aria-hidden>
-          {pages.map((_, pageIndex) => (
-            <span key={pageIndex} className={`h-1.5 rounded-full transition-all duration-200 ${pageIndex === index ? "w-5 bg-ink" : "w-1.5 bg-muted/50"}`} />
-          ))}
+    <div className="quick-grid" role="list" aria-label="Быстрые действия">
+      {tiles.map((tile) => (
+        <div key={tile.id} role="listitem" className="min-w-0">
+          <QuickTileButton tile={tile} onSelect={onSelect} />
         </div>
-      ) : null}
-      <div className={`home-quick-desk ${tiles.length <= 5 ? "home-quick-desk-fit" : ""}`} role="list">
-        {tiles.map((tile) => (
-          <div key={tile.id} role="listitem" className="home-quick-desk-item">
-            <QuickTileButton tile={tile} onSelect={onSelect} />
-          </div>
-        ))}
-      </div>
-    </section>
+      ))}
+    </div>
   );
 }

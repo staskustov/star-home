@@ -18,15 +18,11 @@ function ResidentChromeInner({
   menuItems?: NavItem[];
   children: React.ReactNode;
 }) {
-  const cover = usePathname() === "/home";
+  const home = usePathname() === "/home";
   const { expanded } = useResidentNav();
 
   return (
-    <div
-      className={`min-h-dvh md:grid ${expanded ? "md:grid-cols-[220px_minmax(0,1fr)]" : "md:grid-cols-[72px_minmax(0,1fr)]"} ${
-        cover ? "resident-cover" : ""
-      }`}
-    >
+    <div className={`min-h-dvh md:grid ${expanded ? "md:grid-cols-[220px_minmax(0,1fr)]" : "md:grid-cols-[72px_minmax(0,1fr)]"}`}>
       <div className="hidden md:block">{sidebar}</div>
       <div className="min-w-0">
         <header className="resident-header sticky top-0 z-20 flex items-center justify-between gap-3 overflow-visible border-b border-line/60 bg-bg px-5 py-3 md:px-8">
@@ -38,9 +34,7 @@ function ResidentChromeInner({
           <TopBarActions menuItems={menuItems} />
         </header>
         <div
-          className={`resident-main mx-auto w-full pb-32 md:max-w-none md:px-8 md:pt-6 md:pb-16 ${
-            cover ? "max-w-none px-0 pt-0 md:px-8" : "max-w-[680px] px-5 pt-6"
-          }`}
+          className={`resident-main mx-auto w-full max-w-[680px] pb-32 md:max-w-none md:px-8 md:pt-6 md:pb-16 ${home ? "px-4 pt-3" : "px-5 pt-6"}`}
         >
           {children}
         </div>
