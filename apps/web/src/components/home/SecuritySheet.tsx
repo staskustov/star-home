@@ -69,7 +69,20 @@ export function SecuritySheet({ open, onClose }: { open: boolean; onClose: () =>
   async function fireSos() {
     setSent(true);
     const result = await runCommand(() => fetch("/api/security/sos", { method: "POST" }));
-    setNotice(result.ok ? "Сигнал передан на пост охраны." : commandMessage(result.payload));
+    if (!result.ok) {
+      setSent(false);
+      const reason = commandMessage(result.payload, "Сигнал не доставлен.");
+      setNotice(desk?.phone ? `${reason} Позвоните охране: ${desk.phone}` : `${reason} Попробуйте ещё раз.`);
+      return;
+    }
+    setNotice("Сигнал передан на пост охраны.");
+  }
+
+  function onSosKey(event: React.KeyboardEvent<HTMLButtonElement>, down: boolean) {
+    if (event.key !== " " && event.key !== "Enter") return;
+    event.preventDefault();
+    if (down && !event.repeat) startHold();
+    if (!down) stopHold();
   }
 
   async function send(event: React.FormEvent) {
@@ -162,14 +175,23 @@ export function SecuritySheet({ open, onClose }: { open: boolean; onClose: () =>
               onPointerUp={stopHold}
               onPointerLeave={stopHold}
               onPointerCancel={stopHold}
+              onKeyDown={(event) => onSosKey(event, true)}
+              onKeyUp={(event) => onSosKey(event, false)}
+              onBlur={stopHold}
               onContextMenu={(event) => event.preventDefault()}
               disabled={sent}
+              aria-describedby="sos-hint"
             >
               {sent ? "SOS отправлен" : holding ? `Держите… ${Math.round(progress * 100)}%` : "SOS · держите 3 секунды"}
             </button>
           ) : null}
+          {desk?.canSos ? (
+            <p id="sos-hint" className="sr-only">
+              Нажмите и удерживайте кнопку или клавишу пробел три секунды, чтобы вызвать охрану.
+            </p>
+          ) : null}
           {notice ? (
-            <p role="status" className="mt-3 text-[14px] text-muted">
+            <p role="status" aria-live="assertive" className="mt-3 text-[14px] text-muted">
               {notice}
             </p>
           ) : null}

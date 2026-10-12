@@ -1,12 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { commandMessage, runCommand } from "@/lib/command";
+import { commandHeld, commandMessage, runCommand } from "@/lib/command";
 import { deviceStatus, statusClass, statusDot } from "@/lib/device-status";
+import { isOpener } from "@/server/device-kinds";
 import type { SmartCommandName } from "@/server/smart-commands";
 
 export function DeviceCommand({
   deviceId,
+  kind,
   commands,
   canCommand,
   state,
@@ -14,6 +16,7 @@ export function DeviceCommand({
   stale,
 }: {
   deviceId: string;
+  kind?: string | null;
   commands: SmartCommandName[];
   canCommand: boolean;
   state?: { on?: boolean; brightness?: number; targetC?: number; position?: number; latch?: string };
@@ -25,6 +28,12 @@ export function DeviceCommand({
   const [pending, setPending] = useState<{ command: SmartCommandName; value?: unknown } | null>(null);
   const [power, setPower] = useState(state?.on);
   const [latch, setLatch] = useState<"OPEN" | "CLOSED" | undefined>(state?.latch === "OPEN" || state?.latch === "CLOSED" ? state.latch : undefined);
+  const [synced, setSynced] = useState(state);
+  if (synced !== state) {
+    setSynced(state);
+    setPower(state?.on);
+    setLatch(state?.latch === "OPEN" || state?.latch === "CLOSED" ? state.latch : undefined);
+  }
   const status = deviceStatus({ stale, work, power: commands.includes("setPower") ? Boolean(power) : power, latch });
 
   async function send(command: SmartCommandName, value?: unknown, confirmToken?: string) {
@@ -32,10 +41,10 @@ export function DeviceCommand({
     const previousPower = power;
     const previousLatch = latch;
     if (command === "setPower") setPower(Boolean(value));
-    if (command === "open") setLatch("OPEN");
-    if (command === "close") setLatch("CLOSED");
+    if (command === "open" && kind && isOpener(kind)) setLatch("OPEN");
+    if (command === "close" && kind && isOpener(kind)) setLatch("CLOSED");
 
-    const opener = command === "open" || command === "close";
+    const opener = (command === "open" || command === "close") && Boolean(kind && isOpener(kind));
     const result = await runCommand(() =>
       opener
         ? fetch(command === "open" ? "/api/access/points" : `/api/access/points/${deviceId}/close`, {
@@ -60,6 +69,10 @@ export function DeviceCommand({
     }
     setToken(null);
     setPending(null);
+    if (result.ok && commandHeld(payload)) {
+      setNotice(commandMessage(payload, payload?.confirmed === true ? "Команда выполнена." : "Команда отправлена. Ждём подтверждения от устройства."));
+      return;
+    }
     if (!result.ok || payload?.confirmed !== true) {
       setPower(previousPower);
       setLatch(previousLatch);

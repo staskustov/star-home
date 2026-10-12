@@ -5,6 +5,7 @@ import { readOps, writeOps, type Device } from "@/server/ops-store";
 import { can, type StaffActor } from "@/server/rbac/decide";
 import { commandDeviceSmart } from "@/server/smart-home";
 import { commandRisk, deviceCan, smartCommands, type SmartCommandName } from "@/server/smart-commands";
+import { embeddedRuntime } from "@/server/rpc-wire";
 
 type Failure = { ok: false; status: number; message: string };
 type Success<T> = { ok: true; value: T };
@@ -16,7 +17,7 @@ export type ProbeView = {
   confirmed: boolean;
   elapsedMs: number;
   message: string;
-  status: "confirmed" | "failed";
+  status: "confirmed" | "failed" | "pending";
   commandId?: string;
   lastProbeAt: string;
   lastProbeMs: number;
@@ -54,7 +55,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 function probeCommand(device: Device): { command: SmartCommandName; value: unknown } | null {
-  const available = smartCommands.filter((command) => deviceCan(device, command));
+  const available = smartCommands.filter((command) => deviceCan(device, command) && commandRisk(command, device) !== "HIGH");
   const ranked = [...available].sort((left, right) => riskRank(left, device) - riskRank(right, device));
   const command = ranked[0];
   if (!command) return null;
@@ -80,10 +81,27 @@ function persistProbe(deviceId: string, elapsedMs: number, confirmed: boolean): 
   const ms = Math.max(0, Math.round(elapsedMs));
   const result: ProbeResult = confirmed ? "confirmed" : "failed";
   if (device) {
-    device.metadata = { ...device.metadata, lastProbeAt: at, lastProbeMs: ms, lastProbeResult: result };
+    const { probeCommandId: _probeCommandId, probeStartedAt: _probeStartedAt, ...rest } = device.metadata ?? {};
+    device.metadata = { ...rest, lastProbeAt: at, lastProbeMs: ms, lastProbeResult: result };
     writeOps(file);
   }
   return { at, ms, result };
+}
+
+export function settleProbeFromAck(commandId: string, status: string): void {
+  if (!commandId) return;
+  const device = readOps().devices.find((item) => item.metadata?.probeCommandId === commandId);
+  if (!device) return;
+  const started = Date.parse(String(device.metadata?.probeStartedAt ?? ""));
+  persistProbe(device.id, Number.isFinite(started) ? Date.now() - started : 0, status === "ACKED");
+}
+
+const freshProbeMs = 5 * 60_000;
+
+function liveWithoutMotion(device: Device): boolean {
+  if (device.availability !== "ONLINE" || device.work === "FAULT" || !device.lastSeen) return false;
+  const seen = Date.parse(device.lastSeen);
+  return Number.isFinite(seen) && Date.now() - seen < freshProbeMs;
 }
 
 export async function waitForGatewayAck(commandId: string, timeoutMs: number): Promise<{ status: string }> {
@@ -106,6 +124,34 @@ export async function probeDevice(actor: StaffActor, deviceId: unknown): Promise
   const picked = probeCommand(found.value);
   if (!picked) return { ok: false, status: 400, message: "Нет команды для проверки." };
   const started = Date.now();
+  if (commandRisk(picked.command, found.value) === "HIGH") {
+    const alive = liveWithoutMotion(found.value);
+    const stored = persistProbe(found.value.id, 0, alive);
+    recordAudit({
+      actorUserId: actor.userId,
+      companyId: found.value.companyId,
+      objectId: found.value.objectId,
+      unitId: found.value.unitId,
+      action: "DEVICE_PROBE",
+      targetType: "device",
+      targetId: found.value.id,
+      target: found.value.name,
+      result: alive ? "SUCCESS" : "ERROR",
+      reason: alive ? "Проверка по свежим данным, без движения" : "Нет свежих данных от устройства",
+    });
+    return {
+      ok: true,
+      value: {
+        confirmed: alive,
+        elapsedMs: 0,
+        message: alive ? "На связи · проверено без движения" : "Нет свежих данных. Проверьте устройство на месте.",
+        status: alive ? "confirmed" : "failed",
+        lastProbeAt: stored.at,
+        lastProbeMs: stored.ms,
+        lastProbeResult: stored.result,
+      },
+    };
+  }
   const session = { userId: actor.userId, membershipId: actor.membershipId };
   let outcome = await commandDeviceSmart(session, {
     deviceId: found.value.id,
@@ -119,6 +165,28 @@ export async function probeDevice(actor: StaffActor, deviceId: unknown): Promise
   if (!outcome.ok) return outcome;
   let confirmed = outcome.value.confirmed === true;
   if (!confirmed && outcome.value.status === "accepted" && outcome.value.commandId) {
+    if (embeddedRuntime()) {
+      const file = readOps();
+      const device = file.devices.find((item) => item.id === found.value.id);
+      if (device) {
+        device.metadata = { ...device.metadata, probeCommandId: outcome.value.commandId, probeStartedAt: new Date(started).toISOString() };
+        writeOps(file);
+      }
+      const at = String(device?.metadata?.lastProbeAt ?? new Date().toISOString());
+      return {
+        ok: true,
+        value: {
+          confirmed: false,
+          elapsedMs: 0,
+          message: "Команда отправлена. Результат появится после ответа шлюза.",
+          status: "pending",
+          commandId: outcome.value.commandId,
+          lastProbeAt: at,
+          lastProbeMs: 0,
+          lastProbeResult: "failed",
+        },
+      };
+    }
     const waited = await waitForGatewayAck(outcome.value.commandId, probeTimeoutMs());
     confirmed = waited.status === "ACKED";
   }

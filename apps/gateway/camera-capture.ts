@@ -22,9 +22,11 @@ function basicAuth(username?: string | null, password?: string | null): Record<s
 }
 
 function mediaUrl(host: string, port: number | null | undefined, path: string | null | undefined, fallbackPort: number): string {
-  const portPart = port && port !== 80 && port !== 443 ? `:${port}` : port ? `:${port}` : `:${fallbackPort}`;
+  const chosen = port && Number.isInteger(port) && port > 0 && port < 65536 ? port : fallbackPort;
+  const scheme = chosen === 443 ? "https" : "http";
+  const portPart = (scheme === "http" && chosen === 80) || (scheme === "https" && chosen === 443) ? "" : `:${chosen}`;
   const suffix = path?.startsWith("/") ? path : path ? `/${path}` : "";
-  return `http://${host}${portPart}${suffix}`;
+  return `${scheme}://${host}${portPart}${suffix}`;
 }
 
 function snapshotFromValue(value: CameraCaptureMedia): string | null {
@@ -35,11 +37,34 @@ function snapshotFromValue(value: CameraCaptureMedia): string | null {
   return null;
 }
 
+async function readLimited(response: Response, max: number): Promise<Buffer | null> {
+  const declared = Number(response.headers?.get?.("content-length") ?? NaN);
+  if (Number.isFinite(declared) && declared > max) return null;
+  if (!response.body) {
+    const bytes = Buffer.from(await response.arrayBuffer());
+    return bytes.length > max ? null : bytes;
+  }
+  const reader = response.body.getReader();
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > max) {
+      await reader.cancel().catch(() => undefined);
+      return null;
+    }
+    chunks.push(Buffer.from(value));
+  }
+  return Buffer.concat(chunks);
+}
+
 async function readJpeg(url: string, headers: Record<string, string>, fetchHttp: typeof fetch): Promise<Buffer | null> {
-  const response = await fetchHttp(url, { headers, redirect: "follow" }).catch(() => null);
+  const response = await fetchHttp(url, { headers, redirect: "manual", signal: AbortSignal.timeout(8_000) }).catch(() => null);
   if (!response?.ok) return null;
-  const bytes = Buffer.from(await response.arrayBuffer());
-  if (!isJpegBytes(bytes) || bytes.length < 32 || bytes.length > jpegMaxBytes) return null;
+  const bytes = await readLimited(response, jpegMaxBytes).catch(() => null);
+  if (!bytes || !isJpegBytes(bytes) || bytes.length < 32) return null;
   return bytes;
 }
 

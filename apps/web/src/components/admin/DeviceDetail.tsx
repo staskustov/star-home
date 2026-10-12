@@ -202,6 +202,7 @@ export function DeviceDetail({
     setProbing(false);
     setNotice(commandMessage(result.payload, "Не удалось проверить устройство."));
     if (result.ok) router.refresh();
+    if (result.ok && result.payload?.status === "pending") window.setTimeout(() => router.refresh(), 8_000);
   }
 
   async function handOver(recall = false) {

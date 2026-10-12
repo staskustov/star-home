@@ -132,18 +132,34 @@ class GatewayController {
 
   @Post("bank/charge")
   bank(@Body() body: { reference?: string }, @Res() res: Response): void {
+    if (stubsOff()) {
+      res.status(404).json({ message: "Не найдено" });
+      return;
+    }
     res.json({ confirmed: true, reference: `bank_${body?.reference ?? "local"}` });
   }
 
   @Post("model")
   model(@Body() body: { prompt?: string }, @Res() res: Response): void {
+    if (stubsOff()) {
+      res.status(404).json({ message: "Не найдено" });
+      return;
+    }
     res.json(modelReply(typeof body?.prompt === "string" ? body.prompt : ""));
   }
 
   @Post("device")
   device(@Res() res: Response): void {
+    if (stubsOff()) {
+      res.status(404).json({ message: "Не найдено" });
+      return;
+    }
     res.json({ confirmed: true });
   }
+}
+
+function stubsOff(): boolean {
+  return process.env.NODE_ENV === "production" && process.env.STAR_HOME_ALLOW_DEMO !== "1";
 }
 
 @Module({ controllers: [GatewayController] })
@@ -316,7 +332,8 @@ async function pushSchema(databaseUrl: string): Promise<void> {
   let last: unknown;
   for (let attempt = 0; attempt < 20; attempt += 1) {
     try {
-      execFileSync(path.join(process.cwd(), "node_modules/.bin/prisma"), ["db", "push", "--skip-generate", "--accept-data-loss"], {
+      const flags = ["db", "push", "--skip-generate", ...(process.env.STAR_HOME_ACCEPT_DATA_LOSS === "1" ? ["--accept-data-loss"] : [])];
+      execFileSync(path.join(process.cwd(), "node_modules/.bin/prisma"), flags, {
         cwd: process.cwd(),
         env: { ...process.env, DATABASE_URL: databaseUrl },
         stdio: "inherit",
@@ -374,16 +391,16 @@ async function main(): Promise<void> {
     },
   });
 
-  bindLoginLimit(async (action, login) => {
+  bindLoginLimit(async (action, login, max = 8) => {
     const key = `login:${login.toLowerCase()}`;
-    if (action === "check") return Number((await bus.get(key)) ?? 0) >= 8;
+    if (action === "check") return Number((await bus.get(key)) ?? 0) >= max;
     if (action === "clear") {
       await bus.del(key);
       return false;
     }
     const count = await bus.incr(key);
     if (count === 1) await bus.pexpire(key, 10 * 60 * 1000);
-    return count >= 8;
+    return count >= max;
   });
 
   const clients = new Set<LiveClient>();
@@ -404,6 +421,10 @@ async function main(): Promise<void> {
   webpush.setVapidDetails(process.env.STAR_HOME_VAPID_SUBJECT ?? "mailto:star-home@localhost", keys.publicKey, keys.privateKey);
   const pushRuntime = globalThis as typeof globalThis & {
     __starSavePush?: (row: { userId: string; endpoint: string; p256dh: string; auth: string }) => Promise<void>;
+    __starDropPush?: (endpoint: string) => Promise<void>;
+  };
+  pushRuntime.__starDropPush = async (endpoint) => {
+    await prisma.pushSubscription.deleteMany({ where: { endpoint } });
   };
   pushRuntime.__starSavePush = async (row) => {
     await prisma.pushSubscription.upsert({
@@ -449,8 +470,10 @@ async function main(): Promise<void> {
     return safe;
   });
 
-  process.env.STAR_HOME_BANK_URL ||= `http://127.0.0.1:${port}/bank/charge`;
-  process.env.STAR_HOME_LLM_URL ||= `http://127.0.0.1:${port}/model`;
+  if (!stubsOff()) {
+    process.env.STAR_HOME_BANK_URL ||= `http://127.0.0.1:${port}/bank/charge`;
+    process.env.STAR_HOME_LLM_URL ||= `http://127.0.0.1:${port}/model`;
+  }
 
   const domain = await import("../../web/src/server/rpc-handlers");
   const people = await import("../../web/src/server/people-store");

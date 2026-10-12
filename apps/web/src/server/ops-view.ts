@@ -7,7 +7,7 @@ import { publicMedia } from "@/server/camera-media";
 import { deviceCommission, deviceLabel, isOpener, residentSeesDevice } from "@/server/device-kinds";
 import { listAudit } from "@/server/audit-store";
 import { auditRow, auditVisible, shortTime } from "@/server/audit-view";
-import { readOps } from "@/server/ops-store";
+import { passStatus, passStatusLabel, readOps } from "@/server/ops-store";
 import { gatewayDisplayStatus, isGatewayStale } from "@/server/gateway-contact";
 import { dataSourceOf } from "@/server/runtime-mode";
 import { can, objectsInScope, reaches, type Scoped, type StaffActor } from "@/server/rbac/decide";
@@ -23,15 +23,21 @@ function unitName(unitId: string | null): string {
 export function residentAccess(unitId: string, objectId: string) {
   const file = readOps();
   return {
-    passes: file.passes.filter((pass) => pass.unitId === unitId).map((pass) => ({
-      id: pass.id,
-      guestName: pass.guestName,
-      detail: pass.detail,
-      vehicle: pass.vehicle || "",
-      code: pass.code,
-    })),
+    passes: file.passes
+      .filter((pass) => pass.unitId === unitId)
+      .map((pass) => ({ pass, status: passStatus(pass) }))
+      .filter(({ pass, status }) => status === "ACTIVE" || status === "PENDING" || Date.parse(pass.revokedAt ?? pass.to ?? "") > Date.now() - 7 * 24 * 60 * 60 * 1000)
+      .map(({ pass, status }) => ({
+        id: pass.id,
+        guestName: pass.guestName,
+        detail: pass.detail,
+        vehicle: pass.vehicle || "",
+        code: status === "ACTIVE" || status === "PENDING" ? pass.code : "",
+        status,
+        statusLabel: passStatusLabel[status],
+      })),
     points: file.devices
-      .filter((device) => device.objectId === objectId && device.unitId === unitId && residentSeesDevice(device))
+      .filter((device) => device.objectId === objectId && (device.unitId === unitId || device.unitId === null) && residentSeesDevice(device))
       .filter((device) => isOpener(device.kind))
       .map((device) => {
         const latch = (device.state?.latch ?? device.latch) === "OPEN" ? "OPEN" : "CLOSED";

@@ -1,3 +1,4 @@
+import { publicHttpUrl } from "@/server/outbound-url";
 import { isOpener } from "@/server/device-kinds";
 import { recordAudit } from "@/server/operations";
 import { newId, normalizeDevice, readOps, writeOps, type Device } from "@/server/ops-store";
@@ -33,6 +34,9 @@ function cleanApi(value: unknown): string | Failure {
   if (!api) return "";
   if (api.length > 400) return { ok: false, status: 400, message: "Слишком длинный адрес API" };
   if (!/^https?:\/\//i.test(api)) return { ok: false, status: 400, message: "API: укажите http:// или https://" };
+  if (!publicHttpUrl(api)) {
+    return { ok: false, status: 400, message: "API: нужен публичный https-адрес. Устройства локальной сети подключайте через шлюз." };
+  }
   return api;
 }
 

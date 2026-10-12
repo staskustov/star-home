@@ -16,6 +16,13 @@ import { householdCan } from "@/server/rbac/policy";
 import { smartViewer, viewerReaches } from "@/server/smart-home";
 import type { SessionRef } from "@/server/actor";
 import { residentSeesDevice } from "@/server/device-kinds";
+import { embeddedRuntime } from "@/server/rpc-wire";
+import { openSecret, sealSecret } from "@/server/secret-box";
+
+export function frameStale(at: string | null | undefined, now = Date.now()): boolean {
+  const seen = at ? Date.parse(at) : NaN;
+  return !Number.isFinite(seen) || now - seen > frameFreshMs;
+}
 
 type Failure = { ok: false; status: number; message: string };
 type Success<T> = { ok: true; value: T };
@@ -107,8 +114,20 @@ export function packCameras(gatewayId: string): CameraPackItem[] {
       path: item.path ?? null,
       snapshotUrl: item.snapshotUrl ?? null,
       username: item.username ?? null,
-      password: item.password ?? null,
+      password: openSecret(item.password),
     }));
+}
+
+const frameHits = new Map<string, number>();
+const frameGapMs = 3_000;
+export const frameFreshMs = 60_000;
+
+function frameRateOk(key: string, now = Date.now()): boolean {
+  const last = frameHits.get(key) ?? 0;
+  if (now - last < frameGapMs) return false;
+  if (frameHits.size > 5_000) frameHits.clear();
+  frameHits.set(key, now);
+  return true;
 }
 
 export function ingestCameraFrame(
@@ -121,10 +140,12 @@ export function ingestCameraFrame(
   const file = readOps();
   const device = file.devices.find((item) => item.id === deviceId && item.gatewayId === gatewayId);
   if (!device || device.kind !== "CAMERA") return { applied: false };
-  const at = typeof input.at === "string" && input.at ? input.at : new Date().toISOString();
+  const now = Date.now();
+  const reported = typeof input.at === "string" ? Date.parse(input.at) : NaN;
+  const at = new Date(Number.isFinite(reported) && reported <= now && now - reported < 10 * 60_000 ? reported : now).toISOString();
   file.cameraFrames = file.cameraFrames.filter((item) => item.deviceId !== deviceId);
   file.cameraFrames.unshift({ deviceId, gatewayId, at, mime: "image/jpeg", bytes: jpeg.toString("base64") });
-  file.cameraFrames = file.cameraFrames.slice(0, 80);
+  file.cameraFrames = file.cameraFrames.slice(0, 20);
   device.lastSeen = at;
   device.availability = "ONLINE";
   writeOps(file);
@@ -195,7 +216,7 @@ export function saveCameraMedia(
     path: path || null,
     snapshotUrl: snapshotUrl || null,
     username: username || null,
-    password: password || null,
+    password: sealSecret(password),
   };
   file.cameraMedia = file.cameraMedia.filter((item) => item.deviceId !== device.id);
   file.cameraMedia.unshift(next);
@@ -227,7 +248,7 @@ export async function requestCameraFrame(
   session: SessionRef | null,
   objectId: unknown,
   deviceId: unknown,
-): Promise<Result<{ confirmed: boolean; message: string; hasFrame: boolean; frameUrl?: string }>> {
+): Promise<Result<{ confirmed: boolean; message: string; hasFrame: boolean; frameAt?: string | null; stale?: boolean; frameUrl?: string }>> {
   if (typeof deviceId !== "string" || !deviceId) return { ok: false, status: 400, message: "Камера не найдена" };
   const device = findDevice(deviceId);
   if (!device || device.kind !== "CAMERA") return { ok: false, status: 404, message: "Камера не найдена" };
@@ -257,27 +278,36 @@ export async function requestCameraFrame(
     });
     return { ok: true, value: { confirmed: false, hasFrame: false, message: "Камера не подключена к потоку." } };
   }
+  const before = frameOf(device.id)?.at ?? null;
+  if (!frameRateOk(`${actorUserId}:${device.id}`)) {
+    const frame = frameOf(device.id);
+    return {
+      ok: true,
+      value: {
+        confirmed: false,
+        hasFrame: Boolean(frame),
+        frameAt: frame?.at ?? null,
+        stale: frameStale(frame?.at),
+        frameUrl: frame ? `/api/smart-home/cameras/${device.id}/frame` : undefined,
+        message: "Кадр уже запрошен.",
+      },
+    };
+  }
   const queued = enqueueGatewayCommand({
     gatewayId: gateway.id,
     deviceId: device.id,
     command: "captureFrame",
-    value: {
-      protocol: media.protocol,
-      host: media.host,
-      port: media.port ?? null,
-      path: media.path ?? null,
-      snapshotUrl: media.snapshotUrl ?? null,
-      username: media.username ?? null,
-      password: media.password ?? null,
-    },
+    value: { deviceId: device.id },
+    ttlMs: 60_000,
   });
   let confirmed = false;
-  if (gateway.status !== "OFFLINE") {
+  if (gateway.status !== "OFFLINE" && !embeddedRuntime()) {
     const { waitForGatewayAck } = await import("@/server/device-commission");
     const waited = await waitForGatewayAck(queued.id, cameraTimeoutMs());
-    confirmed = waited.status === "ACKED" && Boolean(frameOf(device.id));
+    confirmed = waited.status === "ACKED" && (frameOf(device.id)?.at ?? null) !== before;
   }
-  const hasFrame = Boolean(frameOf(device.id));
+  const frame = frameOf(device.id);
+  const hasFrame = Boolean(frame);
   appendAudit({
     actorUserId,
     companyId: device.companyId,
@@ -295,12 +325,16 @@ export async function requestCameraFrame(
     value: {
       confirmed,
       hasFrame,
+      frameAt: frame?.at ?? null,
+      stale: frameStale(frame?.at),
       frameUrl: hasFrame ? `/api/smart-home/cameras/${device.id}/frame` : undefined,
       message: confirmed
         ? "Кадр получен."
         : gateway.status === "OFFLINE"
           ? "Шлюз недоступен. Кадр в очереди."
-          : "Не удалось подтвердить кадр.",
+          : embeddedRuntime()
+            ? "Кадр запрошен."
+            : "Не удалось подтвердить кадр.",
     },
   };
 }

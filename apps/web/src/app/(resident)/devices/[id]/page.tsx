@@ -72,6 +72,7 @@ export default async function DevicePage({ params }: { params: Promise<{ id: str
         <h2 className="mb-4 text-[19px] tracking-[-0.02em] text-ink">Управление</h2>
         <DeviceCommand
           deviceId={device.id}
+          kind={device.kind}
           commands={device.commands}
           canCommand={device.canCommand}
           state={state}

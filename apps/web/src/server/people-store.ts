@@ -1,6 +1,8 @@
 import { randomBytes } from "crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
+import { verifyPassword } from "@/server/password";
+import { productionRuntime } from "@/server/runtime-mode";
 import { boundValue, remember } from "@/server/store-bind";
 import type { Membership } from "@/types/domain";
 
@@ -188,6 +190,17 @@ function seed(): PeopleFile {
       },
     ],
   };
+}
+
+const seedHashes = new Set([...seed().users, ...demoStaff.map((item) => item.user)].map((user) => user.passwordHash));
+
+export function isSeedPassword(password: string): boolean {
+  for (const hash of seedHashes) if (verifyPassword(password, hash)) return true;
+  return false;
+}
+
+export function seedPasswordBlocked(hash: string): boolean {
+  return productionRuntime() && process.env.STAR_HOME_ALLOW_SEED_PASSWORDS !== "1" && seedHashes.has(hash);
 }
 
 function load(): PeopleFile {

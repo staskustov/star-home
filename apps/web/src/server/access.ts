@@ -42,7 +42,7 @@ type ProfileBody = {
 type AccessBody = {
   place: string;
   canCreate: boolean;
-  passes: { id: string; guestName: string; detail: string; vehicle?: string; code?: string }[];
+  passes: { id: string; guestName: string; detail: string; vehicle?: string; code?: string; status?: string; statusLabel?: string }[];
   points: { id: string; name: string; kind: string; latch?: "OPEN" | "CLOSED"; status?: string; ready?: boolean }[];
   events: AccessEvent[];
   redirect?: string;

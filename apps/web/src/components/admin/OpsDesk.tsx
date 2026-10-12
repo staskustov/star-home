@@ -339,7 +339,7 @@ export function RequestDesk({
 export function PaymentDesk({
   invoices,
 }: {
-  invoices: { id: string; objectId: string; unitName: string; title: string; amount: number; currency: string; status: "OPEN" | "PAID" }[];
+  invoices: { id: string; objectId: string; unitName: string; title: string; amount: number; currency: string; status: "OPEN" | "PROCESSING" | "PAID" }[];
 }) {
   const rows = useObjectRows(invoices);
   return (
@@ -353,7 +353,7 @@ export function PaymentDesk({
             </div>
             <div className="text-right">
               <p className="text-[16px] text-ink">{formatMoney(invoice.amount, invoice.currency)}</p>
-              <p className="text-sm text-muted">{invoice.status === "OPEN" ? "Открыт" : "Оплачен"}</p>
+              <p className="text-sm text-muted">{invoice.status === "OPEN" ? "Открыт" : invoice.status === "PROCESSING" ? "Оплата обрабатывается" : "Оплачен"}</p>
             </div>
           </li>
         ))}

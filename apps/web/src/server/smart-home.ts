@@ -39,7 +39,7 @@ type Failure = { ok: false; status: number; message: string };
 type Success<T> = { ok: true; value: T };
 type Result<T> = Success<T> | Failure;
 
-type Viewer = { kind: "home"; place: Place } | { kind: "staff"; actor: StaffActor };
+export type Viewer = { kind: "home"; place: Place } | { kind: "staff"; actor: StaffActor };
 
 const staleAfterMs = 5 * 60_000;
 const confirmTtlMs = 5 * 60_000;
@@ -148,6 +148,34 @@ function canPreviewCommand(viewer: Viewer, device: Device): boolean {
 function highAllowed(viewer: Viewer, device: Device): boolean {
   if (isOpener(device.kind) || device.capabilities?.includes("latch")) return viewerCan(viewer, "access.gate.open");
   return viewerCan(viewer, "engineering.command");
+}
+
+export type StepCheck = { ok: true; risk: ReturnType<typeof commandRisk>; device: Device } | Failure;
+
+export function checkStep(viewer: Viewer, deviceId: unknown, command: unknown): StepCheck {
+  const found = findScopedDevice(viewer, deviceId);
+  if (!found.ok) return found;
+  if (!isSmartCommand(command)) return { ok: false, status: 400, message: "Неизвестная команда" };
+  if (!deviceCan(found.value, command)) return { ok: false, status: 400, message: "Команда недоступна для этого устройства" };
+  const risk = commandRisk(command, found.value);
+  if (risk === "HIGH" ? !highAllowed(viewer, found.value) : !viewerCan(viewer, "devices.command")) return denied();
+  return { ok: true, risk, device: found.value };
+}
+
+export function viewerCommands(viewer: Viewer): boolean {
+  return viewerCan(viewer, "devices.command");
+}
+
+export function askConfirm(userId: string, targetId: string, command: string, value?: unknown): string {
+  const token = newId("sconfirm");
+  storePending({ token, userId, deviceId: targetId, command, value, createdAt: new Date().toISOString() });
+  return token;
+}
+
+export function takeConfirm(userId: string, token: unknown, targetId: string, command: string): boolean {
+  if (typeof token !== "string" || !token) return false;
+  const row = takePending(userId, token);
+  return Boolean(row && row.deviceId === targetId && row.command === command);
 }
 
 export type SmartDeviceCard = {
@@ -337,9 +365,9 @@ export async function smartHomeStatus(session: SessionRef | null, objectId?: unk
 }>> {
   const viewer = smartViewer(session);
   if (!viewer.ok) return viewer;
-  await (await import("./scenarios")).runDueSchedules(session);
   const object = objectIdFor(viewer.value, objectId);
   if (!object.ok) return object;
+  await (await import("./scenarios")).runDueSchedules({ companyId: viewerCompany(viewer.value), objectId: object.value });
   const devices = scopedDevices(viewer.value, object.value);
   const unitId = viewer.value.kind === "home" ? viewer.value.place.unitId : undefined;
   const rooms = (unitId ? roomsOf(unitId) : []).map((room) => ({ id: room.id, name: room.name }));
@@ -581,7 +609,7 @@ export type CommandInput = { deviceId?: unknown; command?: unknown; value?: unkn
 
 export type CommandOutcome = "accepted" | "queued" | "confirmed" | "failed";
 
-export async function commandDeviceSmart(session: SessionRef | null, input: CommandInput): Promise<Result<{
+export async function commandDeviceSmart(session: SessionRef | null, input: CommandInput, options?: { preconfirmed?: boolean }): Promise<Result<{
   confirmed: boolean;
   needsConfirm?: boolean;
   token?: string;
@@ -619,10 +647,10 @@ export async function commandDeviceSmart(session: SessionRef | null, input: Comm
   }
   if (!isSmartCommand(command)) return { ok: false, status: 400, message: "Неизвестная команда" };
   if (!deviceCan(device, command)) return { ok: false, status: 400, message: "Команда недоступна для этого устройства" };
+  if (device.work === "FAULT" || device.work === "OFF") return { ok: false, status: 409, message: "Устройство не в работе" };
 
   const risk = commandRisk(command, device);
   const source = commandSource(viewer.value, input.source);
-  const staffProbe = input.source === "probe" && viewer.value.kind === "staff" && viewerCan(viewer.value, "devices.command");
   if (risk === "HIGH") {
     if (!highAllowed(viewer.value, device)) {
       rememberCommandLog({
@@ -640,7 +668,7 @@ export async function commandDeviceSmart(session: SessionRef | null, input: Comm
       });
       return denied();
     }
-    if (!staffProbe && (typeof input.confirmToken !== "string" || !input.confirmToken)) {
+    if (!options?.preconfirmed && (typeof input.confirmToken !== "string" || !input.confirmToken)) {
       const token = newId("sconfirm");
       storePending({ token, userId, deviceId: device.id, command, value, createdAt: new Date().toISOString() });
       return { ok: true, value: { confirmed: false, needsConfirm: true, token, message: "Подтвердите команду." } };
@@ -665,15 +693,16 @@ export async function commandDeviceSmart(session: SessionRef | null, input: Comm
   const result = await dispatchPhysicalCommand(device, command, value);
   const current = findDevice(device.id);
   const now = new Date().toISOString();
-  const before = current ? { work: current.work, detected: current.state?.detected } : undefined;
+  const before = current ? { work: current.work, detected: current.state?.detected, availability: current.availability } : undefined;
   if (result.confirmed && current) {
     notifyIfAlert({
       companyId: current.companyId,
       objectId: current.objectId,
       unitId: current.unitId,
       name: current.name,
+      kind: current.kind,
       before,
-      after: { work: current.work, detected: current.state?.detected },
+      after: { work: current.work, detected: current.state?.detected, availability: current.availability },
     });
   }
 
@@ -721,7 +750,7 @@ export async function commandDeviceSmart(session: SessionRef | null, input: Comm
     rememberHistory({ deviceId: device.id, objectId: device.objectId, at: now, state: result.state });
     if (input.source !== "scenario") {
       const { runEventScenarios } = await import("./scenarios");
-      await runEventScenarios(session, device.id);
+      await runEventScenarios(device.id);
     }
   }
   recordAudit({
@@ -881,17 +910,26 @@ export async function runHomeAction(
           ? devices.filter((device) => device.kind === "CURTAIN")
           : [];
   if (!targets.length) return { ok: false, status: 400, message: action === "night" ? "Сценарий не найден" : "Нет таких устройств" };
+  let done = 0;
+  let pending = 0;
+  let failed = 0;
   for (const device of targets) {
     const lights = device.kind === "LIGHTING";
+    const command = lights ? "setPower" : "setPosition";
+    if (!deviceCan(device, command) || commandRisk(command, device) === "HIGH") continue;
     const result = await commandDeviceSmart(session, {
       deviceId: device.id,
-      command: lights ? "setPower" : "setPosition",
+      command,
       value: lights ? false : 0,
-      confirmToken: input.confirmToken,
     });
-    if (!result.ok) return result;
-    if (result.value.needsConfirm) return { ok: true, value: { confirmed: false, needsConfirm: true, token: result.value.token, message: result.value.message } };
-    if (!result.value.confirmed) return { ok: true, value: { confirmed: false, message: result.value.message } };
+    if (!result.ok || result.value.status === "failed" || result.value.needsConfirm) failed += 1;
+    else if (result.value.confirmed) done += 1;
+    else pending += 1;
   }
+  const total = done + pending + failed;
+  if (!total) return { ok: false, status: 400, message: "Нет таких устройств" };
+  if (failed && !done && !pending) return { ok: true, value: { confirmed: false, message: "Не удалось выполнить." } };
+  if (failed) return { ok: true, value: { confirmed: false, message: `Выполнено ${done + pending} из ${total}, ошибок: ${failed}.` } };
+  if (pending) return { ok: true, value: { confirmed: false, message: "Команды приняты. Ожидаем подтверждение оборудования." } };
   return { ok: true, value: { confirmed: true, message: "Готово." } };
 }

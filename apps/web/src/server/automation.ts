@@ -1,6 +1,6 @@
 import { cloudExecutesAdapter } from "@/server/gateway-adapter";
 import { isGatewayStale } from "@/server/gateway-contact";
-import { enqueueGatewayCommand } from "@/server/gateway-queue";
+import { enqueueGatewayCommand, highCommandTtlMs } from "@/server/gateway-queue";
 import { emitLive } from "@/server/live-bus";
 import {
   findDevice,
@@ -43,7 +43,8 @@ export type GatewayAutomationPack = {
   }[];
 };
 
-export function scenarioRuntime(scenario: { runtime?: unknown }): ScenarioRuntime {
+export function scenarioRuntime(scenario: { runtime?: unknown; trigger?: unknown }): ScenarioRuntime {
+  if (scenario.trigger !== undefined && scenario.trigger !== "EVENT" && scenario.trigger !== "SCHEDULE") return "cloud";
   return scenario.runtime === "gateway" ? "gateway" : "cloud";
 }
 
@@ -94,7 +95,7 @@ export function packAutomations(gatewayId: string): GatewayAutomationPack {
   const gateway = file.gateways.find((item) => item.id === gatewayId);
   const devices = file.devices.filter((device) => device.gatewayId === gatewayId && device.status !== "REMOVED");
   const scenarios = file.scenarios.filter((scenario) => {
-    if (scenarioRuntime(scenario) !== "gateway") return false;
+    if (scenarioRuntime(scenario) !== "gateway" || scenario.enabled === false) return false;
     if (gateway && scenario.objectId !== gateway.objectId) return false;
     const involved = [...(scenario.steps ?? []), ...(scenario.conditions ?? [])].map((item) => item.deviceId);
     return involved.some((id) => devices.some((device) => device.id === id));
@@ -149,10 +150,23 @@ export function packAutomations(gatewayId: string): GatewayAutomationPack {
   };
 }
 
-export function enqueueScenarioOnGateway(scenario: Scenario): { commandId: string; queued: boolean } | null {
+export function enqueueScenarioOnGateway(
+  scenario: Scenario,
+  options?: { skipHigh?: boolean },
+): { commandId: string; queued: boolean; steps: number } | null {
   const gateway = scenarioGateway(scenario);
   if (!gateway || cloudExecutesAdapter(gateway.adapter)) return null;
-  const steps = scenario.steps.map((step) => {
+  const allowed = scenario.steps.filter((step) => {
+    const device = findDevice(step.deviceId);
+    if (!device || device.gatewayId !== gateway.id) return false;
+    return !(options?.skipHigh && stepIsHigh(device, step.command));
+  });
+  if (!allowed.length) return { commandId: "", queued: false, steps: 0 };
+  const high = allowed.some((step) => {
+    const device = findDevice(step.deviceId);
+    return device ? stepIsHigh(device, step.command) : false;
+  });
+  const steps = allowed.map((step) => {
     const device = findDevice(step.deviceId);
     return {
       deviceId: step.deviceId,
@@ -161,15 +175,17 @@ export function enqueueScenarioOnGateway(scenario: Scenario): { commandId: strin
       externalId: device?.externalId ?? null,
       endpoint: device?.endpoint ?? null,
       adapter: device?.adapter ?? gateway.adapter,
+      kind: device?.kind ?? null,
     };
   });
   const queued = enqueueGatewayCommand({
     gatewayId: gateway.id,
     deviceId: scenario.id,
     command: "runScenario",
-    value: { scenarioId: scenario.id, steps },
+    value: { scenarioId: scenario.id, steps, skipHigh: options?.skipHigh === true },
+    ttlMs: high ? highCommandTtlMs : undefined,
   });
-  return { commandId: queued.id, queued: gateway.status === "OFFLINE" };
+  return { commandId: queued.id, queued: gateway.status === "OFFLINE", steps: steps.length };
 }
 
 export function ingestAutomationRun(
@@ -182,9 +198,20 @@ export function ingestAutomationRun(
   const gateway = file.gateways.find((item) => item.id === gatewayId);
   if (!gateway) return { applied: false };
   if (file.automationRuns.some((item) => item.id === runId)) return { applied: false };
-  const at = typeof input.at === "string" && input.at ? input.at : new Date().toISOString();
-  const scenarioId = typeof input.scenarioId === "string" ? input.scenarioId : undefined;
-  const ruleId = typeof input.ruleId === "string" ? input.ruleId : undefined;
+  const now = Date.now();
+  const reported = typeof input.at === "string" ? Date.parse(input.at) : NaN;
+  const at = new Date(Number.isFinite(reported) && reported <= now + 60_000 && now - reported < 24 * 60 * 60_000 ? Math.min(reported, now) : now).toISOString();
+  const owned = typeof input.scenarioId === "string"
+    ? file.scenarios.find(
+        (item) =>
+          item.id === input.scenarioId &&
+          item.companyId === gateway.companyId &&
+          item.objectId === gateway.objectId &&
+          scenarioGateway(item)?.id === gatewayId,
+      )
+    : undefined;
+  const scenarioId = owned?.id;
+  const ruleId = typeof input.ruleId === "string" ? input.ruleId.slice(0, 80) : undefined;
   file.automationRuns.unshift({
     id: runId,
     gatewayId,
@@ -194,7 +221,7 @@ export function ingestAutomationRun(
     confirmed: input.confirmed === true,
   });
   file.automationRuns = file.automationRuns.slice(0, 200);
-  const scenario = scenarioId ? file.scenarios.find((item) => item.id === scenarioId) : undefined;
+  const scenario = owned;
   if (scenario) scenario.lastRunAt = new Intl.DateTimeFormat("en-CA", { timeZone }).format(new Date(at));
   writeOps(file);
   emitLive({

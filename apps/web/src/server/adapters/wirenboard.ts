@@ -11,11 +11,15 @@ export function wirenboardTopic(externalId: string, command: string): string {
       ? "on"
       : command === "setBrightness"
         ? "brightness"
-        : command === "setTemperature" || command === "setHvacMode"
+        : command === "setTemperature"
           ? "target"
-          : command === "setPosition" || command === "stop"
-            ? "position"
-            : "command";
+          : command === "setHvacMode"
+            ? "mode"
+            : command === "setPosition"
+              ? "position"
+              : command === "stop"
+                ? "stop"
+                : "command";
   return `wb/${externalId}/${leaf}`;
 }
 

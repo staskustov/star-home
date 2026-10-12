@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PasswordChange } from "@/components/auth/PasswordChange";
 import { HomeScreenSettings } from "@/components/home/HomeScreenSettings";
 import { PushButton } from "@/components/pwa/PushButton";
 import { ProfilePhoto } from "@/components/shell/ProfilePhoto";
@@ -38,6 +39,10 @@ export default async function ProfilePage() {
       <div className="mt-8">
         <PushButton />
       </div>
+      <details className="mt-8 max-w-md">
+        <summary className="cursor-pointer text-[17px] text-ink">Сменить пароль</summary>
+        <PasswordChange className="mt-4" />
+      </details>
       <form action="/api/auth/logout" method="post">
         <button
           type="submit"

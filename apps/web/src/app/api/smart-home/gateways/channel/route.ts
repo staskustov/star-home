@@ -1,29 +1,16 @@
 import { NextResponse } from "next/server";
-import { ackGateway, heartbeatGateway, ingestAutomation, ingestCamera, ingestGatewayState, pullGateway } from "@/server/gateway-channel";
+import { rpcWith } from "@/server/rpc-wire";
+
+async function relay(token: string | null, body: Record<string, unknown> | null, pull: boolean): Promise<NextResponse> {
+  const result = await rpcWith(null, "gatewayChannel", { token, body, pull });
+  return NextResponse.json(result.body, { status: result.status });
+}
 
 export async function GET(request: Request) {
-  const token = request.headers.get("x-star-home-gateway");
-  const result = pullGateway(token);
-  if (!result.ok) return NextResponse.json({ message: result.message }, { status: result.status });
-  return NextResponse.json(result.value);
+  return relay(request.headers.get("x-star-home-gateway"), null, true);
 }
 
 export async function POST(request: Request) {
-  const token = request.headers.get("x-star-home-gateway");
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
-  const kind = body?.kind;
-  const result =
-    kind === "state"
-      ? ingestGatewayState(token, body ?? {})
-      : kind === "pull"
-        ? pullGateway(token)
-        : kind === "ack"
-          ? ackGateway(token, body ?? {})
-          : kind === "automation"
-            ? ingestAutomation(token, body ?? {})
-            : kind === "camera"
-              ? ingestCamera(token, body ?? {})
-              : heartbeatGateway(token, body ?? {});
-  if (!result.ok) return NextResponse.json({ message: result.message }, { status: result.status });
-  return NextResponse.json(result.value);
+  return relay(request.headers.get("x-star-home-gateway"), body, false);
 }

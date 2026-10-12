@@ -67,6 +67,21 @@ export function readControlValue(payload: unknown): number | boolean | string | 
   return null;
 }
 
+const flagCapabilities = new Set(["power", "leak", "smoke", "motion", "presence"]);
+
+export function normalizeChannelValue(capability: string | null | undefined, value: number | boolean | string | null): number | boolean | string | null {
+  if (!capability || !flagCapabilities.has(capability)) return value;
+  if (value === 1 || value === "1" || value === "on" || value === "ON") return true;
+  if (value === 0 || value === "0" || value === "off" || value === "OFF") return false;
+  return value;
+}
+
+export function parseWirenboardErrorTopic(topic: string): { externalId: string; control: string } | null {
+  const match = /^\/?devices\/([^/]+)\/controls\/([^/]+)\/meta\/error$/i.exec(topic.trim());
+  if (!match) return null;
+  return { externalId: match[1] ?? "", control: match[2] ?? "" };
+}
+
 export function groupWirenboardControls(rows: WbTopicValue[]): WbDiscoveredDevice[] {
   const byId = new Map<string, WbDiscoveredChannel[]>();
   for (const row of rows) {
@@ -79,7 +94,7 @@ export function groupWirenboardControls(rows: WbTopicValue[]): WbDiscoveredDevic
       capability: meta?.capability ?? null,
       displayName: meta?.displayName ?? parsed.control,
       unit: meta?.unit ?? "",
-      value: readControlValue(row.value),
+      value: normalizeChannelValue(meta?.capability, readControlValue(row.value)),
     });
     byId.set(parsed.externalId, list);
   }

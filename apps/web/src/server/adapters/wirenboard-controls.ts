@@ -1,4 +1,4 @@
-import { displayNameForCapability, normalizeCapabilityName, unitForCapability } from "@/server/device-channels";
+import { asFlag, asLatch, displayNameForCapability, normalizeCapabilityName, unitForCapability } from "@/server/device-channels";
 import type { Capability } from "@/server/device-capabilities";
 import type { NormalizedState } from "@/server/ops-store";
 
@@ -81,8 +81,16 @@ export function channelValueToState(capability: Capability | null, value: number
   if (capability === "thermostat" && typeof value === "number") state.targetC = value;
   if (capability === "brightness" && typeof value === "number") state.brightness = value;
   if (capability === "position" && typeof value === "number") state.position = value;
-  if (capability === "power" && typeof value === "boolean") state.on = value;
-  if (capability === "latch" && (value === "OPEN" || value === "CLOSED")) state.latch = value;
+  const flag = asFlag(value);
+  if (capability === "power" && flag !== null) state.on = flag;
+  const latch = asLatch(value);
+  if (capability === "latch" && latch) state.latch = latch;
+  if (
+    (capability === "motion" || capability === "presence" || capability === "leak" || capability === "smoke" || capability === "contact" || capability === "gas") &&
+    flag !== null
+  ) {
+    state.detected = flag;
+  }
   return state;
 }
 

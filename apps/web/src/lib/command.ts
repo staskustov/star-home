@@ -30,6 +30,10 @@ export async function runCommand(task: () => Promise<Response>): Promise<{ ok: b
   }
 }
 
+export function commandHeld(payload: Record<string, unknown> | null): boolean {
+  return payload?.status === "accepted" || payload?.status === "queued" || payload?.confirmed === true;
+}
+
 export function commandMessage(payload: Record<string, unknown> | null, fallback = unconfirmed): string {
   if (typeof payload?.message === "string") return payload.message;
   if (typeof payload?.reply === "string") return payload.reply;

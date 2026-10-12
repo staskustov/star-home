@@ -31,7 +31,7 @@ import {
   type GatewayStatus,
 } from "@/server/ops-store";
 import { bindEngineeringSystem } from "@/server/engineering";
-import { can, objectFor, reaches, unitFor, type StaffActor } from "@/server/rbac/decide";
+import { can, managesGateway, objectFor, reaches, unitFor, wholeObject, type StaffActor } from "@/server/rbac/decide";
 import { cleanDeviceIcon, cleanDeviceIconColor, deviceIconOf } from "@/lib/google-icons";
 
 type Failure = { ok: false; status: number; message: string; deviceId?: string };
@@ -186,6 +186,7 @@ function gatewayFor(actor: StaffActor, gatewayId: unknown): Success<Gateway> | F
   if (!gateway) return { ok: false, status: 404, message: "Шлюз не найден" };
   const object = objectFor(actor, gateway.objectId, "part");
   if (!object.ok) return object;
+  if (!managesGateway(actor, gateway)) return { ok: false, status: 403, message: "Шлюз обслуживает весь объект. Нужен доступ ко всему объекту." };
   return { ok: true, value: gateway };
 }
 
@@ -517,6 +518,7 @@ export function createGateway(
   if (!isGatewayAdapter(adapter)) return { ok: false, status: 400, message: "Неизвестный адаптер шлюза" };
   const unitId = bindUnit(actor, object.value.id, input.unitId);
   if (unitId && typeof unitId !== "string") return unitId;
+  if (unitId === null && !wholeObject(actor)) return { ok: false, status: 403, message: "Нужен доступ ко всему объекту" };
   const gateway: Gateway = {
     id: newId("gw"),
     companyId: object.value.companyId,
@@ -563,6 +565,7 @@ export function updateGateway(
   if (!isGatewayAdapter(adapter)) return { ok: false, status: 400, message: "Неизвестный адаптер шлюза" };
   const unitId = input.unitId === undefined ? gateway.unitId : bindUnit(actor, gateway.objectId, input.unitId);
   if (unitId && typeof unitId !== "string") return unitId;
+  if (unitId === null && !wholeObject(actor)) return { ok: false, status: 403, message: "Нужен доступ ко всему объекту" };
   gateway.name = name;
   gateway.adapter = adapter;
   gateway.unitId = unitId === null || typeof unitId === "string" ? unitId : gateway.unitId;

@@ -580,7 +580,9 @@ describe("gateway simulator and real mqtt confirm", () => {
 describe("agent apply wiring", () => {
   it("routes simulator commands through applyQueuedCommand", async () => {
     const prev = process.env.STAR_HOME_GATEWAY_SIMULATOR;
+    const prevTest = process.env.STAR_HOME_GATEWAY_TEST;
     process.env.STAR_HOME_GATEWAY_SIMULATOR = "1";
+    process.env.STAR_HOME_GATEWAY_TEST = "1";
     try {
       const result = await applyOne({
         id: `gcmd_agent_sim_${Date.now()}`,
@@ -594,6 +596,109 @@ describe("agent apply wiring", () => {
     } finally {
       if (prev === undefined) delete process.env.STAR_HOME_GATEWAY_SIMULATOR;
       else process.env.STAR_HOME_GATEWAY_SIMULATOR = prev;
+      if (prevTest === undefined) delete process.env.STAR_HOME_GATEWAY_TEST;
+      else process.env.STAR_HOME_GATEWAY_TEST = prevTest;
     }
+  });
+
+  it("refuses simulator devices outside test mode", async () => {
+    const result = await applyOne({ id: `gcmd_agent_live_${Date.now()}`, deviceId: "dev_sim", command: "setPower", value: true, adapter: "simulator" });
+    assert.equal(result.confirmed, false);
+    assert.equal(result.error, "simulator-disabled");
+  });
+
+  it("refuses an expired command without touching hardware", async () => {
+    const result = await applyOne({
+      id: `gcmd_expired_${Date.now()}`,
+      deviceId: "gate_1",
+      command: "open",
+      adapter: "wirenboard",
+      externalId: "wb-gate",
+      expiresAt: new Date(Date.now() - 1_000).toISOString(),
+    });
+    assert.equal(result.confirmed, false);
+    assert.equal(result.error, "expired");
+    assert.equal(result.sent, undefined);
+  });
+});
+
+describe("gateway command mapping", () => {
+  it("drives curtains by position, stop and HVAC mode by their own controls", () => {
+    assert.equal(wirenboardSetTopic("wb-curtain", "open", "CURTAIN"), "/devices/wb-curtain/controls/position/on");
+    assert.equal(wirenboardSetPayload("open", undefined, "CURTAIN"), "100");
+    assert.equal(wirenboardSetPayload("close", undefined, "CURTAIN"), "0");
+    assert.equal(wirenboardSetTopic("wb-curtain", "stop", "CURTAIN"), "/devices/wb-curtain/controls/stop/on");
+    assert.equal(wirenboardSetTopic("wb-ac", "setHvacMode"), "/devices/wb-ac/controls/mode/on");
+    assert.equal(wirenboardSetPayload("setHvacMode", "cool"), "cool");
+    assert.equal(wirenboardSetTopic("wb-gate", "open", "GATE"), "/devices/wb-gate/controls/on/on");
+  });
+
+  it("turns Wiren Board 0/1 into booleans for flag channels only", async () => {
+    const { groupWirenboardControls, normalizeChannelValue } = await import("../wb-controls");
+    assert.equal(normalizeChannelValue("power", 1), true);
+    assert.equal(normalizeChannelValue("leak", 0), false);
+    assert.equal(normalizeChannelValue("temperature", 1), 1);
+    const [device] = groupWirenboardControls([{ topic: "/devices/wb-relay/controls/on", value: 0 }]);
+    assert.equal(device?.channels[0]?.value, false);
+  });
+});
+
+describe("gateway outbound buffer rules", () => {
+  it("drops rejected items instead of blocking the queue and only buffers deliveries", async () => {
+    const { CloudError, shouldBufferKind } = await import("../outbound-buffer");
+    assert.equal(shouldBufferKind("ack"), true);
+    assert.equal(shouldBufferKind("heartbeat"), false);
+    assert.equal(shouldBufferKind("pull"), false);
+    const buffer = createOutboundBuffer({ limit: 10 });
+    buffer.push({ kind: "ack", extra: { commandId: "bad" } });
+    buffer.push({ kind: "ack", extra: { commandId: "good" } });
+    const sent: unknown[] = [];
+    await buffer.flush(async (_kind, extra) => {
+      if (extra.commandId === "bad") throw new CloudError("HTTP 404", false);
+      sent.push(extra.commandId);
+    });
+    assert.equal(buffer.size(), 0);
+    assert.equal(buffer.dropped(), 1);
+    assert.deepEqual(sent, ["good"]);
+  });
+
+  it("gives up on an item after the attempt limit", async () => {
+    const buffer = createOutboundBuffer({ limit: 10, maxAttempts: 2 });
+    buffer.push({ kind: "state", extra: {} });
+    const fail = async () => {
+      throw new Error("503");
+    };
+    await buffer.flush(fail).catch(() => undefined);
+    assert.equal(buffer.size(), 1);
+    await buffer.flush(fail).catch(() => undefined);
+    assert.equal(buffer.size(), 0);
+    assert.equal(buffer.dropped(), 1);
+  });
+});
+
+describe("gateway runtime conditions", () => {
+  it("never fires an EVENT scenario without conditions and ignores unknown state", async () => {
+    const { createLocalRuntime } = await import("../local-runtime");
+    const applied: string[] = [];
+    const runtime = createLocalRuntime({
+      apply: async (command) => {
+        applied.push(command.id);
+        return { confirmed: true };
+      },
+    });
+    runtime.load({
+      timeZone: "Europe/Moscow",
+      scenarios: [
+        { id: "s_empty", trigger: "EVENT", enabled: true, conditions: [], steps: [{ deviceId: "d1", command: "setPower", value: true }] },
+        { id: "s_off", trigger: "EVENT", enabled: true, conditions: [{ deviceId: "d2", field: "on", value: false }], steps: [{ deviceId: "d1", command: "setPower", value: true }] },
+      ],
+      critical: [],
+      devices: [],
+    });
+    assert.equal((await runtime.evaluateEvents()).length, 0);
+    runtime.ingestChannels("d2", [{ capability: "power", value: 0 }]);
+    const reports = await runtime.evaluateEvents();
+    assert.deepEqual(reports.map((item) => item.scenarioId), ["s_off"]);
+    assert.equal(applied.length, 1);
   });
 });

@@ -3,12 +3,14 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { PasswordChange } from "@/components/auth/PasswordChange";
 import { StarMark } from "@/components/brand/StarMark";
 
 export function LoginForm() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [visible, setVisible] = useState(false);
+  const [mustChange, setMustChange] = useState(false);
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -25,14 +27,30 @@ export function LoginForm() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ login, password }),
     });
-    const body = (await response.json().catch(() => null)) as { message?: string; redirectTo?: string } | null;
+    const body = (await response.json().catch(() => null)) as { message?: string; redirectTo?: string; passwordChange?: boolean } | null;
     const redirectTo = body?.redirectTo;
     if (!response.ok || !redirectTo?.startsWith("/") || redirectTo.startsWith("//")) {
       setError(body?.message ?? "Неверный логин или пароль");
+      setMustChange(body?.passwordChange === true);
       return;
     }
     router.push(redirectTo);
     router.refresh();
+  }
+
+  if (mustChange) {
+    return (
+      <div>
+        <div className="flex flex-col items-center">
+          <StarMark className="h-9 w-9 text-accent" />
+          <h1 className="mt-5 text-center text-[24px] text-ink">Новый пароль</h1>
+          <p role="alert" className="mt-3 text-center text-sm text-muted">
+            {error}
+          </p>
+        </div>
+        <PasswordChange className="mt-8" />
+      </div>
+    );
   }
 
   return (

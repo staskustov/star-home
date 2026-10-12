@@ -16,7 +16,8 @@ import { HomeWeatherCard } from "@/components/home/HomeWeatherCard";
 import { ServiceDialog } from "@/components/home/ServiceDialog";
 import { LiveRefresh } from "@/components/pwa/LiveRefresh";
 import { StatusToast } from "@/components/ui/StatusToast";
-import { commandMessage, runCommand, unconfirmed } from "@/lib/command";
+import { InstantDevice } from "@/components/home/InstantDevice";
+import { commandHeld, commandMessage, runCommand, unconfirmed } from "@/lib/command";
 import { greetingForHour } from "@/lib/greeting";
 import type { LifeMode, ResidentHome } from "@/types/domain";
 
@@ -127,7 +128,7 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
           body: JSON.stringify({ pointId: chip.deviceId }),
         }),
       );
-      if (!result.ok || result.payload?.confirmed !== true) {
+      if (!result.ok || !commandHeld(result.payload)) {
         setToast({ text: commandMessage(result.payload), at: Date.now() });
         return;
       }
@@ -135,7 +136,7 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
         current.map((point) => (point.id === chip.deviceId ? { ...point, latch: open ? "OPEN" : "CLOSED", status: open ? "Открыто" : "Закрыто" } : point)),
       );
       setActionChips((current) => current.map((item) => (item.id === chip.id ? { ...item, latch: open ? "OPEN" : "CLOSED" } : item)));
-      setToast({ text: open ? "Открыто" : "Закрыто", at: Date.now() });
+      setToast({ text: commandMessage(result.payload, open ? "Открыто" : "Закрыто"), at: Date.now() });
       return;
     }
     if (chip.scenarioId) {
@@ -187,11 +188,11 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
     if (id === "open-gate") {
       setNotice(null);
       const result = await runCommand(() => fetch(path, { method: "POST" }));
-      if (!result.ok || result.payload?.confirmed !== true) {
+      if (!result.ok || !commandHeld(result.payload)) {
         setToast({ text: commandMessage(result.payload), at: Date.now() });
         return;
       }
-      setToast({ text: "Открыто", at: Date.now() });
+      setToast({ text: commandMessage(result.payload, "Открыто"), at: Date.now() });
       return;
     }
     setNotice(null);
@@ -214,7 +215,7 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
         </div>
         <div className="home-top">
           <HomeSection title="На улице" className="home-weather">
-            <HomeWeatherCard weather={data.weather} indoor={data.climate} />
+            <HomeWeatherCard weather={data.weather} />
           </HomeSection>
           <HomeSection title="Оповещения" href="/events" linkLabel="Все события" className="home-alerts">
             <HomeStatusCard notices={notices} />
@@ -251,6 +252,24 @@ export function ResidentHomeScreen({ data }: { data: ResidentHome }) {
         </div>
 
         <HomeRooms rooms={data.rooms} metrics={data.weather?.metrics} />
+
+        {data.devices.some((device) => device.favorite) ? (
+          <HomeSection title="На главной" href="/devices" linkLabel="Все устройства">
+            <div className="grid gap-2">
+              {data.devices
+                .filter((device) => device.favorite)
+                .map((device) => (
+                  <InstantDevice
+                    key={device.id ?? device.name}
+                    device={device}
+                    canGate={data.canGate}
+                    canCommand={data.canCommand}
+                    href={device.id ? `/devices/${device.id}` : undefined}
+                  />
+                ))}
+            </div>
+          </HomeSection>
+        ) : null}
 
         {notice ? (
           <p role="status" className="fade-in text-[15px] text-muted">

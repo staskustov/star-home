@@ -25,13 +25,17 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
+const residentPassword = process.env.STAR_HOME_SCREENS_RESIDENT_PASSWORD;
+const adminPassword = process.env.STAR_HOME_SCREENS_ADMIN_PASSWORD;
+assert(residentPassword && adminPassword, "set STAR_HOME_SCREENS_RESIDENT_PASSWORD and STAR_HOME_SCREENS_ADMIN_PASSWORD");
+
 const wrong = await call("/api/auth/login", { body: { login: "stanislav", password: "nope" } });
 assert(wrong.status === 401, `wrong password ${wrong.status}`);
 
 const anon = await call("/api/notifications");
 assert(anon.status === 401, `notifications without session ${anon.status}`);
 
-const login = await call("/api/auth/login", { body: { login: "stanislav", password: "resident" } });
+const login = await call("/api/auth/login", { body: { login: "stanislav", password: residentPassword } });
 assert(login.status === 200 && login.json?.redirectTo === "/home", "resident login");
 const home = await call("/home", { cookie: login.cookie });
 assert(home.status === 200 && home.text.includes("Дом №24") && home.text.includes("STAR HOME"), "resident home");
@@ -39,7 +43,7 @@ assert(home.status === 200 && home.text.includes("Дом №24") && home.text.in
 const notes = await call("/api/notifications", { cookie: login.cookie });
 assert(notes.status === 200 && Array.isArray(notes.json?.notices), "notifications");
 
-const admin = await call("/api/auth/login", { body: { login: "admin", password: "admin" } });
+const admin = await call("/api/auth/login", { body: { login: "admin", password: adminPassword } });
 assert(admin.status === 200 && admin.json?.redirectTo === "/admin", "admin login");
 const desk = await call("/admin", { cookie: admin.cookie });
 assert(desk.status === 200 && desk.text.includes("Объекты") && desk.text.includes("ЖК Новый") && desk.text.includes("КП Новый"), "admin objects");

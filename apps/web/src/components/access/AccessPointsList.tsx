@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { StatusToast } from "@/components/ui/StatusToast";
-import { commandMessage, runCommand } from "@/lib/command";
+import { commandHeld, commandMessage, runCommand } from "@/lib/command";
 
 export type AccessPoint = {
   id: string;
@@ -39,7 +39,7 @@ export function AccessPointsList({
         body: JSON.stringify({ pointId }),
       }),
     );
-    if (!result.ok || result.payload?.confirmed !== true) {
+    if (!result.ok || !commandHeld(result.payload)) {
       setToast({ text: commandMessage(result.payload), at: Date.now() });
       return;
     }
@@ -48,7 +48,7 @@ export function AccessPointsList({
         point.id === pointId ? { ...point, latch: open ? "OPEN" : "CLOSED", status: nextStatus } : point,
       ),
     );
-    setToast({ text: nextStatus, at: Date.now() });
+    setToast({ text: commandMessage(result.payload, nextStatus), at: Date.now() });
   }
 
   if (rows.length === 0) return null;

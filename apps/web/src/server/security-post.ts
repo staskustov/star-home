@@ -4,7 +4,7 @@ import { findBuilding, findUnit } from "@/server/catalog-store";
 import { deviceLabel, isOpener } from "@/server/device-kinds";
 import { findUserById } from "@/server/directory";
 import { recordAudit } from "@/server/operations";
-import { clock, outdoorWeather, readOps, writeOps, type Alarm, type Device } from "@/server/ops-store";
+import { clock, outdoorWeather, passStatus, passStatusLabel, readOps, writeOps, type Alarm, type Device } from "@/server/ops-store";
 import { cameraStreamState, frameOf } from "@/server/camera-media";
 import { can, objectFor, objectsInScope, reaches, type StaffActor } from "@/server/rbac/decide";
 import { securityChatsFor } from "@/server/security-desk";
@@ -123,7 +123,15 @@ export function securityPost(actor: StaffActor, objectId: unknown): Success<Secu
         .map((device) => ({ id: device.id, name: device.name, kind: deviceLabel(device.kind), ...pointState(device) })),
       cameras: can(actor, "security.camera.view") ? cameraRows(actor, object.value.id) : [],
       passes: can(actor, "access.view")
-        ? here(file.passes).map((pass) => ({ id: pass.id, guestName: pass.guestName, place: placeName(pass.unitId), detail: pass.detail, vehicle: pass.vehicle || "" }))
+        ? here(file.passes)
+            .filter((pass) => passStatus(pass) === "ACTIVE" || passStatus(pass) === "PENDING")
+            .map((pass) => ({
+              id: pass.id,
+              guestName: pass.guestName,
+              place: placeName(pass.unitId),
+              detail: passStatus(pass) === "PENDING" ? `${pass.detail} · ещё не начал действовать` : pass.detail,
+              vehicle: pass.vehicle || "",
+            }))
         : [],
       events: can(actor, "access.view")
         ? here(file.events)
@@ -217,6 +225,7 @@ export function checkPassFor(actor: StaffActor, objectId: unknown, code: unknown
   if (!/^[A-Z0-9]{4,16}$/.test(typed)) return { ok: false, status: 400, message: "Введите код пропуска" };
   const pass = readOps().passes.find((item) => item.objectId === object.value.id && item.companyId === object.value.companyId && item.code === typed);
   const found = pass && reaches(actor, pass) ? pass : undefined;
+  const status = found ? passStatus(found) : null;
   recordAudit({
     actorUserId: actor.userId,
     companyId: object.value.companyId,
@@ -226,9 +235,10 @@ export function checkPassFor(actor: StaffActor, objectId: unknown, code: unknown
     targetType: "pass",
     targetId: found?.id ?? null,
     target: found ? found.guestName : "Код не найден",
-    result: found ? "SUCCESS" : "DENIED",
-    reason: found ? "" : "Пропуск не найден",
+    result: status === "ACTIVE" ? "SUCCESS" : "DENIED",
+    reason: !found ? "Пропуск не найден" : status === "ACTIVE" ? "" : passStatusLabel[status ?? "REVOKED"],
   });
   if (!found) return { ok: false, status: 404, message: "Пропуск не найден" };
+  if (status !== "ACTIVE") return { ok: false, status: 409, message: `${found.guestName}: ${passStatusLabel[status ?? "REVOKED"].toLowerCase()}` };
   return { ok: true, value: { guestName: found.guestName, place: placeName(found.unitId), detail: found.detail, vehicle: found.vehicle || "" } };
 }

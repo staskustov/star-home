@@ -200,11 +200,20 @@ async function projectOps(prisma: PrismaClient, body: Record<string, unknown>): 
     await prisma.meterReading.upsert({ where: { id: reading.id }, create: reading, update: { value: reading.value, at: reading.at, meterId: reading.meterId } });
   }
   const readings = list<{ deviceId: string; temperatureC: number; humidityPercent: number }>(body.readings);
-  for (const device of list<{ id: string; companyId: string; objectId: string; unitId: string | null; kind: string; name: string; adapter: string; work?: string }>(body.devices)) {
+  for (const device of list<{ id: string; companyId: string; objectId: string; unitId: string | null; kind: string; name: string; adapter: string; work?: string; availability?: string }>(body.devices)) {
     const row = { companyId: device.companyId, objectId: device.objectId, unitId: device.unitId, kind: device.kind, name: device.name, adapter: device.adapter };
     await prisma.device.upsert({ where: { id: device.id }, create: { id: device.id, ...row }, update: row });
     const reading = readings.find((item) => item.deviceId === device.id);
-    const state = device.work === "FAULT" ? "Неисправно" : device.work === "OFF" ? "Выведено из работы" : reading ? "Показание" : "На связи";
+    const state =
+      device.work === "FAULT"
+        ? "Неисправно"
+        : device.work === "OFF"
+          ? "Выведено из работы"
+          : device.availability === "OFFLINE"
+            ? "Нет связи"
+            : reading
+              ? "Показание"
+              : "На связи";
     await prisma.deviceState.upsert({
       where: { deviceId: device.id },
       create: { deviceId: device.id, state, temperatureC: reading?.temperatureC ?? null, humidityPercent: reading?.humidityPercent ?? null },

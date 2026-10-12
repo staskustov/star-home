@@ -4,12 +4,11 @@ import { outdoorMetrics, type OutdoorWeather } from "@/components/home/WeatherSt
 
 export function HomeWeatherCard({
   weather,
-  indoor,
 }: {
   weather?: OutdoorWeather | null;
   indoor?: { temperatureC: number; humidityPercent: number } | null;
 }) {
-  const metrics = outdoorMetrics(weather, indoor);
+  const metrics = outdoorMetrics(weather);
   const temperature = metrics.find((item) => item.key === "temperature" || item.key === "temp");
   const sourceTag = weather?.source === "MOCK" ? "симулятор" : weather?.source === "DEMO" ? "демо" : null;
 

@@ -28,7 +28,7 @@ export function homeNotices({ securityStatus, devices, cameras, accessPoints, ba
   const notices: HomeNotice[] = [];
   if (securityStatus === "Тревога") notices.push({ text: "Охрана: тревога", tone: "danger", href: "/events" });
   const faulty = devices.filter((device) => device.state === "FAULT").length;
-  if (faulty) notices.push({ text: `${faulty} ${devicesWord(faulty)} неисправно`, tone: "danger", href: "/devices" });
+  if (faulty) notices.push({ text: `${faulty} ${devicesWord(faulty)} ${faulty === 1 ? "неисправно" : "неисправны"}`, tone: "danger", href: "/devices" });
   const stale = devices.filter((device) => device.stale && device.state !== "FAULT").length;
   if (stale) notices.push({ text: `${stale} ${devicesWord(stale)} без связи`, tone: "warning", href: "/devices" });
   for (const camera of cameras) {

@@ -18,14 +18,24 @@ type Success<T> = { ok: true; value: T };
 type Result<T> = Success<T> | Failure;
 
 const queueKeep = 200;
+export const highCommandTtlMs = 60_000;
+
+function trimQueue(rows: GatewayCommand[]): GatewayCommand[] {
+  const open = rows.filter((item) => item.status === "PENDING" || item.status === "SENT");
+  const finished = rows.filter((item) => item.status !== "PENDING" && item.status !== "SENT");
+  const keep = new Set([...open, ...finished.slice(0, Math.max(0, queueKeep - open.length))]);
+  return rows.filter((item) => keep.has(item));
+}
 
 export function enqueueGatewayCommand(input: {
   gatewayId: string;
   deviceId: string;
   command: string;
   value: unknown;
+  ttlMs?: number;
 }): GatewayCommand {
   const file = readOps();
+  expireGatewayCommands(file);
   const existing = file.gatewayCommands.find(
     (item) =>
       item.gatewayId === input.gatewayId &&
@@ -48,10 +58,10 @@ export function enqueueGatewayCommand(input: {
     value: input.value,
     status: "PENDING",
     createdAt,
-    expiresAt: new Date(Date.now() + commandReplayMs).toISOString(),
+    expiresAt: new Date(Date.now() + (input.ttlMs ?? commandReplayMs)).toISOString(),
   };
   file.gatewayCommands.unshift(row);
-  file.gatewayCommands = file.gatewayCommands.slice(0, queueKeep);
+  file.gatewayCommands = trimQueue(file.gatewayCommands);
   writeOps(file);
   return row;
 }
@@ -90,8 +100,9 @@ export function ackGatewayCommand(
     writeOps(file);
     return { ok: true, value: { commandId: row.id, applied: false } };
   }
-  const confirmed = input.confirmed === true;
-  const sent = input.sent === true;
+  const mock = findGateway(gatewayId)?.mode === "echo" || findGateway(gatewayId)?.mode === "simulator";
+  const confirmed = input.confirmed === true && !mock;
+  const sent = input.sent === true || (input.confirmed === true && mock);
   const failed = typeof input.error === "string" && Boolean(input.error.trim());
   const discover = row.command === "discover";
   if (row.status === "SENT" && !confirmed) {
@@ -125,12 +136,19 @@ export function ackGatewayCommand(
   return { ok: true, value: { commandId: row.id, applied: confirmed } };
 }
 
-export function confirmCommandsFromState(file: { gatewayCommands: GatewayCommand[] }, deviceId: string, state: Record<string, unknown>): string[] {
+export function confirmCommandsFromState(
+  file: { gatewayCommands: GatewayCommand[] },
+  deviceId: string,
+  state: Record<string, unknown>,
+  observedAt: string,
+): string[] {
   const now = new Date().toISOString();
+  const observed = Date.parse(observedAt);
   const confirmed: string[] = [];
   for (const row of file.gatewayCommands) {
     if (row.deviceId !== deviceId) continue;
-    if (row.status !== "SENT" && row.status !== "PENDING") continue;
+    if (row.status !== "SENT" || !row.sentAt) continue;
+    if (!Number.isFinite(observed) || observed <= Date.parse(row.sentAt)) continue;
     if (!stateMatchesCommand(row.command, row.value, state)) continue;
     row.status = "ACKED";
     row.ackedAt = now;

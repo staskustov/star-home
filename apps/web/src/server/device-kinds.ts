@@ -50,7 +50,22 @@ export function isOpener(kind: string): boolean {
   return openers.has(kind as DeviceKind);
 }
 
-const householdObjectKinds = new Set<DeviceKind>(["WEATHER"]);
+const householdObjectKinds = new Set<DeviceKind>([
+  "WEATHER",
+  "CAMERA",
+  "GATE",
+  "WICKET",
+  "BARRIER",
+  "LOCK",
+  "LIGHTING",
+  "CLIMATE",
+  "HEATING",
+  "CURTAIN",
+  "MOTION",
+  "LEAK",
+  "SMOKE",
+  "FIRE",
+]);
 
 export type DeviceProbeResult = "confirmed" | "failed";
 
@@ -80,13 +95,11 @@ export function residentSeesDevice(
     unitId?: string | null;
     metadata?: { engineering?: unknown; handedOver?: unknown } | Record<string, unknown>;
   },
-  opts?: { projectCameras?: boolean },
+  _opts?: { projectCameras?: boolean },
 ): boolean {
   if (!deviceHandedOver(device)) return false;
-  if (isOpener(device.kind)) return Boolean(device.unitId);
-  if (device.kind === "CAMERA" && !device.unitId) return Boolean(opts?.projectCameras);
-  if (device.unitId) return true;
   if (device.metadata && "engineering" in device.metadata && device.metadata.engineering === true) return false;
+  if (device.unitId) return true;
   return householdObjectKinds.has(device.kind as DeviceKind);
 }
 

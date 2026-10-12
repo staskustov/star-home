@@ -73,7 +73,7 @@ describe("method table", () => {
       .filter(([, route]) => route.access === "public")
       .map(([method]) => method)
       .sort();
-    assert.deepEqual(open, ["login", "pushKey"]);
+    assert.deepEqual(open, ["changePassword", "gatewayChannel", "login", "pushKey"]);
     for (const [method, route] of Object.entries(access)) {
       if (route.access === "public") continue;
       assert.equal((await rpc(method, {}, null)).status, 401, method);

@@ -212,8 +212,10 @@ function writeStateFromChannel(state: ChannelState, channel: DeviceChannel): voi
   if (channel.capability === "voltage" && typeof value === "number") state.voltageV = value;
   if (channel.capability === "current" && typeof value === "number") state.currentA = value;
   if (channel.capability === "frequency" && typeof value === "number") state.frequencyHz = value;
-  if (channel.capability === "power" && typeof value === "boolean") state.on = value;
-  if (channel.capability === "latch" && (value === "OPEN" || value === "CLOSED")) state.latch = value;
+  const flag = asFlag(value);
+  if (channel.capability === "power" && flag !== null) state.on = flag;
+  const latch = asLatch(value);
+  if (channel.capability === "latch" && latch) state.latch = latch;
   if (
     (channel.capability === "motion" ||
       channel.capability === "presence" ||
@@ -221,10 +223,29 @@ function writeStateFromChannel(state: ChannelState, channel: DeviceChannel): voi
       channel.capability === "smoke" ||
       channel.capability === "contact" ||
       channel.capability === "gas") &&
-    typeof value === "boolean"
+    flag !== null
   ) {
-    state.detected = value;
+    state.detected = flag;
   }
+}
+
+export function asFlag(value: unknown): boolean | null {
+  if (typeof value === "boolean") return value;
+  if (value === 1 || value === 0) return value === 1;
+  if (typeof value !== "string") return null;
+  const text = value.trim().toLowerCase();
+  if (text === "1" || text === "true" || text === "on") return true;
+  if (text === "0" || text === "false" || text === "off") return false;
+  return null;
+}
+
+export function asLatch(value: unknown): "OPEN" | "CLOSED" | null {
+  if (value === "OPEN" || value === "CLOSED") return value;
+  if (typeof value === "string" && (value.trim().toLowerCase() === "open" || value.trim().toLowerCase() === "closed")) {
+    return value.trim().toLowerCase() === "open" ? "OPEN" : "CLOSED";
+  }
+  const flag = asFlag(value);
+  return flag === null ? null : flag ? "OPEN" : "CLOSED";
 }
 
 function finiteOrNull(value: unknown): number | null {
@@ -285,7 +306,8 @@ export function pickNormalizedState(raw: unknown): ChannelState {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
   const source = raw as ChannelState;
   const next: ChannelState = {};
-  if (typeof source.on === "boolean") next.on = source.on;
+  const on = asFlag(source.on);
+  if (on !== null) next.on = on;
   if (typeof source.brightness === "number" && Number.isFinite(source.brightness)) next.brightness = source.brightness;
   if (typeof source.temperatureC === "number" && Number.isFinite(source.temperatureC)) next.temperatureC = source.temperatureC;
   if (typeof source.humidityPercent === "number" && Number.isFinite(source.humidityPercent)) next.humidityPercent = source.humidityPercent;
@@ -295,8 +317,10 @@ export function pickNormalizedState(raw: unknown): ChannelState {
   if (typeof source.targetC === "number" && Number.isFinite(source.targetC)) next.targetC = source.targetC;
   if (typeof source.mode === "string") next.mode = source.mode;
   if (typeof source.position === "number" && Number.isFinite(source.position)) next.position = source.position;
-  if (source.latch === "OPEN" || source.latch === "CLOSED") next.latch = source.latch;
-  if (typeof source.detected === "boolean") next.detected = source.detected;
+  const latch = asLatch(source.latch);
+  if (latch) next.latch = latch;
+  const detected = asFlag(source.detected);
+  if (detected !== null) next.detected = detected;
   if (typeof source.watts === "number" && Number.isFinite(source.watts)) next.watts = source.watts;
   if (typeof source.kwh === "number" && Number.isFinite(source.kwh)) next.kwh = source.kwh;
   if (typeof source.windMs === "number" && Number.isFinite(source.windMs)) next.windMs = source.windMs;

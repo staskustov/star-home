@@ -571,8 +571,10 @@ describe("smart home commands", () => {
     assert.equal(opened.status, 200);
     const after = (await rpc("access", null, resident)).body as { points: { id: string; status: string }[] };
     assert.equal(after.points.find((point) => point.id === "dev_gate_24")?.status, "Открыто");
-    assert.equal((await rpc("openPoint", { pointId: "dev_gate_siyanie" }, resident)).status, 404);
-    assert.equal((await rpc("commandDeviceSmart", { deviceId: "dev_gate_siyanie", command: "open" }, resident)).status, 403);
+    assert.equal((await rpc("openPoint", { pointId: "dev_gate_siyanie" }, resident)).status, 200);
+    const objectGate = await rpc("commandDeviceSmart", { deviceId: "dev_gate_siyanie", command: "open" }, resident);
+    assert.equal(objectGate.status, 200);
+    assert.equal((objectGate.body as { needsConfirm?: boolean }).needsConfirm, true);
   });
 
   it("rejects an unknown capability and a neighbour device", async () => {
@@ -674,8 +676,8 @@ describe("smart home commands", () => {
     assert.ok(home.home.actionChips.some((chip) => chip.action === "service"));
     assert.ok(!home.home.actionChips.some((chip) => chip.action === "open-point"));
     assert.ok(home.home.accessPoints.some((point) => point.id === "dev_gate_24"));
-    assert.ok(!home.home.accessPoints.some((point) => point.id === "dev_gate_siyanie"));
-    assert.ok(!home.home.accessPoints.some((point) => point.id === "dev_wicket_siyanie"));
+    assert.ok(home.home.accessPoints.some((point) => point.id === "dev_gate_siyanie"));
+    assert.ok(home.home.accessPoints.some((point) => point.id === "dev_wicket_siyanie"));
     assert.equal(home.home.weather?.temperatureC, 12.4);
     assert.equal(home.home.weather?.windMs, 2.4);
   });
@@ -814,7 +816,7 @@ describe("smart home commands", () => {
   it("stores a guest pass as a from-to window", async () => {
     const created = await rpc(
       "addPass",
-      { guestName: "Анна", from: "2026-09-28T10:00:00.000Z", to: "2026-09-28T18:00:00.000Z" },
+      { guestName: "Анна", from: "2026-10-20T10:00:00.000Z", to: "2026-10-20T18:00:00.000Z" },
       resident,
     );
     assert.equal(created.status, 200, JSON.stringify(created.body));
@@ -945,11 +947,11 @@ describe("smart home commands", () => {
     assert.ok(listed.devices.some((item) => item.id === deviceId));
     const cards = (await rpc("smartHomeDevices", {}, resident)).body as { devices: { id: string }[] };
     assert.ok(!cards.devices.some((item) => item.id === deviceId));
-    assert.ok(!cards.devices.some((item) => item.id === "dev_gate_siyanie"));
+    assert.ok(cards.devices.some((item) => item.id === "dev_gate_siyanie"));
     assert.ok(cards.devices.some((item) => item.id === "dev_gate_24"));
     const home = (await rpc("home", null, resident)).body as { home: { devices: { id: string }[] } };
     assert.ok(!home.home.devices.some((item) => item.id === deviceId));
-    assert.ok(!home.home.devices.some((item) => item.id === "dev_gate_siyanie"));
+    assert.ok(home.home.devices.some((item) => item.id === "dev_gate_siyanie"));
     assert.ok(home.home.devices.some((item) => item.id === "dev_gate_24"));
     const opened = await rpc("smartHomeDevice", { deviceId }, resident);
     assert.ok(opened.status === 403 || opened.status === 404, JSON.stringify(opened.body));
@@ -1038,15 +1040,26 @@ describe("smart home commands", () => {
   it("writes a household notice only when a sensor raises", async () => {
     const created = await rpc("createGateway", { objectId: "obj_siyanie", name: "Датчик", adapter: "local" }, admin);
     const gatewayId = (created.body as { id: string }).id;
-    await rpc("updateDevice", { deviceId: "dev_light_24", gatewayId }, admin);
+    const leak = await rpc(
+      "registerDevice",
+      { objectId: "obj_siyanie", roomId: "room_24_living", name: "Протечка тест", kind: "LEAK", gatewayId, capabilities: ["leak"] },
+      objectAdmin,
+    );
+    assert.equal(leak.status, 201, JSON.stringify(leak.body));
+    const leakId = (leak.body as { id: string }).id;
+    const ops = await import("../../web/src/server/ops-store");
+    const file = ops.readOps();
+    const stored = file.devices.find((item) => item.id === leakId);
+    if (stored) stored.metadata = { ...stored.metadata, handedOver: true };
+    ops.writeOps(file);
     const paired = await rpc("pairGateway", { gatewayId }, admin);
     const token = (paired.body as { token: string }).token;
     const channel = await import("../../web/src/server/gateway-channel");
     const before = ((await rpc("home", null, resident)).body as { home: { notices?: { body: string }[] } }).home.notices ?? [];
-    channel.ingestGatewayState(token, { deviceId: "dev_light_24", state: { detected: true } });
+    channel.ingestGatewayState(token, { deviceId: leakId, state: { detected: true } });
     const after = ((await rpc("home", null, resident)).body as { home: { notices?: { body: string }[] } }).home.notices ?? [];
     assert.ok(after.length >= before.length);
-    assert.ok(after.some((item) => item.body.includes("сигнал")));
+    assert.ok(after.some((item) => item.body.includes("протечка")));
     const unread = ((await rpc("profile", null, resident)).body as { notices: { id: string; readAt?: string | null }[] }).notices;
     assert.ok(unread.some((notice) => !notice.readAt));
     const marked = await rpc("readNotices", null, resident);
@@ -1704,7 +1717,11 @@ describe("audit log", () => {
     assert.equal(failed?.actorUserId, "usr_manager");
     assert.equal(failed?.result, "DENIED");
     assert.equal(failed?.category, "AUTH");
-    assert.equal((await rpc("login", { login: "manager", password: "admin" }, null, office)).status, 200);
+    const people = await import("../../web/src/server/people-store");
+    const { hashPassword } = await import("../../web/src/server/password");
+    const fresh = `test-${Math.random().toString(36).slice(2)}`;
+    people.updateUser("usr_manager", { passwordHash: hashPassword(fresh) });
+    assert.equal((await rpc("login", { login: "manager", password: fresh }, null, office)).status, 200);
     const signed = await latest("LOGIN");
     assert.equal(signed?.actorUserId, "usr_manager");
     assert.equal(signed?.device, office.device);

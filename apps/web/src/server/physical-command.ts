@@ -1,5 +1,5 @@
 import { cloudExecutesAdapter, executeOnAdapter } from "@/server/gateway-adapter";
-import { enqueueGatewayCommand } from "@/server/gateway-queue";
+import { enqueueGatewayCommand, highCommandTtlMs } from "@/server/gateway-queue";
 import {
   applyStateToChannels,
   deriveLifecycle,
@@ -7,6 +7,7 @@ import {
 } from "@/server/device-channels";
 import { findGateway, readOps, writeOps, type Device, type NormalizedState } from "@/server/ops-store";
 import { commandLifecycleOf, type CommandLifecycle } from "@/server/command-lifecycle";
+import { commandRisk, isSmartCommand } from "@/server/smart-commands";
 
 export type PhysicalCommandStatus = "accepted" | "queued" | "confirmed" | "failed";
 
@@ -37,17 +38,32 @@ function applyLocalState(deviceId: string, state: NormalizedState | undefined, c
   writeOps(file);
 }
 
+export function highRisk(device: Device, command: string): boolean {
+  return isSmartCommand(command) && commandRisk(command, device) === "HIGH";
+}
+
 export async function dispatchPhysicalCommand(device: Device, command: string, value?: unknown): Promise<PhysicalCommandResult> {
   const gateway = device.gatewayId ? findGateway(device.gatewayId) : undefined;
   const remote = Boolean(gateway && !cloudExecutesAdapter(gateway.adapter));
   if (remote && gateway) {
+    const offline = gateway.status === "OFFLINE";
+    const high = highRisk(device, command);
+    if (offline && high) {
+      return {
+        confirmed: false,
+        status: "failed",
+        lifecycle: "FAILED",
+        error: "gateway-offline",
+        message: "Контроллер недоступен. Команда не отправлена.",
+      };
+    }
     const queued = enqueueGatewayCommand({
       gatewayId: gateway.id,
       deviceId: device.id,
       command,
       value,
+      ttlMs: high ? highCommandTtlMs : undefined,
     });
-    const offline = gateway.status === "OFFLINE";
     return {
       confirmed: false,
       status: offline ? "queued" : "accepted",
@@ -83,10 +99,10 @@ export async function dispatchPhysicalCommand(device: Device, command: string, v
   if (result.error === "gateway-offline") {
     return {
       confirmed: false,
-      status: "queued",
-      lifecycle: "ACCEPTED",
+      status: "failed",
+      lifecycle: "FAILED",
       error: result.error,
-      message: "Контроллер недоступен. Команда в очереди.",
+      message: "Контроллер недоступен. Команда не отправлена.",
     };
   }
   return {

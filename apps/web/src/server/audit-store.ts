@@ -137,9 +137,28 @@ export function appendAudit(input: AuditInput): AuditRecord {
     ...(input.changes?.length ? { changes: input.changes } : {}),
   };
   file.entries.unshift(entry);
-  if (file.entries.length > auditWindow) file.entries.length = auditWindow;
+  file.entries = trimAudit(file.entries);
   persist(file);
   return entry;
+}
+
+const noisyActions = new Set(["LOGIN", "LOGIN_FAILED"]);
+const noisyWindow = 500;
+
+function trimAudit(entries: AuditRecord[]): AuditRecord[] {
+  const total = new Map<string, number>();
+  const noisy = new Map<string, number>();
+  return entries.filter((entry) => {
+    const company = entry.companyId || "";
+    if (noisyActions.has(entry.action)) {
+      const count = (noisy.get(company) ?? 0) + 1;
+      noisy.set(company, count);
+      if (count > noisyWindow) return false;
+    }
+    const count = (total.get(company) ?? 0) + 1;
+    total.set(company, count);
+    return count <= auditWindow;
+  });
 }
 
 export function listAudit(): readonly AuditRecord[] {

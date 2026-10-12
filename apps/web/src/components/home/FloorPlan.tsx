@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { CameraViewer, orderCameras, type HomeCamera } from "@/components/home/CameraViewer";
 import { Icon, type IconName } from "@/components/icons";
 import { GoogleIcon } from "@/components/GoogleIcon";
-import { commandMessage, runCommand } from "@/lib/command";
+import { commandHeld, commandMessage, runCommand } from "@/lib/command";
 import { deviceIconColorOf } from "@/lib/google-icons";
 import { isCameraKind, isClimateKind, isLightingKind, type PlanMetric, type PlanPin } from "@/lib/plan-pin";
 
@@ -65,7 +65,7 @@ export function PlanThumbnail({
         body: JSON.stringify({ command: "setPower", value: next }),
       }),
     );
-    if (!result.ok || result.payload?.confirmed !== true) {
+    if (!result.ok || !commandHeld(result.payload)) {
       setPower((map) => ({ ...map, [pin.deviceId]: current }));
     }
   }
@@ -139,9 +139,11 @@ export function FloorPlan({
 
   const [seenFloors, setSeenFloors] = useState(floors);
   if (seenFloors !== floors) {
+    const shown = seenFloors[Math.min(Math.max(floorIndex, 0), seenFloors.length - 1)]?.floor;
+    const kept = floors.findIndex((item) => item.floor === shown);
     setSeenFloors(floors);
     setMoved({});
-    setFloorIndex(0);
+    setFloorIndex(kept >= 0 ? kept : 0);
   }
 
   if (!floors.length) {
@@ -229,9 +231,11 @@ export function FloorPlan({
         body: JSON.stringify({ command: "setPower", value: next }),
       }),
     );
-    if (!result.ok || result.payload?.confirmed !== true) {
+    if (!result.ok || !commandHeld(result.payload)) {
       setPower((map) => ({ ...map, [pin.deviceId]: current }));
       setNotice(commandMessage(result.payload));
+    } else if (result.payload?.confirmed !== true) {
+      setNotice(commandMessage(result.payload, "Команда отправлена. Ждём подтверждения от устройства."));
     }
   }
 

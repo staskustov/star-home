@@ -17,6 +17,7 @@ import type { AccessEvent } from "@/types/domain";
 import { timeZone } from "@/server/time-zone";
 import { isGatewayStale, type GatewayExchange } from "@/server/gateway-contact";
 import { demoExecutionAllowed, dataSourceOf, type DataSource } from "@/server/runtime-mode";
+import { sealSecret } from "@/server/secret-box";
 
 export type Pass = {
   id: string;
@@ -29,6 +30,31 @@ export type Pass = {
   code: string;
   from?: string | null;
   to?: string | null;
+  revokedAt?: string | null;
+  revokedBy?: string | null;
+};
+
+export type PassStatus = "ACTIVE" | "PENDING" | "EXPIRED" | "REVOKED";
+
+export function passStatus(pass: Pass, now = Date.now()): PassStatus {
+  if (pass.revokedAt) return "REVOKED";
+  if (pass.from) {
+    const start = Date.parse(pass.from);
+    if (!Number.isFinite(start)) return "EXPIRED";
+    if (start > now) return "PENDING";
+  }
+  if (pass.to) {
+    const until = Date.parse(pass.to);
+    if (!Number.isFinite(until) || until < now) return "EXPIRED";
+  }
+  return "ACTIVE";
+}
+
+export const passStatusLabel: Record<PassStatus, string> = {
+  ACTIVE: "Действует",
+  PENDING: "Ещё не начал действовать",
+  EXPIRED: "Срок истёк",
+  REVOKED: "Отозван",
 };
 
 export const requestStatuses = ["CREATED", "ACCEPTED", "ASSIGNED", "IN_PROGRESS", "WAITING", "DONE", "CLOSED"] as const;
@@ -71,7 +97,9 @@ export type Invoice = {
   title: string;
   amount: number;
   currency: string;
-  status: "OPEN" | "PAID";
+  status: "OPEN" | "PROCESSING" | "PAID";
+  paymentStartedAt?: string;
+  paymentReference?: string;
 };
 
 export type { DeviceKind };
@@ -167,6 +195,7 @@ export type Gateway = {
   pairedAt?: string | null;
   bufferLag?: number | null;
   mqtt?: "up" | "down" | "none" | null;
+  mode?: "live" | "echo" | "simulator";
   metadata?: Record<string, unknown>;
 };
 
@@ -229,9 +258,28 @@ export type Notice = {
   title: string;
   body: string;
   at: string;
+  atIso?: string;
   severity?: "INFO" | "WARNING" | "ALERT";
   readAt?: string | null;
 };
+
+const noticesPerUser = 100;
+
+export function trimNotices(rows: Notice[]): Notice[] {
+  const counts = new Map<string, number>();
+  return rows.filter((notice) => {
+    const count = (counts.get(notice.userId) ?? 0) + 1;
+    counts.set(notice.userId, count);
+    return count <= noticesPerUser;
+  });
+}
+
+export function recentNotice(rows: Notice[], userId: string, title: string, body: string, withinMs = 10 * 60_000): boolean {
+  const recent = rows.find((notice) => notice.userId === userId && notice.title === title && notice.body === body);
+  if (!recent) return false;
+  const at = Date.parse(recent.atIso ?? "");
+  return Number.isFinite(at) && at > Date.now() - withinMs;
+}
 
 export type AuditEntry = {
   id: string;
@@ -259,6 +307,7 @@ export type PendingTool = {
   command?: string;
   value?: unknown;
   scenarioId?: string;
+  confirmToken?: string;
 };
 
 export type SmartEventKind = "command" | "state" | "availability" | "gateway";
@@ -303,6 +352,7 @@ export type PendingSmartCommand = {
 };
 
 export const commandReplayMs = 15 * 60_000;
+export const sentConfirmMs = 2 * 60_000;
 export const eventKeepMs = 90 * 24 * 60 * 60 * 1000;
 export const seriesKeepMs = 30 * 24 * 60 * 60 * 1000;
 export const seriesStepMs = 5 * 60_000;
@@ -996,6 +1046,14 @@ export function recordChannelHistory(
 
 export function expireGatewayCommands(file: OpsFile, now = Date.now()): void {
   for (const command of file.gatewayCommands) {
+    if (command.status === "SENT") {
+      const sentAt = Date.parse(command.sentAt ?? command.ackedAt ?? command.createdAt);
+      if (Number.isFinite(sentAt) && now - sentAt > sentConfirmMs) {
+        command.status = "EXPIRED";
+        command.error = "timeout";
+      }
+      continue;
+    }
     if (command.status !== "PENDING") continue;
     const deadline = Date.parse(command.expiresAt ?? "") || Date.parse(command.createdAt) + commandReplayMs;
     if (Number.isFinite(deadline) && now > deadline) command.status = "EXPIRED";
@@ -1025,6 +1083,65 @@ export function commandExpired(command: GatewayCommand, now = Date.now()): boole
   if (command.status === "EXPIRED") return true;
   const deadline = Date.parse(command.expiresAt ?? "") || Date.parse(command.createdAt) + commandReplayMs;
   return Number.isFinite(deadline) && now > deadline;
+}
+
+export function purgeObjectData(objectId: string): void {
+  const file = readOps();
+  const deviceIds = new Set(file.devices.filter((item) => item.objectId === objectId).map((item) => item.id));
+  const gatewayIds = new Set(file.gateways.filter((item) => item.objectId === objectId).map((item) => item.id));
+  const meterIds = new Set(file.meters.filter((item) => item.objectId === objectId).map((item) => item.id));
+  file.devices = file.devices.filter((item) => item.objectId !== objectId);
+  file.gateways = file.gateways.filter((item) => item.objectId !== objectId);
+  file.engineeringSystems = file.engineeringSystems.filter((item) => item.objectId !== objectId);
+  file.scenarios = file.scenarios.filter((item) => item.objectId !== objectId);
+  file.passes = file.passes.filter((item) => item.objectId !== objectId);
+  file.alarms = file.alarms.filter((item) => item.objectId !== objectId);
+  file.events = file.events.filter((item) => item.objectId !== objectId);
+  file.requests = file.requests.filter((item) => item.objectId !== objectId);
+  file.invoices = file.invoices.filter((item) => item.objectId !== objectId);
+  file.meters = file.meters.filter((item) => item.objectId !== objectId);
+  file.meterReadings = file.meterReadings.filter((item) => !meterIds.has(item.meterId));
+  file.readings = file.readings.filter((item) => !deviceIds.has(item.deviceId));
+  file.smartEvents = file.smartEvents.filter((item) => item.objectId !== objectId);
+  file.smartHistory = file.smartHistory.filter((item) => item.objectId !== objectId);
+  file.gatewayCommands = file.gatewayCommands.filter((item) => item.objectId !== objectId && !gatewayIds.has(item.gatewayId));
+  file.commandLogs = file.commandLogs.filter((item) => item.objectId !== objectId);
+  file.gatewayExchanges = file.gatewayExchanges.filter((item) => item.objectId !== objectId);
+  file.chats = file.chats.filter((item) => item.objectId !== objectId);
+  file.cameraMedia = file.cameraMedia.filter((item) => !deviceIds.has(item.deviceId));
+  file.cameraFrames = file.cameraFrames.filter((item) => !deviceIds.has(item.deviceId));
+  file.favorites = file.favorites.filter((item) => !deviceIds.has(item.deviceId));
+  file.homeChips = file.homeChips.filter((item) => item.objectId !== objectId);
+  file.homeMetrics = file.homeMetrics.filter((item) => item.objectId !== objectId);
+  file.homeCovers = file.homeCovers.filter((item) => item.objectId !== objectId);
+  file.objectPrefs = file.objectPrefs.filter((item) => item.objectId !== objectId);
+  writeOps(file);
+}
+
+export function purgeUnitData(unitId: string): void {
+  const file = readOps();
+  const deviceIds = new Set(file.devices.filter((item) => item.unitId === unitId).map((item) => item.id));
+  const meterIds = new Set(file.meters.filter((item) => item.unitId === unitId).map((item) => item.id));
+  file.devices = file.devices.filter((item) => item.unitId !== unitId);
+  file.scenarios = file.scenarios.filter((item) => item.unitId !== unitId);
+  file.passes = file.passes.filter((item) => item.unitId !== unitId);
+  file.alarms = file.alarms.filter((item) => item.unitId !== unitId);
+  file.events = file.events.filter((item) => item.unitId !== unitId);
+  file.requests = file.requests.filter((item) => item.unitId !== unitId);
+  file.invoices = file.invoices.filter((item) => item.unitId !== unitId);
+  file.meters = file.meters.filter((item) => item.unitId !== unitId);
+  file.meterReadings = file.meterReadings.filter((item) => !meterIds.has(item.meterId));
+  file.readings = file.readings.filter((item) => !deviceIds.has(item.deviceId));
+  file.turns = file.turns.filter((item) => item.unitId !== unitId);
+  file.smartEvents = file.smartEvents.filter((item) => item.unitId !== unitId);
+  file.commandLogs = file.commandLogs.filter((item) => item.unitId !== unitId);
+  file.chats = file.chats.filter((item) => item.unitId !== unitId);
+  file.cameraMedia = file.cameraMedia.filter((item) => !deviceIds.has(item.deviceId));
+  file.cameraFrames = file.cameraFrames.filter((item) => !deviceIds.has(item.deviceId));
+  file.favorites = file.favorites.filter((item) => !deviceIds.has(item.deviceId));
+  file.homeLayouts = file.homeLayouts.filter((item) => item.unitId !== unitId);
+  file.homeCovers = file.homeCovers.filter((item) => item.unitId !== unitId);
+  writeOps(file);
 }
 
 function normalize(file: OpsFile): OpsFile {
@@ -1102,6 +1219,12 @@ function normalize(file: OpsFile): OpsFile {
   }
   for (const command of file.gatewayCommands) {
     command.expiresAt ??= new Date(Date.parse(command.createdAt) + commandReplayMs).toISOString();
+    if (command.command === "captureFrame" && command.value && typeof command.value === "object" && "password" in command.value) {
+      command.value = { deviceId: command.deviceId };
+    }
+  }
+  for (const media of file.cameraMedia) {
+    if (media.password && !media.password.startsWith("enc1:")) media.password = sealSecret(media.password);
   }
   expireGatewayCommands(file);
   trimSmartLayers(file);
@@ -1249,8 +1372,7 @@ export function addNotice(input: {
   severity?: "INFO" | "WARNING" | "ALERT";
 }): boolean {
   const file = load();
-  const recent = file.notices.find((notice) => notice.userId === input.userId && notice.title === input.title && notice.body === input.body);
-  if (recent && Date.parse(recent.at) > Date.now() - 10 * 60_000) return false;
+  if (recentNotice(file.notices, input.userId, input.title, input.body)) return false;
   file.notices.unshift({
     id: newId("note"),
     companyId: input.companyId,
@@ -1258,9 +1380,10 @@ export function addNotice(input: {
     title: input.title,
     body: input.body,
     at: clock(),
+    atIso: new Date().toISOString(),
     severity: input.severity ?? "INFO",
   });
-  file.notices = file.notices.slice(0, 200);
+  file.notices = trimNotices(file.notices);
   persist(file);
   return true;
 }
@@ -1343,9 +1466,9 @@ export function homeSignals(unitId: string, objectId: string): {
   const file = load();
   const climateDevice = file.devices.find((device) => device.kind === "CLIMATE" && device.unitId === unitId);
   const reading = climateDevice ? file.readings.find((item) => item.deviceId === climateDevice.id) : undefined;
-  const pass = file.passes.find((item) => item.unitId === unitId);
+  const pass = file.passes.find((item) => item.unitId === unitId && passStatus(item) === "ACTIVE");
   const invoices = file.invoices.filter((invoice) => invoice.unitId === unitId);
-  const open = invoices.filter((invoice) => invoice.status === "OPEN");
+  const open = invoices.filter((invoice) => invoice.status !== "PAID");
   const event = file.events.find((item) => item.objectId === objectId && (item.unitId === unitId || !item.unitId));
   const request = file.requests.find((item) => item.unitId === unitId && item.status !== "DONE" && item.status !== "CLOSED");
   const meters = (file.meters ?? [])

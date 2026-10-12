@@ -1,6 +1,8 @@
 import { findBuilding, findUnit, readTree } from "@/server/catalog-store";
 import { findUserById, findUserByLogin, isLive, membershipsOf } from "@/server/directory";
 import { createPass, recordAudit } from "@/server/operations";
+import { readOps, writeOps } from "@/server/ops-store";
+import { zonedDate } from "@/server/time-zone";
 import {
   createPerson,
   createResidentMembership,
@@ -91,6 +93,7 @@ export function residentBoard(actor: StaffActor): {
 } {
   const objects = objectsInScope(actor);
   const users = new Map(listUsers().map((user) => [user.id, user]));
+  const showLogins = can(actor, "residents.edit") || can(actor, "residents.create");
   const people = listMemberships()
     .filter(isLive)
     .filter((membership) => householdRoles.has(membership.role) && membership.objectId && membership.unitId)
@@ -107,7 +110,7 @@ export function residentBoard(actor: StaffActor): {
           name: user.name,
           surname: user.surname ?? "",
           displayName: personName(user),
-          login: user.login,
+          login: showLogins ? user.login : "",
           objectId: membership.objectId,
           unitId: unit.id,
           unitName: unit.name,
@@ -199,6 +202,9 @@ export function addResident(
           { userId: actor.userId, companyId: actor.companyId, objectId: unit.objectId, unitId: unit.id, role: actor.role },
           name,
           `До ${input.expiresAt}`,
+          "",
+          new Date().toISOString(),
+          expiresAt ? (zonedDate(expiresAt)?.toISOString() ?? null) : null,
         )
       : null;
   const membership = createResidentMembership({
@@ -300,6 +306,9 @@ export function updateResident(
         { userId: actor.userId, companyId: actor.companyId, objectId: nextUnit.value.objectId, unitId: nextUnit.value.id, role: actor.role },
         name,
         until ? `До ${until}` : "Гость",
+        "",
+        new Date().toISOString(),
+        typeof expiresAt === "string" ? (zonedDate(expiresAt)?.toISOString() ?? null) : null,
       ).id;
   }
   updateUser(user.id, {
@@ -308,6 +317,10 @@ export function updateResident(
     login,
     ...(passwordChanged ? { passwordHash: hashPassword(password) } : {}),
   });
+  if (passId) {
+    syncGuestPass(passId, role === "GUEST" ? (typeof expiresAt === "string" ? expiresAt : null) : undefined, actor.userId);
+    if (role !== "GUEST") passId = null;
+  }
   updateMembership(membership.id, {
     role,
     objectId: nextUnit.value.objectId,
@@ -332,6 +345,19 @@ export function updateResident(
   return { ok: true, value: { id: membership.id } };
 }
 
+function syncGuestPass(passId: string, until: string | null | undefined, actorUserId: string): void {
+  const file = readOps();
+  const pass = file.passes.find((item) => item.id === passId);
+  if (!pass) return;
+  if (until === undefined) {
+    pass.revokedAt ??= new Date().toISOString();
+    pass.revokedBy ??= actorUserId;
+  } else {
+    pass.to = until ? (zonedDate(until)?.toISOString() ?? pass.to ?? null) : null;
+  }
+  writeOps(file);
+}
+
 export function removeResident(actor: StaffActor, membershipId: string): Success<{ id: string }> | Failure {
   if (!can(actor, "residents.delete")) return denied;
   const membership = listMemberships().filter(isLive).find((item) => item.id === membershipId);
@@ -342,6 +368,8 @@ export function removeResident(actor: StaffActor, membershipId: string): Success
   if (!unit.ok) return unit.status === 404 ? { ok: false, status: 404, message: "Житель не найден" } : unit;
   const user = findUserById(membership.userId);
   if (!user) return { ok: false, status: 404, message: "Житель не найден" };
+  if (membership.passId) syncGuestPass(membership.passId, undefined, actor.userId);
+  endSessions(user.id);
   deleteMembership(membershipId);
   recordAudit({
     actorUserId: actor.userId,

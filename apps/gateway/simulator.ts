@@ -30,7 +30,7 @@ export async function applySimulator(command: ApplyCommand, ctx: ApplyContext): 
   await sleep(Number.isFinite(delay) ? Math.min(5_000, Math.max(0, delay)) : 50).catch(() => undefined);
   if (fail) return { confirmed: false, sent: true, error: "simulator-fail" };
   if (timeout) return { confirmed: false, sent: true, error: "mqtt-timeout" };
-  const state = expectedState(command.command, command.value) ?? {};
+  const state = expectedState(command.command, command.value, command.kind) ?? {};
   devices.set(command.deviceId, { ...(devices.get(command.deviceId) ?? {}), ...state });
   if (duplicate) {
     devices.set(command.deviceId, { ...(devices.get(command.deviceId) ?? {}), ...state });

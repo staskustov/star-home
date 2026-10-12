@@ -3,6 +3,7 @@ import { isOpener } from "@/server/device-kinds";
 import { applyCommandState, type SmartCommandName } from "@/server/smart-commands";
 import { readOps, writeOps, type Device, type Gateway, type GatewayAdapterKind, type NormalizedState } from "@/server/ops-store";
 import { expireStaleGateways } from "@/server/gateway-contact";
+import { publicHttpUrl } from "@/server/outbound-url";
 import { demoExecutionAllowed } from "@/server/runtime-mode";
 
 export type AdapterResult = {
@@ -63,10 +64,13 @@ export class HttpGatewayAdapter implements GatewayAdapter {
 
   async execute(device: Device, command: string, value: unknown): Promise<AdapterResult> {
     if (!device.endpoint) return { confirmed: false, error: "no-endpoint" };
+    if (!publicHttpUrl(device.endpoint)) return { confirmed: false, error: "endpoint-not-public" };
     const response = await fetch(device.endpoint, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ command, value, kind: device.kind }),
+      redirect: "manual",
+      signal: AbortSignal.timeout(10_000),
     }).catch(() => null);
     if (!response?.ok) return { confirmed: false, error: "unreachable" };
     const payload = (await response.json().catch(() => null)) as { confirmed?: boolean; state?: NormalizedState } | null;

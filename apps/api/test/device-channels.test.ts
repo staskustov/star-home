@@ -83,12 +83,12 @@ describe("device channel model", () => {
     assert.equal(device.state?.temperatureC, 20);
   });
 
-  it("hides object engineering and object gates from the resident", () => {
-    assert.equal(residentSeesDevice({ kind: "GATE", unitId: null }), false);
-    assert.equal(residentSeesDevice({ kind: "WICKET", unitId: null }), false);
+  it("shows object household devices and hides engineering", () => {
+    assert.equal(residentSeesDevice({ kind: "GATE", unitId: null }), true);
+    assert.equal(residentSeesDevice({ kind: "WICKET", unitId: null }), true);
     assert.equal(residentSeesDevice({ kind: "GATE", unitId: "unit_24" }), true);
     assert.equal(residentSeesDevice({ kind: "WEATHER", unitId: null }), true);
-    assert.equal(residentSeesDevice({ kind: "CAMERA", unitId: null }), false);
+    assert.equal(residentSeesDevice({ kind: "CAMERA", unitId: null }), true);
     assert.equal(residentSeesDevice({ kind: "CAMERA", unitId: null }, { projectCameras: true }), true);
     assert.equal(residentSeesDevice({ kind: "CAMERA", unitId: "unit_24" }), true);
     assert.equal(residentSeesDevice({ kind: "POWER", unitId: null }), false);

@@ -4,8 +4,9 @@ import { useState } from "react";
 import Link from "next/link";
 import { Icon } from "@/components/icons";
 import { DeviceTileIcon } from "@/components/GoogleIcon";
-import { commandMessage, runCommand } from "@/lib/command";
+import { commandHeld, commandMessage, runCommand } from "@/lib/command";
 import { deviceStatus, statusClass, statusDot } from "@/lib/device-status";
+import { isOpener } from "@/server/device-kinds";
 
 export type InstantDeviceRow = {
   id?: string;
@@ -34,10 +35,17 @@ export function InstantDevice({
 }) {
   const [power, setPower] = useState(device.power);
   const [latch, setLatch] = useState(device.latch);
+  const [synced, setSynced] = useState({ power: device.power, latch: device.latch });
+  if (synced.power !== device.power || synced.latch !== device.latch) {
+    setSynced({ power: device.power, latch: device.latch });
+    setPower(device.power);
+    setLatch(device.latch);
+  }
   const [notice, setNotice] = useState<string | null>(null);
   const commands = device.commands ?? [];
   const switchable = canCommand && commands.includes("setPower");
-  const opener = Boolean(latch !== undefined || commands.includes("open") || commands.includes("close"));
+  const opener = device.kind ? isOpener(device.kind) : latch !== undefined;
+  const curtain = !opener && canCommand && (commands.includes("open") || commands.includes("close"));
   const status = deviceStatus({ stale: device.stale, work: device.state, power: switchable ? Boolean(power) : power, latch });
 
   async function togglePower(on: boolean) {
@@ -52,10 +60,27 @@ export function InstantDevice({
         body: JSON.stringify({ command: "setPower", value: on }),
       }),
     );
+    if (result.ok && commandHeld(result.payload)) {
+      setNotice(commandMessage(result.payload, result.payload?.confirmed === true ? "Команда выполнена." : "Команда отправлена. Ждём подтверждения."));
+      return;
+    }
     if (!result.ok || result.payload?.confirmed !== true) {
       setPower(previous);
       setNotice(commandMessage(result.payload));
     }
+  }
+
+  async function moveCurtain(command: "open" | "close") {
+    if (!device.id) return;
+    setNotice(null);
+    const result = await runCommand(() =>
+      fetch(`/api/smart-home/devices/${device.id}/command`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ command }),
+      }),
+    );
+    setNotice(commandMessage(result.payload));
   }
 
   async function setOpen(open: boolean) {
@@ -70,6 +95,10 @@ export function InstantDevice({
         body: JSON.stringify({ pointId: device.id }),
       }),
     );
+    if (result.ok && commandHeld(result.payload)) {
+      setNotice(commandMessage(result.payload, result.payload?.confirmed === true ? "Команда выполнена." : "Команда отправлена. Ждём подтверждения."));
+      return;
+    }
     if (!result.ok || result.payload?.confirmed !== true) {
       setLatch(previous);
       setNotice(commandMessage(result.payload));
@@ -102,7 +131,7 @@ export function InstantDevice({
           body
         )}
       </div>
-      {switchable || (canGate && opener && device.state === "ON" && !device.stale) ? (
+      {switchable || curtain || (canGate && opener && device.state === "ON" && !device.stale) ? (
         <div className="mt-3 flex flex-wrap gap-2">
           {switchable ? (
             <>
@@ -111,6 +140,16 @@ export function InstantDevice({
               </button>
               <button type="button" className="btn btn-secondary btn-compact" disabled={power === false} onClick={() => void togglePower(false)}>
                 Выключить
+              </button>
+            </>
+          ) : null}
+          {curtain ? (
+            <>
+              <button type="button" className="btn btn-primary btn-compact" onClick={() => void moveCurtain("open")}>
+                Открыть
+              </button>
+              <button type="button" className="btn btn-secondary btn-compact" onClick={() => void moveCurtain("close")}>
+                Закрыть
               </button>
             </>
           ) : null}

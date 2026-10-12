@@ -6,6 +6,8 @@ export type ApplyCommand = {
   externalId?: string | null;
   endpoint?: string | null;
   adapter?: string | null;
+  kind?: string | null;
+  expiresAt?: string | null;
 };
 
 export type ApplyResult = {
@@ -21,6 +23,8 @@ export type ApplyContext = {
   echo?: boolean;
   mqttConfirm?: "echo" | "state";
   simulator?: boolean;
+  allowSimulator?: boolean;
+  now?: () => number;
   simulatorDelayMs?: number;
   simulatorFail?: boolean;
   simulatorTimeout?: boolean;
@@ -39,28 +43,41 @@ export type ApplyContext = {
   commandRetries?: number;
 };
 
-export function wirenboardSetTopic(externalId: string, command: string): string {
+function positional(kind: string | null | undefined): boolean {
+  return kind === "CURTAIN" || kind === "BLINDS" || kind === "SHUTTER";
+}
+
+export function wirenboardSetTopic(externalId: string, command: string, kind?: string | null): string {
   const control =
-    command === "setPower" || command === "open" || command === "close"
-      ? "on"
-      : command === "setBrightness"
-        ? "brightness"
-        : command === "setTemperature" || command === "setHvacMode"
-          ? "target"
-          : command === "setPosition" || command === "stop"
-            ? "position"
-            : "command";
+    command === "open" || command === "close"
+      ? positional(kind)
+        ? "position"
+        : "on"
+      : command === "setPower"
+        ? "on"
+        : command === "setBrightness"
+          ? "brightness"
+          : command === "setTemperature"
+            ? "target"
+            : command === "setHvacMode"
+              ? "mode"
+              : command === "setPosition"
+                ? "position"
+                : command === "stop"
+                  ? "stop"
+                  : "command";
   return `/devices/${externalId}/controls/${control}/on`;
 }
 
-export function wirenboardReadTopic(externalId: string, command: string): string {
-  const setTopic = wirenboardSetTopic(externalId, command);
+export function wirenboardReadTopic(externalId: string, command: string, kind?: string | null): string {
+  const setTopic = wirenboardSetTopic(externalId, command, kind);
   return setTopic.endsWith("/on") ? setTopic.slice(0, -3) : setTopic;
 }
 
-export function wirenboardSetPayload(command: string, value: unknown): string {
-  if (command === "close" || command === "stop") return "0";
-  if (command === "open") return "1";
+export function wirenboardSetPayload(command: string, value: unknown, kind?: string | null): string {
+  if (command === "open") return positional(kind) ? "100" : "1";
+  if (command === "close") return "0";
+  if (command === "stop") return "1";
   if (command === "setPower") return value === false || value === 0 || value === "0" ? "0" : "1";
   if (typeof value === "boolean") return value ? "1" : "0";
   if (typeof value === "number" && Number.isFinite(value)) return String(value);
@@ -89,10 +106,11 @@ export function payloadMatches(expected: string, actual: unknown): boolean {
   return false;
 }
 
-export function expectedState(command: string, value: unknown): Record<string, unknown> | undefined {
+export function expectedState(command: string, value: unknown, kind?: string | null): Record<string, unknown> | undefined {
   if (command === "setPower") return { on: !(value === false || value === 0 || value === "0") };
-  if (command === "open") return { latch: "OPEN" };
-  if (command === "close") return { latch: "CLOSED" };
+  if (command === "open") return positional(kind) ? { position: 100 } : { latch: "OPEN" };
+  if (command === "close") return positional(kind) ? { position: 0 } : { latch: "CLOSED" };
+  if (command === "setHvacMode") return typeof value === "string" && value.trim() ? { mode: value.trim() } : undefined;
   if (command === "setBrightness") {
     const brightness = Number(value);
     return Number.isFinite(brightness) ? { brightness: Math.min(100, Math.max(0, Math.round(brightness))), on: brightness > 0 } : undefined;
@@ -140,9 +158,9 @@ async function applyHttp(command: ApplyCommand, fetchHttp: typeof fetch): Promis
 async function applyMqtt(command: ApplyCommand, ctx: ApplyContext): Promise<ApplyResult> {
   if (!command.externalId) return { confirmed: false, error: "no-external-id" };
   if (!ctx.publishMqtt) return { confirmed: false, error: "mqtt-offline" };
-  const writeTopic = wirenboardSetTopic(command.externalId, command.command);
-  const readTopic = wirenboardReadTopic(command.externalId, command.command);
-  const payload = wirenboardSetPayload(command.command, command.value);
+  const writeTopic = wirenboardSetTopic(command.externalId, command.command, command.kind);
+  const readTopic = wirenboardReadTopic(command.externalId, command.command, command.kind);
+  const payload = wirenboardSetPayload(command.command, command.value, command.kind);
   const match = (value: unknown) => payloadMatches(payload, value);
 
   if (!ctx.waitMqtt) {
@@ -171,13 +189,20 @@ async function applyMqtt(command: ApplyCommand, ctx: ApplyContext): Promise<Appl
       if (ctx.mqttConfirm === "state") {
         return { confirmed: false, sent: true };
       }
-      return { confirmed: true, sent: true, state: expectedState(command.command, command.value) };
+      return { confirmed: true, sent: true, state: expectedState(command.command, command.value, command.kind) };
     }
   }
   return { confirmed: false, sent, error: sent ? "mqtt-timeout" : "mqtt-offline" };
 }
 
+export function commandExpired(command: Pick<ApplyCommand, "expiresAt">, now = Date.now()): boolean {
+  if (!command.expiresAt) return false;
+  const until = Date.parse(command.expiresAt);
+  return Number.isFinite(until) && until <= now;
+}
+
 export async function applyQueuedCommand(command: ApplyCommand, ctx: ApplyContext): Promise<ApplyResult> {
+  if (commandExpired(command, ctx.now?.() ?? Date.now())) return { confirmed: false, error: "expired" };
   if (command.command === "discover") {
     const found = ctx.discover();
     return found.confirmed
@@ -188,9 +213,10 @@ export async function applyQueuedCommand(command: ApplyCommand, ctx: ApplyContex
     return { confirmed: false, error: "camera-via-capture" };
   }
   if (ctx.echo) {
-    return { confirmed: true, sent: true, state: expectedState(command.command, command.value) };
+    return { confirmed: true, sent: true, state: expectedState(command.command, command.value, command.kind) };
   }
   if (command.adapter === "simulator" || ctx.simulator) {
+    if (ctx.allowSimulator === false) return { confirmed: false, error: "simulator-disabled" };
     const { applySimulator } = await import("./simulator");
     return applySimulator(command, ctx);
   }

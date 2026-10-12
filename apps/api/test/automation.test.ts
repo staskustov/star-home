@@ -150,8 +150,9 @@ describe("stage 7 local automation", () => {
       {
         name: "Первый шлюз",
         objectId: "obj_siyanie",
-        trigger: "MANUAL",
+        trigger: "EVENT",
         runtime: "gateway",
+        conditions: [{ deviceId: site.lamp.id, field: "on", value: false }],
         steps: [{ deviceId: site.lamp.id, command: "setPower", value: true }],
       },
       objectAdmin,
@@ -161,8 +162,9 @@ describe("stage 7 local automation", () => {
       {
         name: "Второй шлюз",
         objectId: "obj_siyanie",
-        trigger: "MANUAL",
+        trigger: "EVENT",
         runtime: "gateway",
+        conditions: [{ deviceId: site.lamp.id, field: "on", value: true }],
         steps: [{ deviceId: site.lamp.id, command: "setPower", value: false }],
       },
       objectAdmin,

@@ -61,9 +61,20 @@ export function isHighStep(command: string, kind: string): boolean {
   return false;
 }
 
+function flag(value: unknown): boolean | null {
+  if (value === true || value === 1 || value === "1" || value === "true" || value === "on" || value === "ON") return true;
+  if (value === false || value === 0 || value === "0" || value === "false" || value === "off" || value === "OFF") return false;
+  return null;
+}
+
 function same(left: unknown, right: unknown): boolean {
+  if (left === undefined || left === null) return false;
   if (left === right) return true;
-  if (typeof left === "boolean" || typeof right === "boolean") return Boolean(left) === Boolean(right);
+  if (typeof left === "boolean" || typeof right === "boolean") {
+    const a = flag(left);
+    const b = flag(right);
+    return a !== null && a === b;
+  }
   return String(left) === String(right);
 }
 
@@ -90,10 +101,10 @@ export function clockParts(now: Date, timeZone: string): { hour: number; minute:
 export function mergeChannelState(channels: { capability?: string | null; value?: unknown }[]): Record<string, unknown> {
   const next: Record<string, unknown> = {};
   for (const channel of channels) {
-    if (channel.capability === "power") next.on = channel.value === true || channel.value === 1 || channel.value === "1";
+    if (channel.capability === "power" && flag(channel.value) !== null) next.on = flag(channel.value);
     if (channel.capability === "brightness" && typeof channel.value === "number") next.brightness = channel.value;
     if (channel.capability === "leak" || channel.capability === "smoke" || channel.capability === "motion" || channel.capability === "presence") {
-      next.detected = channel.value === true || channel.value === 1 || channel.value === "1";
+      if (flag(channel.value) !== null) next.detected = flag(channel.value);
     }
     if (channel.capability === "latch") next.latch = channel.value === true || channel.value === 1 || channel.value === "OPEN" ? "OPEN" : "CLOSED";
     if (channel.capability === "position" && typeof channel.value === "number") next.position = channel.value;
@@ -104,6 +115,7 @@ export function mergeChannelState(channels: { capability?: string | null; value?
 export function createLocalRuntime(opts: {
   apply: (command: ApplyCommand) => Promise<ApplyResult>;
   now?: () => Date;
+  initial?: AutomationPack | null;
 }) {
   let pack: AutomationPack = { timeZone: "Europe/Moscow", scenarios: [], critical: [], devices: [] };
   const states = new Map<string, Record<string, unknown>>();
@@ -128,21 +140,26 @@ export function createLocalRuntime(opts: {
         externalId: device?.externalId ?? null,
         endpoint: device?.endpoint ?? null,
         adapter: device?.adapter ?? "wirenboard",
+        kind: device?.kind ?? null,
       });
       if (!result.confirmed) confirmed = false;
     }
     return confirmed;
   }
 
+  function load(next: AutomationPack) {
+    pack = {
+      timeZone: next.timeZone || "Europe/Moscow",
+      scenarios: Array.isArray(next.scenarios) ? next.scenarios : [],
+      critical: Array.isArray(next.critical) ? next.critical : [],
+      devices: Array.isArray(next.devices) ? next.devices : [],
+    };
+  }
+
+  if (opts.initial) load(opts.initial);
+
   return {
-    load(next: AutomationPack) {
-      pack = {
-        timeZone: next.timeZone || "Europe/Moscow",
-        scenarios: next.scenarios ?? [],
-        critical: next.critical ?? [],
-        devices: next.devices ?? [],
-      };
-    },
+    load,
     ingest(deviceId: string, partial: Record<string, unknown>) {
       const current = states.get(deviceId) ?? {};
       states.set(deviceId, { ...current, ...partial });
@@ -156,8 +173,8 @@ export function createLocalRuntime(opts: {
       const now = (opts.now ?? (() => new Date()))();
       const at = now.toISOString();
       for (const scenario of pack.scenarios) {
-        if (scenario.trigger !== "EVENT" || scenario.enabled === false) continue;
-        const nowMet = (scenario.conditions ?? []).every((item) => conditionMet(item, states));
+        if (scenario.trigger !== "EVENT" || scenario.enabled === false || !scenario.conditions?.length) continue;
+        const nowMet = scenario.conditions.every((item) => conditionMet(item, states));
         const was = met.get(scenario.id) === true;
         met.set(scenario.id, nowMet);
         if (!nowMet || was) continue;

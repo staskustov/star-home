@@ -294,6 +294,10 @@ export function editMember(actor: StaffActor, input: { membershipId?: unknown; n
   if (!can(actor, "users.edit")) return fail(403, "Нет доступа");
   const target = findTarget(actor, input.membershipId);
   if (!target.ok) return target;
+  const others = listMemberships().filter((item) => isLive(item) && item.userId === target.value.user.id && item.id !== target.value.membership.id);
+  if (others.some((item) => item.companyId !== actor.companyId || (isStaff(item) && !manageable(actor, item)))) {
+    return fail(403, "У этого человека есть доступ, которым вы не управляете");
+  }
   const name = cleanName(input.name);
   if (!name.ok) return name;
   const email = cleanEmail(input.email);

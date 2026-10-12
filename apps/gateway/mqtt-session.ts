@@ -20,7 +20,7 @@ export type MqttSession = {
   disconnect: () => Promise<void>;
 };
 
-const controlTopics = ["/devices/+/controls/+", "/devices/+/meta/+"];
+const controlTopics = ["/devices/+/controls/+", "/devices/+/meta/+", "/devices/+/controls/+/meta/error"];
 
 export function connectLocalMqtt(opts: {
   url?: string;

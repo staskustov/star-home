@@ -45,14 +45,51 @@ export function restoreAllowed(): boolean {
   return process.env.STAR_HOME_ALLOW_RESTORE === "1";
 }
 
+function platformAdmin(actor: StaffActor): boolean {
+  return actor.role === "SUPER_ADMIN";
+}
+
+function withoutSecrets(name: SnapshotName, body: unknown): unknown {
+  if (name === "people") {
+    const people = body as { users?: Record<string, unknown>[] };
+    for (const user of people.users ?? []) delete user.passwordHash;
+  }
+  if (name === "ops") {
+    const ops = body as { cameraMedia?: Record<string, unknown>[]; pushDevices?: unknown[]; pendingSmart?: unknown[] };
+    for (const media of ops.cameraMedia ?? []) delete media.password;
+    ops.pushDevices = [];
+    ops.pendingSmart = [];
+  }
+  return body;
+}
+
+function keepSecrets(name: SnapshotName, body: unknown): unknown {
+  if (name === "people") {
+    const current = new Map(listUsers().map((user) => [user.id, user.passwordHash]));
+    const people = body as { users?: { id: string; passwordHash?: string }[] };
+    for (const user of people.users ?? []) {
+      if (!user.passwordHash) user.passwordHash = current.get(user.id) ?? "!";
+    }
+  }
+  if (name === "ops") {
+    const live = readOps();
+    const ops = body as { cameraMedia?: { deviceId: string; password?: string | null }[]; pushDevices?: unknown[] };
+    for (const media of ops.cameraMedia ?? []) {
+      if (!media.password) media.password = live.cameraMedia.find((item) => item.deviceId === media.deviceId)?.password ?? null;
+    }
+    if (!ops.pushDevices?.length) ops.pushDevices = live.pushDevices ?? [];
+  }
+  return body;
+}
+
 export function exportBackup(actor: StaffActor): Result<BackupFile> {
-  if (!can(actor, "audit.export")) return denied;
+  if (!can(actor, "audit.export") || !platformAdmin(actor)) return denied;
   hydrate();
   const snapshots = {} as Record<SnapshotName, unknown>;
   for (const name of snapshotNames) {
     const body = take(name);
     if (!body || typeof body !== "object") return { ok: false, status: 500, message: "Снимок не собран" };
-    snapshots[name] = body;
+    snapshots[name] = withoutSecrets(name, body);
   }
   appendAudit({
     actorUserId: actor.userId,
@@ -103,13 +140,15 @@ function asBackup(input: unknown): Result<BackupFile> {
 }
 
 export function restoreBackup(actor: StaffActor, input: { confirm?: unknown; backup?: unknown }): Result<{ restored: SnapshotName[] }> {
-  if (!can(actor, "settings.company.edit")) return denied;
+  if (!can(actor, "settings.company.edit") || !platformAdmin(actor)) return denied;
   if (!restoreAllowed()) return { ok: false, status: 403, message: "Восстановление выключено на этом контуре." };
   if (input.confirm !== restorePhrase) return { ok: false, status: 400, message: "Подтвердите RESTORE" };
   const parsed = asBackup(input.backup);
   if (!parsed.ok) return parsed;
-  for (const name of snapshotNames) {
-    remember(name, clone(parsed.value.snapshots[name]));
+  hydrate();
+  const prepared = snapshotNames.map((name) => [name, keepSecrets(name, clone(parsed.value.snapshots[name]))] as const);
+  for (const [name, body] of prepared) {
+    remember(name, body);
   }
   forgetStores([...storeNames]);
   writeOps(readOps());

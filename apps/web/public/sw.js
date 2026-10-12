@@ -1,13 +1,14 @@
-const CACHE = "star-home-shell-v6";
+const CACHE = "star-home-shell-v7";
 const STATE = "star-home-state";
 const SHELL = ["/offline.html", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches
-      .open(CACHE)
-      .then((cache) => cache.addAll(SHELL))
-      .then(() => self.skipWaiting()),
+    (async () => {
+      const cache = await caches.open(CACHE);
+      await cache.addAll(SHELL);
+      if (!self.registration.active) await self.skipWaiting();
+    })(),
   );
 });
 
@@ -38,6 +39,15 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("message", (event) => {
   if (event.data && event.data.type === "SKIP_WAITING") self.skipWaiting();
+  if (event.data && event.data.type === "LOGOUT") {
+    event.waitUntil(
+      (async () => {
+        const keys = await caches.keys();
+        await Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key)));
+        if (typeof self.registration.clearAppBadge === "function") await self.registration.clearAppBadge().catch(() => undefined);
+      })(),
+    );
+  }
 });
 
 self.addEventListener("push", (event) => {

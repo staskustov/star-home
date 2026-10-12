@@ -1,4 +1,5 @@
 import type { Invoice } from "@/server/ops-store";
+import { demoExecutionAllowed } from "@/server/runtime-mode";
 
 export interface PaymentProvider {
   pay(invoice: Pick<Invoice, "id" | "amount" | "currency">): Promise<{ confirmed: boolean; reference: string }>;
@@ -17,8 +18,9 @@ class BankPaymentProvider implements PaymentProvider {
     if (!endpoint) return { confirmed: false, reference: "" };
     const response = await fetch(endpoint, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", "idempotency-key": `invoice_${invoice.id}` },
       body: JSON.stringify({ amount: invoice.amount, currency: invoice.currency, reference: invoice.id }),
+      signal: AbortSignal.timeout(20_000),
     }).catch(() => null);
     if (!response?.ok) return { confirmed: false, reference: "" };
     const payload = (await response.json().catch(() => null)) as { confirmed?: boolean; reference?: string } | null;
@@ -26,7 +28,17 @@ class BankPaymentProvider implements PaymentProvider {
   }
 }
 
+class MissingProvider implements PaymentProvider {
+  async pay(): Promise<{ confirmed: boolean; reference: string }> {
+    return { confirmed: false, reference: "" };
+  }
+}
+
 export function paymentProvider(): PaymentProvider {
   if (process.env.STAR_HOME_BANK_URL) return new BankPaymentProvider();
-  return new LedgerProvider();
+  return demoExecutionAllowed() ? new LedgerProvider() : new MissingProvider();
+}
+
+export function paymentsConnected(): boolean {
+  return Boolean(process.env.STAR_HOME_BANK_URL) || demoExecutionAllowed();
 }

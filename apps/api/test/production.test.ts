@@ -18,9 +18,14 @@ const objectAdmin = { userId: "usr_object", membershipId: "mem_object_siyanie" }
 const accountant = { userId: "usr_accountant", membershipId: "mem_accountant_star" };
 
 let rpc: (method: string, input: unknown, session: { userId: string; membershipId: string | null } | null) => Promise<Reply>;
+let platform: { userId: string; membershipId: string };
 
 before(async () => {
   rpc = (await import("../../web/src/server/rpc-handlers")).handleRpc;
+  const people = await import("../../web/src/server/people-store");
+  const root = people.createPerson({ login: "backup.root", name: "Платформа", passwordHash: "x" });
+  const membership = people.createStaffMembership({ userId: root.id, companyId: "cmp_star", role: "SUPER_ADMIN", objectId: null, createdBy: "test" });
+  platform = { userId: root.id, membershipId: membership.id };
 });
 
 afterEach(() => {
@@ -36,7 +41,8 @@ describe("stage 9 production readiness", () => {
     assert.equal(paired.status, 200, JSON.stringify(paired.body));
     const token = (paired.body as { token: string }).token;
     assert.ok(token.length > 20);
-    const dumped = await rpc("exportBackup", {}, admin);
+    assert.equal((await rpc("exportBackup", {}, admin)).status, 403);
+    const dumped = await rpc("exportBackup", {}, platform);
     assert.equal(dumped.status, 200, JSON.stringify(dumped.body));
     const body = dumped.body as {
       kind: string;
@@ -47,7 +53,7 @@ describe("stage 9 production readiness", () => {
     assert.deepEqual(body.names, ["catalog", "people", "ops", "life", "audit"]);
     const raw = JSON.stringify(body);
     assert.equal(raw.includes(token), false);
-    assert.ok(body.snapshots.people.users.some((user) => Boolean(user.passwordHash)));
+    assert.equal(body.snapshots.people.users.some((user) => Boolean(user.passwordHash)), false);
     const gateway = body.snapshots.ops.gateways.find((item) => item.id === gatewayId);
     assert.ok(gateway?.tokenHash);
     assert.notEqual(gateway.tokenHash, token);
@@ -62,19 +68,23 @@ describe("stage 9 production readiness", () => {
   it("restores only with an explicit phrase and the restore flag", async () => {
     const { restoreAllowed } = await import("../../web/src/server/ops-backup");
     assert.equal(restoreAllowed(), false);
-    const dumped = await rpc("exportBackup", {}, admin);
+    const dumped = await rpc("exportBackup", {}, platform);
     assert.equal(dumped.status, 200);
     const backup = dumped.body as { snapshots: { ops: { devices: { id: string; name: string }[] } } };
     const camera = backup.snapshots.ops.devices.find((item) => item.id === "dev_camera_24");
     assert.ok(camera);
     camera.name = "Камера из снимка";
-    assert.equal((await rpc("restoreBackup", { confirm: "RESTORE", backup: dumped.body }, admin)).status, 403);
+    assert.equal((await rpc("restoreBackup", { confirm: "RESTORE", backup: dumped.body }, platform)).status, 403);
     process.env.STAR_HOME_ALLOW_RESTORE = "1";
-    assert.equal((await rpc("restoreBackup", { confirm: "NO", backup: dumped.body }, admin)).status, 400);
-    const restored = await rpc("restoreBackup", { confirm: "RESTORE", backup: dumped.body }, admin);
+    assert.equal((await rpc("restoreBackup", { confirm: "RESTORE", backup: dumped.body }, admin)).status, 403);
+    assert.equal((await rpc("restoreBackup", { confirm: "NO", backup: dumped.body }, platform)).status, 400);
+    const people = await import("../../web/src/server/people-store");
+    const hashBefore = people.listUsers().find((user) => user.id === "usr_admin")?.passwordHash;
+    const restored = await rpc("restoreBackup", { confirm: "RESTORE", backup: dumped.body }, platform);
     assert.equal(restored.status, 200, JSON.stringify(restored.body));
     const ops = await import("../../web/src/server/ops-store");
     assert.equal(ops.readOps().devices.find((item) => item.id === "dev_camera_24")?.name, "Камера из снимка");
+    assert.equal(people.listUsers().find((user) => user.id === "usr_admin")?.passwordHash, hashBefore);
     assert.equal((await rpc("restoreBackup", { confirm: "RESTORE", backup: dumped.body }, accountant)).status, 403);
   });
 });

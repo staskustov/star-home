@@ -1,6 +1,6 @@
 import { askFor, confirmFor } from "@/server/ai";
 import type { AuditAction } from "@/server/audit-actions";
-import { clientInfo, noteActor, withRequest } from "@/server/audit-context";
+import { clientInfo, noteActor, requestContext, withRequest } from "@/server/audit-context";
 import { findObject, findUnit, roomsOf } from "@/server/catalog-store";
 import type { Membership } from "@/types/domain";
 import type { SessionRef } from "@/server/actor";
@@ -45,11 +45,12 @@ import { homeLayoutFor, removeHomeChipFor, saveHomeChipFor, saveHomeLayoutFor } 
 import { saveHomeCoverFor, coverFor } from "@/server/home-cover";
 import { saveHomeMetricsFor } from "@/server/home-metrics";
 import { saveModeFor, settingsFor, switchModeFor } from "@/server/life-modes";
-import { loginLimited, noteLoginFailure, noteLoginSuccess } from "@/server/login-limit";
-import { addNotice, homeSignals, markNoticesRead, readOps, unreadNoticeCount } from "@/server/ops-store";
+import { ipLoginLimit, loginLimited, noteLoginFailure, noteLoginSuccess } from "@/server/login-limit";
+import { addNotice, homeSignals, markNoticesRead, passStatus, readOps, unreadNoticeCount } from "@/server/ops-store";
 import { deskFor, deskSections, isDeskSection, residentAccess, residentNotices } from "@/server/ops-view";
 import {
   addPassFor,
+  revokePassFor,
   addRequestFor,
   alarmFor,
   cameraFrameFor,
@@ -64,15 +65,15 @@ import {
   setRequestStatusFor,
 } from "@/server/operations";
 import { dashboardFor } from "@/server/dashboard";
-import { verifyPassword } from "@/server/password";
-import { updateUser } from "@/server/people-store";
+import { hashPassword, verifyPassword } from "@/server/password";
+import { endSessions, isSeedPassword, seedPasswordBlocked, updateUser } from "@/server/people-store";
 import { can, staffActor, withPermission, type StaffActor } from "@/server/rbac/decide";
 import type { Permission } from "@/server/rbac/permissions";
 import { householdCan, selfOnlyOf } from "@/server/rbac/policy";
 import { signLiveToken } from "@/server/live-token";
 import { rolesBoard, saveRole } from "@/server/roles";
 import { raiseSosFor, securityDeskFor, sendSecurityMessageFor, sendSecurityReplyFor } from "@/server/security-desk";
-import { savePushDevice } from "@/server/push-devices";
+import { dropPushDevice, isPushEndpoint, pushDeviceByEndpoint, savePushDevice } from "@/server/push-devices";
 import { checkPassFor, handleAlarmFor, securityAlertsFor, securityCameras, securityPost } from "@/server/security-post";
 import {
   createEngineeringSystem,
@@ -96,6 +97,7 @@ type PushRow = { userId: string; endpoint: string; p256dh: string; auth: string 
 
 const runtime = globalThis as typeof globalThis & {
   __starSavePush?: (row: PushRow) => Promise<void>;
+  __starDropPush?: (endpoint: string) => Promise<void>;
 };
 
 function ok(body: unknown, status = 200): Reply {
@@ -154,7 +156,25 @@ function household(run: (session: SessionRef, input: Input) => Result | Promise<
 
 const methodPolicy: Record<string, Route> = {
   login: { access: "public", run: login },
+  logout: session((current) => logout(current)),
+  changePassword: { access: "public", run: changePassword },
   pushKey: { access: "public", run: () => ok({ publicKey: process.env.STAR_HOME_VAPID_PUBLIC ?? "" }) },
+  gatewayChannel: {
+    access: "public",
+    run: async (input) => {
+      const row = record(input) ?? {};
+      const { gatewayChannel } = await import("./gateway-channel");
+      return asReply(await gatewayChannel(typeof row.token === "string" ? row.token : null, record(row.body) ?? null, row.pull === true));
+    },
+  },
+  cameraFrameRequest: session(async (current, input) =>
+    asReply(await (await import("./camera-media")).requestCameraFrame(current, input.objectId, input.deviceId)),
+  ),
+  cameraJpeg: session(async (current, input) => {
+    const result = (await import("./camera-media")).readCameraJpeg(current, input.deviceId);
+    if (!result.ok) return asReply(result);
+    return ok({ mime: result.value.mime, at: result.value.at, base64: result.value.bytes.toString("base64") });
+  }),
 
   destination: session((current) => ok({ redirectTo: destinationFor(current.userId, current.membershipId) })),
   guard: session((current, input) => ok(guardPath(current.userId, current.membershipId, typeof input.pathname === "string" ? input.pathname : "/"))),
@@ -165,6 +185,7 @@ const methodPolicy: Record<string, Route> = {
   saveProfilePhoto: session(saveProfilePhoto),
   admin: session(admin),
   subscribe: session(subscribe),
+  unsubscribe: session(unsubscribe),
   liveToken: session(liveToken),
 
   home: session(home),
@@ -175,7 +196,8 @@ const methodPolicy: Record<string, Route> = {
   openGate: household((current) => openGateFor(current)),
   openPoint: household((current, input) => openPointFor(current, input.pointId)),
   closePoint: household((current, input) => closePointFor(current, input.pointId)),
-  addPass: household((current, input) => addPassFor(current, input.guestName, input.detail, input.vehicle, input.from, input.to)),
+  addPass: household((current, input) => addPassFor(current, input.guestName, input.vehicle, input.from, input.to)),
+  revokePass: household((current, input) => revokePassFor(current, input.passId)),
   saveHomeMetrics: staff("settings.edit", (actor, input) => saveHomeMetricsFor(actor, input)),
   saveHomeCover: session((current, input) => asReply(saveHomeCoverFor(current, input))),
   pay: household((current) => payFor(current)),
@@ -353,6 +375,7 @@ export const rpcMethods: readonly string[] = Object.keys(methodPolicy);
 
 export const rpcReads: ReadonlySet<string> = new Set([
   "pushKey",
+  "cameraJpeg",
   "destination",
   "guard",
   "places",
@@ -467,6 +490,7 @@ const guardedMethods: Partial<Record<string, AuditAction>> = {
   revokeGateway: "GATEWAY_EDIT",
   setRequestStatus: "UPDATE_REQUEST",
   addPass: "CREATE_PASS",
+  revokePass: "REVOKE_PASS",
   pay: "PAY_INVOICE",
   alarm: "RAISE_ALARM",
   raiseSos: "RAISE_SOS",
@@ -533,7 +557,13 @@ async function dispatch(method: string, input: unknown, current: SessionRef | nu
   return noteDenial(method, input, current, built.ok ? built.value.companyId : (membership?.companyId ?? null), membership, reply);
 }
 
-function noteLogin(user: { id: string }, result: "SUCCESS" | "DENIED", reason = "", membershipId: string | null = null): void {
+function logout(session: SessionRef): Reply {
+  const user = findUserById(session.userId);
+  if (user) noteLogin(user, "SUCCESS", "", session.membershipId, "LOGOUT");
+  return ok({ ok: true });
+}
+
+function noteLogin(user: { id: string }, result: "SUCCESS" | "DENIED", reason = "", membershipId: string | null = null, action?: "PASSWORD_CHANGE" | "LOGOUT"): void {
   const memberships = membershipsOf(user.id);
   const chosen = memberships.find((item) => item.id === membershipId) ?? memberships[0];
   if (!chosen) return;
@@ -544,10 +574,10 @@ function noteLogin(user: { id: string }, result: "SUCCESS" | "DENIED", reason = 
     objectId: chosen.objectId,
     buildingId: chosen.buildingId ?? null,
     unitId: chosen.unitId,
-    action: result === "SUCCESS" ? "LOGIN" : "LOGIN_FAILED",
+    action: action ?? (result === "SUCCESS" ? "LOGIN" : "LOGIN_FAILED"),
     targetType: "user",
     targetId: user.id,
-    target: result === "SUCCESS" ? "Вход в STAR HOME" : "Попытка входа",
+    target: action === "PASSWORD_CHANGE" ? "Смена пароля" : action === "LOGOUT" ? "Выход из STAR HOME" : result === "SUCCESS" ? "Вход в STAR HOME" : "Попытка входа",
     result,
     reason,
   });
@@ -559,25 +589,65 @@ async function login(input: unknown): Promise<Reply> {
   const password = typeof body?.password === "string" ? body.password : "";
   if (!loginName || password.length < 1 || password.length > 200) return fail(400, "Введите логин и пароль");
   const user = findUserByLogin(loginName);
-  if (await loginLimited(loginName)) {
-    if (user) noteLogin(user, "DENIED", "Слишком много попыток");
+  const ip = requestContext()?.client.ip ?? null;
+  const lockKey = ip ? `${loginName}|${ip}` : loginName;
+  const ipKey = ip ? `ip:${ip}` : null;
+  if ((await loginLimited(lockKey)) || (ipKey && (await loginLimited(ipKey, ipLoginLimit)))) {
     return fail(429, "Слишком много попыток. Подождите немного.");
   }
   const matches = user ? verifyPassword(password, user.passwordHash) : verifyPassword(password, "missing.missing");
   if (!user || !matches) {
-    await noteLoginFailure(loginName);
-    if (user) noteLogin(user, "DENIED", "Неверный пароль");
+    const locked = await noteLoginFailure(lockKey);
+    if (ipKey) await noteLoginFailure(ipKey, ipLoginLimit);
+    if (user && locked) noteLogin(user, "DENIED", "Слишком много попыток");
+    else if (user) noteLogin(user, "DENIED", "Неверный пароль");
     return fail(401, "Неверный логин или пароль");
   }
   if (user.status === "BLOCKED") {
     noteLogin(user, "DENIED", "Доступ приостановлен");
     return fail(403, "Доступ приостановлен. Обратитесь к администратору.");
   }
-  await noteLoginSuccess(loginName);
+  if (seedPasswordBlocked(user.passwordHash)) {
+    noteLogin(user, "DENIED", "Пароль по умолчанию");
+    return ok({ message: "Пароль по умолчанию отключён. Задайте новый пароль.", passwordChange: true }, 403);
+  }
+  await noteLoginSuccess(lockKey);
   updateUser(user.id, { lastLoginAt: new Date().toISOString() });
   const membershipId = initialMembershipId(user.id);
   noteLogin(user, "SUCCESS", "", membershipId);
   return ok({ userId: user.id, membershipId, sessionVersion: user.sessionVersion ?? 1, redirectTo: destinationFor(user.id, membershipId) });
+}
+
+async function changePassword(input: unknown): Promise<Reply> {
+  const body = record(input);
+  const loginName = text(body?.login, 1, 80) ?? "";
+  const password = typeof body?.password === "string" ? body.password : "";
+  const next = typeof body?.newPassword === "string" ? body.newPassword : "";
+  if (!loginName || password.length < 1 || password.length > 200) return fail(400, "Введите логин и текущий пароль");
+  if (next.length < 10 || next.length > 200) return fail(400, "Новый пароль — от 10 до 200 символов");
+  if (next === password || next.toLowerCase().includes(loginName.toLowerCase()) || isSeedPassword(next)) {
+    return fail(400, "Выберите другой пароль");
+  }
+  const ip = requestContext()?.client.ip ?? null;
+  const lockKey = ip ? `${loginName}|${ip}` : loginName;
+  const ipKey = ip ? `ip:${ip}` : null;
+  if ((await loginLimited(lockKey)) || (ipKey && (await loginLimited(ipKey, ipLoginLimit)))) {
+    return fail(429, "Слишком много попыток. Подождите немного.");
+  }
+  const user = findUserByLogin(loginName);
+  const matches = user ? verifyPassword(password, user.passwordHash) : verifyPassword(password, "missing.missing");
+  if (!user || !matches) {
+    await noteLoginFailure(lockKey);
+    if (ipKey) await noteLoginFailure(ipKey, ipLoginLimit);
+    if (user) noteLogin(user, "DENIED", "Неверный пароль", null, "PASSWORD_CHANGE");
+    return fail(401, "Неверный логин или пароль");
+  }
+  if (user.status === "BLOCKED") return fail(403, "Доступ приостановлен. Обратитесь к администратору.");
+  await noteLoginSuccess(lockKey);
+  updateUser(user.id, { passwordHash: hashPassword(next) });
+  endSessions(user.id);
+  noteLogin(user, "SUCCESS", "", null, "PASSWORD_CHANGE");
+  return ok({ changed: true });
 }
 
 function switched(session: SessionRef, input: Input): Reply {
@@ -603,12 +673,7 @@ async function home(session: SessionRef): Promise<Reply> {
   const layout = homeLayoutFor(session.userId, base.unit.id, base.object.id, base.object.companyId);
   const file = readOps();
   const now = Date.now();
-  const guestCount = file.passes.filter((pass) => {
-    if (pass.unitId !== base.unit.id) return false;
-    if (pass.from && Date.parse(pass.from) > now) return false;
-    if (pass.to && Date.parse(pass.to) < now) return false;
-    return true;
-  }).length;
+  const guestCount = file.passes.filter((pass) => pass.unitId === base.unit.id && passStatus(pass, now) === "ACTIVE").length;
   const securityOpen = file.alarms.some((alarm) => alarm.objectId === base.object.id && alarm.status === "OPEN");
   const actionChips = layout.actionChips.filter((chip) => chip.action !== "open-gate" && (pays || chip.action !== "pay"));
   if (signals.controller?.message) {
@@ -748,7 +813,8 @@ function guest(session: SessionRef): Reply {
     return ok({ redirect: destinationFor(session.userId, session.membershipId) });
   }
   const pass = readOps().passes.find((item) => item.id === membership.passId);
-  return ok({ name: user.name, pass: pass ? { guestName: pass.guestName, detail: pass.detail, code: pass.code } : null });
+  const valid = pass && passStatus(pass) !== "EXPIRED" && passStatus(pass) !== "REVOKED";
+  return ok({ name: user.name, pass: pass && valid ? { guestName: pass.guestName, detail: pass.detail, code: pass.code } : null });
 }
 
 function admin(session: SessionRef): Reply {
@@ -818,10 +884,22 @@ async function subscribe(session: SessionRef, input: Input): Promise<Reply> {
   if (typeof input.endpoint !== "string" || typeof input.p256dh !== "string" || typeof input.auth !== "string") {
     return fail(400, "Не удалось сохранить уведомление");
   }
+  if (!isPushEndpoint(input.endpoint) || input.p256dh.length > 200 || input.auth.length > 100) return fail(400, "Не удалось сохранить уведомление");
+  const taken = pushDeviceByEndpoint(input.endpoint);
+  if (taken && taken.userId !== session.userId && (taken.p256dh !== input.p256dh || taken.auth !== input.auth)) {
+    return fail(409, "Не удалось сохранить уведомление");
+  }
   const device = typeof input.device === "string" ? input.device.trim().slice(0, 80) : "";
   savePushDevice({ userId: session.userId, endpoint: input.endpoint, p256dh: input.p256dh, auth: input.auth, device });
   await runtime.__starSavePush?.({ userId: session.userId, endpoint: input.endpoint, p256dh: input.p256dh, auth: input.auth });
   return ok({ saved: true });
+}
+
+async function unsubscribe(session: SessionRef, input: Input): Promise<Reply> {
+  if (typeof input.endpoint !== "string" || !input.endpoint) return fail(400, "Нет подписки");
+  const removed = dropPushDevice(session.userId, input.endpoint);
+  if (removed) await runtime.__starDropPush?.(input.endpoint);
+  return ok({ removed });
 }
 
 function securityDesk(session: SessionRef): Reply {

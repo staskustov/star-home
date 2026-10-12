@@ -17,7 +17,7 @@ import {
   updateCatalogUnit,
 } from "@/server/catalog-store";
 import { deviceLabel } from "@/server/device-kinds";
-import { projectCamerasOpen, readOps, setProjectCamerasOpen } from "@/server/ops-store";
+import { projectCamerasOpen, purgeObjectData, purgeUnitData, readOps, setProjectCamerasOpen } from "@/server/ops-store";
 import type { AuditInput } from "@/server/audit-store";
 import { buildingHasStaff, objectHasAssignments, unitHasAssignment } from "@/server/directory";
 import { recordAudit } from "@/server/operations";
@@ -178,6 +178,7 @@ export function removeObject(actor: StaffActor, objectId: string): Success<{ id:
     return { ok: false, status: 409, message: "Сначала уберите доступ людей к этому объекту." };
   }
   deleteCatalogObject(objectId);
+  purgeObjectData(objectId);
   note(actor, "OBJECT_DELETE", { objectId, targetType: "object", targetId: objectId, target: owned.value.name });
   return { ok: true, value: { id: objectId } };
 }
@@ -228,6 +229,7 @@ export function removeBuilding(actor: StaffActor, buildingId: string): Success<{
   }
   if (buildingHasStaff(buildingId)) return { ok: false, status: 409, message: "За корпусом закреплены сотрудники." };
   const title = findBuilding(buildingId)?.name ?? "Корпус";
+  for (const unitId of unitIdsOfBuilding(buildingId)) purgeUnitData(unitId);
   deleteCatalogBuilding(buildingId);
   note(actor, "BUILDING_DELETE", { objectId: owned.value.id, buildingId, targetType: "building", targetId: buildingId, target: `${owned.value.name} · ${title}` });
   return { ok: true, value: { id: buildingId } };
@@ -386,6 +388,7 @@ export function removeUnit(actor: StaffActor, unitId: string): Success<{ id: str
   if (unitHasAssignment(unitId)) {
     return { ok: false, status: 409, message: "Эта единица уже закреплена за человеком." };
   }
+  purgeUnitData(unitId);
   deleteCatalogUnit(unitId);
   note(actor, "UNIT_DELETE", {
     objectId: unit.value.objectId,

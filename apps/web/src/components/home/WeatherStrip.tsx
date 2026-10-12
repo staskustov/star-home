@@ -16,12 +16,12 @@ function num(value: number | null | undefined, suffix: string) {
   return `${String(value).replace(".", ",")}${suffix}`;
 }
 
-export function outdoorMetrics(weather?: OutdoorWeather | null, indoor?: { temperatureC: number; humidityPercent: number } | null) {
+export function outdoorMetrics(weather?: OutdoorWeather | null, _indoor?: { temperatureC: number; humidityPercent: number } | null) {
   if (weather?.metrics?.length) return weather.metrics;
   return [
-    { key: "temperature", icon: "thermo", color: "#c2410c", label: "Температура", value: num(weather?.temperatureC ?? indoor?.temperatureC ?? null, "°") },
+    { key: "temperature", icon: "thermo", color: "#c2410c", label: "Температура", value: num(weather?.temperatureC ?? null, "°") },
     { key: "wind", icon: "wind", color: "#0f766e", label: "Ветер", value: num(weather?.windMs ?? null, " м/с") },
-    { key: "humidity", icon: "drop", color: "#1d4ed8", label: "Влажность", value: num(weather?.humidityPercent ?? indoor?.humidityPercent ?? null, "%") },
+    { key: "humidity", icon: "drop", color: "#1d4ed8", label: "Влажность", value: num(weather?.humidityPercent ?? null, "%") },
     { key: "radiation", icon: "radiation", color: "#a16207", label: "Радиация", value: num(weather?.radiationUSv ?? null, " мкЗв/ч") },
     { key: "co2", icon: "co2", color: "#15803d", label: "CO₂", value: num(weather?.co2Ppm ?? null, " ppm") },
     { key: "organics", icon: "organics", color: "#6d28d9", label: "Органика", value: num(weather?.organics ?? null, "") },

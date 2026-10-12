@@ -4,7 +4,7 @@ import { can, objectFor, reaches, type StaffActor } from "@/server/rbac/decide";
 import { appendAudit, type AuditInput } from "@/server/audit-store";
 import { publishLive, pushNotice } from "@/server/store-bind";
 import { accessPoint, gateFor } from "@/server/devices";
-import { paymentProvider } from "@/server/payments";
+import { paymentProvider, paymentsConnected } from "@/server/payments";
 import {
   clock,
   newId,
@@ -15,7 +15,7 @@ import {
   type RequestStatus,
   type ServiceRequest,
 } from "@/server/ops-store";
-import { timeZone } from "@/server/time-zone";
+import { timeZone, zonedDate } from "@/server/time-zone";
 
 export type { Place };
 
@@ -36,6 +36,14 @@ async function commandDevice(place: Place, device: Device | null, command: "OPEN
 }> {
   if (!device) {
     return { confirmed: false, message: "Не удалось подтвердить выполнение.", status: "failed", lifecycle: "FAILED" };
+  }
+  if (device.work === "FAULT" || device.work === "OFF") {
+    return {
+      confirmed: false,
+      message: device.work === "FAULT" ? `${device.name}: неисправность. Обратитесь в службу объекта.` : `${device.name}: выключено.`,
+      status: "failed",
+      lifecycle: "FAILED",
+    };
   }
   const mapped = command === "OPEN" ? "open" : "close";
   const result = await (await import("./physical-command")).dispatchPhysicalCommand(device, mapped);
@@ -205,11 +213,27 @@ export function updateRequestStatus(
 }
 
 export async function payOldest(place: Place): Promise<{ confirmed: boolean; message: string }> {
+  if (!paymentsConnected()) return { confirmed: false, message: "Онлайн-оплата пока не подключена." };
   const file = readOps();
+  if (file.invoices.some((item) => item.unitId === place.unitId && item.status === "PROCESSING")) {
+    return { confirmed: false, message: "Предыдущая оплата ещё обрабатывается." };
+  }
   const invoice = file.invoices.find((item) => item.unitId === place.unitId && item.status === "OPEN");
   if (!invoice) return { confirmed: false, message: "Открытых счетов нет." };
-  const payment = await paymentProvider().pay(invoice);
+  invoice.status = "PROCESSING";
+  invoice.paymentStartedAt = new Date().toISOString();
+  writeOps(file);
+  const payment = await paymentProvider()
+    .pay(invoice)
+    .catch(() => ({ confirmed: false, reference: "" }));
+  const after = readOps();
+  const stored = after.invoices.find((item) => item.id === invoice.id);
   if (!payment.confirmed) {
+    if (stored && stored.status === "PROCESSING") {
+      stored.status = "OPEN";
+      delete stored.paymentStartedAt;
+      writeOps(after);
+    }
     audit({
       actorUserId: place.userId,
       companyId: place.companyId,
@@ -222,10 +246,14 @@ export async function payOldest(place: Place): Promise<{ confirmed: boolean; mes
       result: "ERROR",
       reason: "Провайдер не подтвердил оплату",
     });
-    return { confirmed: false, message: "Не удалось подтвердить выполнение." };
+    return { confirmed: false, message: "Банк не подтвердил оплату. Деньги не списаны." };
   }
-  invoice.status = "PAID";
-  writeOps(file);
+  if (stored) {
+    stored.status = "PAID";
+    stored.paymentReference = payment.reference || undefined;
+    delete stored.paymentStartedAt;
+    writeOps(after);
+  }
   audit({
     actorUserId: place.userId,
     companyId: place.companyId,
@@ -353,7 +381,6 @@ export async function closePointFor(session: SessionRef | null, pointId: unknown
 export async function addPassFor(
   session: SessionRef | null,
   guestName: unknown,
-  detail: unknown,
   vehicle?: unknown,
   from?: unknown,
   to?: unknown,
@@ -363,25 +390,30 @@ export async function addPassFor(
   const name = clean(guestName, "Введите имя гостя", 80);
   if (typeof name !== "string") return name;
   const range = passRange(from, to);
-  if (range && range.ok === false) return range;
-  const note = range ? range.detail : clean(detail, "Укажите срок доступа", 160);
-  if (typeof note !== "string") return note;
+  if (range.ok === false) return range;
+  const note = range.detail;
   const car = typeof vehicle === "string" ? vehicle.trim().replace(/\s+/g, " ").slice(0, 40) : "";
   return {
     ok: true as const,
-    value: createPass(place.value, name, note, car, range?.from ?? null, range?.to ?? null),
+    value: createPass(place.value, name, note, car, range.from, range.to),
   };
 }
 
-function passRange(
+const passLongestMs = 90 * 24 * 60 * 60 * 1000;
+const passDefaultMs = 24 * 60 * 60 * 1000;
+
+export function passRange(
   from: unknown,
   to: unknown,
-): { ok: true; from: string; to: string; detail: string } | { ok: false; status: number; message: string } | null {
-  if ((from === undefined || from === null || from === "") && (to === undefined || to === null || to === "")) return null;
-  const start = parseWhen(from);
-  const end = parseWhen(to);
+): { ok: true; from: string; to: string; detail: string } | { ok: false; status: number; message: string } {
+  const empty = (value: unknown) => value === undefined || value === null || value === "";
+  const now = Date.now();
+  const start = empty(from) ? new Date(now) : zonedDate(from);
+  const end = empty(to) ? (start ? new Date(start.getTime() + passDefaultMs) : null) : zonedDate(to);
   if (!start || !end) return { ok: false, status: 400, message: "Укажите срок от и до" };
-  if (end <= start) return { ok: false, status: 400, message: "Срок до должен быть позже начала" };
+  if (end.getTime() <= start.getTime()) return { ok: false, status: 400, message: "Срок до должен быть позже начала" };
+  if (end.getTime() <= now) return { ok: false, status: 400, message: "Срок пропуска уже прошёл" };
+  if (end.getTime() - start.getTime() > passLongestMs) return { ok: false, status: 400, message: "Пропуск — не дольше 90 дней" };
   const stamp = (value: Date) =>
     value
       .toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone })
@@ -389,10 +421,29 @@ function passRange(
   return { ok: true, from: start.toISOString(), to: end.toISOString(), detail: `${stamp(start)} — ${stamp(end)}` };
 }
 
-function parseWhen(value: unknown): Date | null {
-  if (typeof value !== "string" || !value.trim()) return null;
-  const date = new Date(value);
-  return Number.isFinite(date.getTime()) ? date : null;
+export async function revokePassFor(session: SessionRef | null, passId: unknown) {
+  const place = placeFromSession(session, "access.pass.create");
+  if (!place.ok) return place;
+  if (typeof passId !== "string" || !passId) return { ok: false as const, status: 404, message: "Пропуск не найден" };
+  const file = readOps();
+  const pass = file.passes.find((item) => item.id === passId && item.unitId === place.value.unitId && item.objectId === place.value.objectId);
+  if (!pass) return { ok: false as const, status: 404, message: "Пропуск не найден" };
+  if (!pass.revokedAt) {
+    pass.revokedAt = new Date().toISOString();
+    pass.revokedBy = place.value.userId;
+    writeOps(file);
+    audit({
+      actorUserId: place.value.userId,
+      companyId: place.value.companyId,
+      objectId: place.value.objectId,
+      unitId: place.value.unitId,
+      action: "REVOKE_PASS",
+      targetType: "pass",
+      targetId: pass.id,
+      target: pass.guestName,
+    });
+  }
+  return { ok: true as const, value: { revoked: true } };
 }
 
 export async function addRequestFor(session: SessionRef | null, category: unknown, text: unknown, fileName?: string) {
@@ -407,6 +458,16 @@ export async function addRequestFor(session: SessionRef | null, category: unknow
 
 const statuses = new Set<RequestStatus>(["CREATED", "ACCEPTED", "ASSIGNED", "IN_PROGRESS", "WAITING", "DONE", "CLOSED"]);
 
+const requestMoves: Record<RequestStatus, RequestStatus[]> = {
+  CREATED: ["ACCEPTED", "ASSIGNED", "IN_PROGRESS", "WAITING", "DONE", "CLOSED"],
+  ACCEPTED: ["ASSIGNED", "IN_PROGRESS", "WAITING", "DONE", "CLOSED"],
+  ASSIGNED: ["ACCEPTED", "IN_PROGRESS", "WAITING", "DONE", "CLOSED"],
+  IN_PROGRESS: ["ASSIGNED", "WAITING", "DONE", "CLOSED"],
+  WAITING: ["ASSIGNED", "IN_PROGRESS", "DONE", "CLOSED"],
+  DONE: ["IN_PROGRESS", "CLOSED"],
+  CLOSED: [],
+};
+
 export async function setRequestStatusFor(actor: StaffActor, requestId: unknown, status: unknown, objectId: unknown) {
   if (!can(actor, "service.edit")) return denied;
   const object = objectFor(actor, objectId);
@@ -418,6 +479,10 @@ export async function setRequestStatusFor(actor: StaffActor, requestId: unknown,
   const current = readOps().requests.find((item) => item.id === requestId && item.companyId === object.value.companyId && item.objectId === object.value.id);
   if (!current) return { ok: false as const, status: 404, message: "Заявка не найдена" };
   if (!reaches(actor, current)) return denied;
+  if (current.status === status) return { ok: true as const, value: current };
+  if (!requestMoves[current.status].includes(status as RequestStatus)) {
+    return { ok: false as const, status: 409, message: current.status === "CLOSED" ? "Заявка закрыта. Создайте новую." : "Такой переход статуса недоступен" };
+  }
   const request = updateRequestStatus(actor.userId, object.value.companyId, object.value.id, requestId, status as RequestStatus);
   if (!request) return { ok: false as const, status: 404, message: "Заявка не найдена" };
   return { ok: true as const, value: request };

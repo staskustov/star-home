@@ -31,6 +31,7 @@ const loginWindowMs = 10 * 60 * 1000;
 const state = globalThis as typeof globalThis & {
   __starEmbedded?: Embedded;
   __starSavePush?: (row: { userId: string; endpoint: string; p256dh: string; auth: string }) => Promise<void>;
+  __starDropPush?: (endpoint: string) => Promise<void>;
   __starVapidReady?: boolean;
 };
 
@@ -70,7 +71,7 @@ function embedded(): Embedded {
     runtime.live.add(event.objectId);
   });
 
-  bindLoginLimit(async (action, login) => {
+  bindLoginLimit(async (action, login, max = loginLimit) => {
     const key = login.toLowerCase();
     if (action === "clear") {
       await db().loginAttempt.deleteMany({ where: { login: key } });
@@ -78,11 +79,11 @@ function embedded(): Embedded {
     }
     const row = await db().loginAttempt.findUnique({ where: { login: key } });
     const current = row && row.until.getTime() > Date.now() ? row.count : 0;
-    if (action === "check") return current >= loginLimit;
+    if (action === "check") return current >= max;
     const count = current + 1;
     const until = current === 0 ? new Date(Date.now() + loginWindowMs) : row!.until;
     await db().loginAttempt.upsert({ where: { login: key }, create: { login: key, count, until }, update: { count, until } });
-    return count >= loginLimit;
+    return count >= max;
   });
 
   const publicKey = process.env.STAR_HOME_VAPID_PUBLIC;
@@ -91,6 +92,9 @@ function embedded(): Embedded {
     applyVapid();
     state.__starVapidReady = true;
   }
+  state.__starDropPush = async (endpoint) => {
+    await db().pushSubscription.deleteMany({ where: { endpoint } });
+  };
   state.__starSavePush = async (row) => {
     await db().pushSubscription.upsert({
       where: { endpoint: row.endpoint },

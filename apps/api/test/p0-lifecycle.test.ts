@@ -235,8 +235,9 @@ describe("P0 command lifecycle", () => {
     const current = file.gatewayCommands.find((item) => item.id === row.id);
     assert.ok(current);
     current.status = "SENT";
+    current.sentAt = new Date(Date.now() - 1_000).toISOString();
     assert.equal(stateMatchesCommand("setPower", true, { on: false }), false);
-    const confirmed = confirmCommandsFromState(file, deviceId, { on: true });
+    const confirmed = confirmCommandsFromState(file, deviceId, { on: true }, new Date().toISOString());
     ops.writeOps(file);
     assert.equal(confirmed.includes(row.id), true);
     assert.equal(ops.readOps().gatewayCommands.find((item) => item.id === row.id)?.status, "ACKED");

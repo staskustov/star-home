@@ -60,7 +60,7 @@ function systemState(devices: Device[]): Pick<EngineeringSystem, "state" | "tone
   if (devices.length === 0) return { state: "Не подключено", tone: "muted" };
   const faults = devices.filter((device) => workOf(device) === "FAULT").length;
   const off = devices.filter((device) => workOf(device) === "OFF").length;
-  if (faults > 0) return { state: devices.length > 1 ? `${faults} из ${devices.length} неисправно` : "Неисправно", tone: "danger" };
+  if (faults > 0) return { state: devices.length > 1 ? `${faults} из ${devices.length} неисправны` : "Неисправно", tone: "danger" };
   if (off > 0) return { state: devices.length > 1 ? `${devices.length - off} из ${devices.length} в работе` : "Выведено из работы", tone: "warning" };
   return { state: "В работе", tone: "success" };
 }

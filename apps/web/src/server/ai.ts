@@ -4,7 +4,7 @@ import { placeFromSession, type Place, type SessionRef } from "@/server/actor";
 import { publicChannelsOf } from "@/server/device-channels";
 import { residentSeesDevice } from "@/server/device-kinds";
 import { modeForUnit, modesForObject, setUnitMode } from "@/server/life-mode-store";
-import { createPass, createRequest, openGate, payOldest } from "@/server/operations";
+import { createPass, createRequest, openGate, passRange, payOldest } from "@/server/operations";
 import { roomsOf } from "@/server/catalog-store";
 import { homeSignals, newId, passesForUnit, projectCamerasOpen, readOps, writeOps, type Device, type PendingTool } from "@/server/ops-store";
 import { householdCan } from "@/server/rbac/policy";
@@ -47,16 +47,60 @@ function unitDevices(place: Place): Device[] {
   );
 }
 
-function pickDevice(place: Place, hint?: string): Device | undefined {
+type Picked = { device: Device } | { choices: string[] } | null;
+
+function pickDevice(place: Place, hint?: string): Picked {
   const devices = unitDevices(place);
-  if (hint === "curtain") return devices.find((device) => device.kind === "CURTAIN");
-  if (hint === "light") return devices.find((device) => device.kind === "LIGHTING");
-  if (hint === "climate") return devices.find((device) => device.kind === "CLIMATE" || device.capabilities?.includes("thermostat"));
-  if (hint) {
-    const named = devices.find((device) => device.name.toLowerCase().includes(hint) || (device.displayName ?? "").toLowerCase().includes(hint));
-    if (named) return named;
+  const byKind =
+    hint === "curtain"
+      ? devices.filter((device) => device.kind === "CURTAIN")
+      : hint === "light"
+        ? devices.filter((device) => device.kind === "LIGHTING")
+        : hint === "climate"
+          ? devices.filter((device) => device.kind === "CLIMATE" || device.capabilities?.includes("thermostat"))
+          : null;
+  const needle = hint?.trim().toLowerCase() ?? "";
+  const candidates =
+    byKind ??
+    (needle
+      ? devices.filter((device) => device.name.toLowerCase().includes(needle) || (device.displayName ?? "").toLowerCase().includes(needle))
+      : []);
+  if (candidates.length === 1) return { device: candidates[0]! };
+  if (candidates.length > 1) return { choices: candidates.slice(0, 6).map((device) => device.displayName ?? device.name) };
+  return null;
+}
+
+const commandWords: Record<string, (value: unknown) => string> = {
+  setPower: (value) => (value === false || value === 0 || value === "0" ? "выключить" : "включить"),
+  setBrightness: (value) => `яркость ${Number(value)}%`,
+  setTemperature: (value) => `температура ${Number(value)} °C`,
+  setHvacMode: (value) => `режим климата «${String(value)}»`,
+  setPosition: (value) => `положение ${Number(value)}%`,
+  open: () => "открыть",
+  close: () => "закрыть",
+  stop: () => "остановить",
+};
+
+function describeDeviceAction(device: Device, command: string, value: unknown): string {
+  const verb = commandWords[command]?.(value) ?? command;
+  return `${device.displayName ?? device.name}: ${verb}`;
+}
+
+function describePending(place: Place, pending: PendingTool, prompt: string): string {
+  if (pending.name === "open_gate") return "Открыть ворота";
+  if (pending.name === "create_pass") return "Оформить гостевой пропуск на сутки";
+  if (pending.name === "create_request") return `Создать заявку: «${prompt.slice(0, 160)}»`;
+  if (pending.name === "pay") return "Оплатить самый старый открытый счёт";
+  if (pending.name === "switch_mode") {
+    const label = modesForObject(place.objectId).find((item) => item.mode === pending.mode)?.label ?? pending.mode;
+    return `Включить режим «${label}»`;
   }
-  return devices.find((device) => device.kind === "LIGHTING") ?? devices.find((device) => device.kind === "CLIMATE");
+  if (pending.name === "run_scenario") {
+    const scenario = readOps().scenarios.find((item) => item.id === pending.scenarioId);
+    return `Запустить сценарий «${scenario?.name ?? "сценарий"}»`;
+  }
+  const device = readOps().devices.find((item) => item.id === pending.deviceId);
+  return device && pending.command ? describeDeviceAction(device, pending.command, pending.value) : "Управление устройством";
 }
 
 async function propose(prompt: string, role: Place["role"], place: Place): Promise<Proposal> {
@@ -107,18 +151,17 @@ async function propose(prompt: string, role: Place["role"], place: Place): Promi
         (!hint || item.name.toLowerCase().includes(hint)),
     );
     if (!scenario) return { reply: "Такого сценария нет.", pending: null, query: null };
-    return {
-      reply: suggestion.reply || `Запустить «${scenario.name}»? Подтвердите действие.`,
-      pending: { name: "run_scenario", token: newId("confirm"), scenarioId: scenario.id },
-      query: null,
-    };
+    const pending: PendingTool = { name: "run_scenario", token: newId("confirm"), scenarioId: scenario.id };
+    return { reply: `${describePending(place, pending, prompt)}? Подтвердите действие.`, pending, query: null };
   }
   if (suggestion.tool === "control_device" || suggestion.tool === "set_temperature") {
     if (!householdCan(role, "devices.command") && !householdCan(role, "access.gate.open")) {
       return { reply: "Нет права управлять устройствами.", pending: null, query: null };
     }
-    const device = pickDevice(place, suggestion.tool === "set_temperature" ? "climate" : suggestion.deviceHint);
-    if (!device) return { reply: "Нет такого устройства.", pending: null, query: null };
+    const picked = pickDevice(place, suggestion.tool === "set_temperature" ? "climate" : suggestion.deviceHint);
+    if (!picked) return { reply: "Не нашёл такое устройство. Назовите его так, как оно подписано в приложении.", pending: null, query: null };
+    if ("choices" in picked) return { reply: `Уточните, какое устройство: ${picked.choices.join(", ")}.`, pending: null, query: null };
+    const device = picked.device;
     const pending: PendingTool = {
       name: suggestion.tool,
       token: newId("confirm"),
@@ -126,13 +169,13 @@ async function propose(prompt: string, role: Place["role"], place: Place): Promi
       command: suggestion.command ?? (suggestion.tool === "set_temperature" ? "setTemperature" : "setPower"),
       value: suggestion.value,
     };
-    return { reply: suggestion.reply || `Управление «${device.name}». Подтвердите действие.`, pending, query: null };
+    return { reply: `${describePending(place, pending, prompt)}? Подтвердите действие.`, pending, query: null };
   }
   if (suggestion.query) return { reply: "", pending: null, query: suggestion.query, roomHint: suggestion.roomHint, deviceHint: suggestion.deviceHint };
   if (!suggestion.tool) return { reply: suggestion.reply, pending: null, query: null };
   const pending: PendingTool = { name: suggestion.tool, token: newId("confirm") };
   if (suggestion.tool === "switch_mode" && suggestion.mode) pending.mode = suggestion.mode;
-  return { reply: suggestion.reply, pending, query: null };
+  return { reply: `${describePending(place, pending, prompt)}? Подтвердите действие.`, pending, query: null };
 }
 
 function describeChannels(device: Device): string {
@@ -159,7 +202,9 @@ function answerRoomClimate(place: Place, roomHint?: string): string {
 }
 
 function answerDeviceChannels(place: Place, hint?: string): string {
-  const device = pickDevice(place, hint) ?? unitDevices(place).find((item) => publicChannelsOf(item).length);
+  const picked = pickDevice(place, hint);
+  if (picked && "choices" in picked) return `Уточните, какое устройство: ${picked.choices.join(", ")}.`;
+  const device = picked?.device ?? (hint ? undefined : unitDevices(place).find((item) => publicChannelsOf(item).length));
   if (!device) return "Показаний нет.";
   const facts = describeChannels(device);
   if (!facts) return `У «${device.displayName ?? device.name}» показаний нет.`;
@@ -262,6 +307,22 @@ export async function askAssistant(place: Place, prompt: string): Promise<AiRepl
   return { reply: proposal.reply, confirmToken: proposal.pending.token };
 }
 
+function askAgain(place: Place, prompt: string, pending: PendingTool): AiReply {
+  const reply = `Действие повышенного риска — ${describePending(place, pending, prompt).toLowerCase()}. Подтвердите ещё раз.`;
+  const file = readOps();
+  file.turns.unshift({
+    id: newId("turn"),
+    companyId: place.companyId,
+    userId: place.userId,
+    unitId: place.unitId,
+    prompt,
+    reply,
+    pending,
+  });
+  writeOps(file);
+  return { reply, confirmToken: pending.token };
+}
+
 export async function confirmAssistant(place: Place, token: string, session: SessionRef): Promise<AiReply> {
   const file = readOps();
   const turn = file.turns.find((item) => item.userId === place.userId && item.pending?.token === token);
@@ -272,6 +333,7 @@ export async function confirmAssistant(place: Place, token: string, session: Ses
   const command = turn.pending.command;
   const value = turn.pending.value;
   const scenarioId = turn.pending.scenarioId;
+  const smartToken = turn.pending.confirmToken;
   turn.pending = null;
   writeOps(file);
   let reply = "Не удалось подтвердить выполнение.";
@@ -282,33 +344,36 @@ export async function confirmAssistant(place: Place, token: string, session: Ses
     reply = `Режим «${label}» включён.`;
   }
   if (tool === "create_pass" && householdCan(place.role, "access.pass.create")) {
-    createPass(place, "Гость", "По запросу в чате");
-    reply = "Пропуск оформлен.";
+    const range = passRange(null, null);
+    if (range.ok) {
+      createPass(place, "Гость", range.detail, "", range.from, range.to);
+      reply = `Пропуск оформлен на сутки: ${range.detail}.`;
+    }
   }
   if (tool === "create_request" && householdCan(place.role, "service.create")) {
     createRequest(place, "Другое", turn.prompt);
     reply = "Заявка создана.";
   }
   if (tool === "pay" && householdCan(place.role, "payments.pay")) reply = (await payOldest(place)).message;
+  const second = smartToken;
   if (tool === "run_scenario" && scenarioId && householdCan(place.role, "devices.command")) {
     const { runScenario } = await import("@/server/scenarios");
-    const first = await runScenario(session, { scenarioId });
-    if (first.ok && first.value.needsConfirm && first.value.token) {
-      const second = await runScenario(session, { scenarioId, confirmToken: first.value.token });
-      reply = second.ok ? second.value.message : second.message;
-    } else {
-      reply = first.ok ? first.value.message : first.message;
+    const result = await runScenario(session, { scenarioId, confirmToken: second });
+    if (result.ok && result.value.needsConfirm && result.value.token) {
+      return askAgain(place, turn.prompt, { name: "run_scenario", token: newId("confirm"), scenarioId, confirmToken: result.value.token });
     }
+    reply = result.ok ? result.value.message : result.message;
   }
   if ((tool === "control_device" || tool === "set_temperature") && deviceId && command) {
     const { commandDeviceSmart } = await import("@/server/smart-home");
-    const first = await commandDeviceSmart(session, { deviceId, command, value, source: "ai" });
-    if (first.ok && first.value.needsConfirm && first.value.token) {
-      const second = await commandDeviceSmart(session, { deviceId, command, value, confirmToken: first.value.token, source: "ai" });
-      reply = second.ok ? second.value.message : second.message;
-    } else {
-      reply = first.ok ? first.value.message : first.message;
+    const result = await commandDeviceSmart(
+      session,
+      second ? { deviceId, command, value, confirmToken: second, source: "ai" } : { deviceId, command, value, source: "ai" },
+    );
+    if (result.ok && result.value.needsConfirm && result.value.token) {
+      return askAgain(place, turn.prompt, { name: tool, token: newId("confirm"), deviceId, command, value, confirmToken: result.value.token });
     }
+    reply = result.ok ? result.value.message : result.message;
   }
   const next = readOps();
   const saved = next.turns.find((item) => item.id === turn.id);

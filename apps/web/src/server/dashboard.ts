@@ -138,7 +138,7 @@ function pulseFor(actor: StaffActor, object: CatalogObject): DashboardPulse[] {
     pulse.push({ id: "alarms", value: open, label: "Тревоги", href: "/security", alert: open > 0 });
   }
   if (can(actor, "payments.view")) {
-    const open = within(actor, readOps().invoices).filter((invoice) => invoice.objectId === object.id && invoice.status === "OPEN").length;
+    const open = within(actor, readOps().invoices).filter((invoice) => invoice.objectId === object.id && invoice.status !== "PAID").length;
     pulse.push({ id: "invoices", value: open, label: "Открытые счета", href: "/admin/payments", alert: false });
   }
   if (can(actor, "access.view")) {
@@ -154,7 +154,7 @@ function systemState(devices: Device[]): Pick<DashboardSystem, "state" | "tone">
   const faults = devices.filter((device) => device.work === "FAULT").length;
   const off = devices.filter((device) => device.work === "OFF").length;
   if (total === 0) return { tone: "warning", state: "Не подключено" };
-  if (faults > 0) return { tone: "danger", state: total > 1 ? `${faults} из ${total} неисправно` : "Неисправно" };
+  if (faults > 0) return { tone: "danger", state: total > 1 ? `${faults} из ${total} неисправны` : "Неисправно" };
   if (off > 0) return { tone: "warning", state: `${total - off} из ${total} в работе` };
   return { tone: "success", state: "В работе" };
 }

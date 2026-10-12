@@ -23,6 +23,9 @@ function expired(membership: Membership): boolean {
 }
 
 function scopeOf(membership: Membership): StaffActor["scope"] | null {
+  if (membership.role === "SUPER_ADMIN" && !membership.objectId && !membership.unitId) {
+    return { kind: "PLATFORM", objectId: null, buildingId: null };
+  }
   if (membership.unitId) return { kind: "UNIT", objectId: membership.objectId, buildingId: null };
   if (membership.objectId && membership.buildingId) {
     if (findBuilding(membership.buildingId)?.objectId !== membership.objectId) return null;
@@ -95,6 +98,10 @@ export function reaches(actor: StaffActor, row: Scoped): boolean {
   if (!row.unitId) return false;
   const unit = findUnit(row.unitId);
   return Boolean(unit) && unit?.objectId === row.objectId && unit?.buildingId === actor.scope.buildingId;
+}
+
+export function managesGateway(actor: StaffActor, gateway: Scoped): boolean {
+  return reaches(actor, gateway) && (gateway.unitId !== null || wholeObject(actor));
 }
 
 export function objectFor(actor: StaffActor, objectId: unknown, reach: "part" | "whole" = "part"): Success<CatalogObject> | Failure {
